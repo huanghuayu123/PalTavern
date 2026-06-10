@@ -1,0 +1,15 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  },
+  "include": [
+    "../src/independent-chat/**/*.ts",
+    "../src/independent-chat/**/*.mjs",
+    "../src/independent-chat/**/*.d.ts"
+  ]
+}

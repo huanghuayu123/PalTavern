@@ -1,0 +1,539 @@
+import type { CharacterProfile, ChatMessage, ConversationProfile } from './types';
+import { parseModelChatOutput } from './chat-format';
+import { findUserStickerById } from './stickers';
+import { callModel } from './model';
+import { activeCharacter, ensureConversation, markConversationRead, messagesFor, saveState, state } from './state';
+import { addRelationshipTimelineEntry } from './timeline';
+import { waitForModelTyping } from './typing-delay';
+import { nowId } from './utils';
+
+export let statusText = '独立应用已启动。';
+const openingRequests = new Set<string>();
+let replyController: AbortController | null = null;
+let replyStartedAt = 0;
+let replyAbortFinalStatus = '';
+
+export function isReplying(): boolean {
+  return Boolean(replyController);
+}
+
+export function replyStateAgeMs(): number | null {
+  return replyController && replyStartedAt > 0 ? Date.now() - replyStartedAt : null;
+}
+
+function markReplyStarted(controller: AbortController): void {
+  replyController = controller;
+  replyStartedAt = Date.now();
+  replyAbortFinalStatus = '';
+}
+
+function clearReplyController(controller: AbortController): void {
+  if (replyController !== controller) return;
+  replyController = null;
+  replyStartedAt = 0;
+}
+
+function abortReply(status: string, finalStatus = status): boolean {
+  const controller = replyController;
+  if (!controller) return false;
+  replyAbortFinalStatus = finalStatus;
+  controller.abort();
+  replyController = null;
+  replyStartedAt = 0;
+  statusText = status;
+  return true;
+}
+
+export function stopReply(): boolean {
+  return abortReply('正在停止回复…', '已停止回复。');
+}
+
+export function resetReplyState(status = '已停止未完成的回复，输入内容已保留。'): boolean {
+  return abortReply(status);
+}
+
+export function recallMessage(messageId: string): boolean {
+  const message = state.messages.find(item => item.id === messageId);
+  if (!message || message.recalledAt) return false;
+  message.recalledAt = Date.now();
+  saveState();
+  return true;
+}
+
+export function deleteMessage(messageId: string): boolean {
+  const index = state.messages.findIndex(item => item.id === messageId);
+  if (index < 0) return false;
+  const target = state.messages[index];
+  const deleteIds = new Set<string>([messageId]);
+  if (target.role === 'user') {
+    for (const message of state.messages) {
+      if (
+        message.conversationId === target.conversationId
+        && message.characterId === target.characterId
+        && message.createdAt > target.createdAt
+      ) {
+        deleteIds.add(message.id);
+      }
+    }
+  }
+  state.messages = state.messages.filter(message => !deleteIds.has(message.id));
+  for (const message of state.messages) {
+    if (message.replyToId && deleteIds.has(message.replyToId)) message.replyToId = undefined;
+  }
+  saveState();
+  return true;
+}
+
+function ensureMessageVariants(message: ChatMessage): NonNullable<ChatMessage['variants']> {
+  if (!message.variants || message.variants.length === 0) {
+    message.variants = [{
+      id: nowId('variant'),
+      content: message.content,
+      stickerId: message.stickerId,
+      createdAt: message.createdAt,
+    }];
+    message.activeVariantIndex = 0;
+  }
+  const activeIndex = typeof message.activeVariantIndex === 'number'
+    ? Math.max(0, Math.min(message.variants.length - 1, Math.round(message.activeVariantIndex)))
+    : message.variants.length - 1;
+  message.activeVariantIndex = activeIndex;
+  return message.variants;
+}
+
+function setMessageActiveVariant(message: ChatMessage, index: number): void {
+  const variants = ensureMessageVariants(message);
+  const nextIndex = Math.max(0, Math.min(variants.length - 1, Math.round(index)));
+  const variant = variants[nextIndex];
+  message.activeVariantIndex = nextIndex;
+  message.content = variant.content;
+  message.stickerId = variant.stickerId;
+}
+
+function appendMessageVariant(message: ChatMessage, content: string, stickerId?: string): void {
+  const variants = ensureMessageVariants(message);
+  variants.push({
+    id: nowId('variant'),
+    content,
+    stickerId,
+    createdAt: Date.now(),
+  });
+  setMessageActiveVariant(message, variants.length - 1);
+}
+
+function deleteMessagesAfter(message: ChatMessage): void {
+  const removed = new Set<string>();
+  state.messages = state.messages.filter(item => {
+    const shouldRemove = item.conversationId === message.conversationId
+      && item.characterId === message.characterId
+      && item.createdAt > message.createdAt;
+    if (shouldRemove) removed.add(item.id);
+    return !shouldRemove;
+  });
+  for (const item of state.messages) {
+    if (item.replyToId && removed.has(item.replyToId)) item.replyToId = undefined;
+  }
+}
+
+export function selectMessageVariant(messageId: string, direction: -1 | 1): boolean {
+  const message = state.messages.find(item => item.id === messageId);
+  if (!message) return false;
+  const variants = ensureMessageVariants(message);
+  if (variants.length <= 1) return false;
+  const current = message.activeVariantIndex ?? 0;
+  const next = (current + direction + variants.length) % variants.length;
+  setMessageActiveVariant(message, next);
+  saveState();
+  return true;
+}
+
+export function messageVariantInfo(message: ChatMessage): { index: number; count: number } {
+  const count = message.variants?.length ?? 1;
+  const index = typeof message.activeVariantIndex === 'number'
+    ? Math.max(0, Math.min(count - 1, Math.round(message.activeVariantIndex)))
+    : 0;
+  return { index, count };
+}
+
+export async function editUserMessageAndRegenerate(
+  messageId: string,
+  content: string,
+  onChange: () => void,
+): Promise<void> {
+  const message = state.messages.find(item => item.id === messageId);
+  const character = message ? state.characters.find(item => item.id === message.characterId) : undefined;
+  if (!message || message.role !== 'user' || !character) {
+    statusText = '找不到可修改的用户消息。';
+    onChange();
+    return;
+  }
+  const text = content.trim();
+  if (!text) {
+    statusText = '消息内容不能为空。';
+    onChange();
+    return;
+  }
+  if (replyController) {
+    statusText = '上一条消息仍在回复中。';
+    onChange();
+    return;
+  }
+  appendMessageVariant(message, text);
+  deleteMessagesAfter(message);
+  const conversation = ensureConversation(character);
+  conversation.updatedAt = Date.now();
+  saveState();
+  await generateModelReply(character, conversation, onChange);
+}
+
+export async function regenerateAssistantMessage(messageId: string, onChange: () => void): Promise<void> {
+  const message = state.messages.find(item => item.id === messageId);
+  const character = message ? state.characters.find(item => item.id === message.characterId) : undefined;
+  if (!message || message.role !== 'assistant' || !character) {
+    statusText = '找不到可重新生成的 AI 消息。';
+    onChange();
+    return;
+  }
+  if (replyController) {
+    statusText = '上一条消息仍在回复中。';
+    onChange();
+    return;
+  }
+  const conversation = ensureConversation(character);
+  statusText = '正在重新生成这一条回复…';
+  const controller = new AbortController();
+  markReplyStarted(controller);
+  onChange();
+  try {
+    const contextMessages = messagesFor(character.id)
+      .filter(item => item.createdAt < message.createdAt);
+    const rawReply = await callModel(
+      character,
+      '请基于上面的聊天上下文，重新生成接下来这一条角色回复。只输出这一条消息，不要解释。',
+      false,
+      true,
+      controller.signal,
+      { contextMessages, useChatPreset: true },
+    );
+    if (controller.signal.aborted) {
+      statusText = '已停止重新生成。';
+      return;
+    }
+    const parts = parseModelChatOutput(rawReply, character);
+    const next = parts[0] ?? { content: rawReply.trim(), stickerId: undefined };
+    statusText = `${character.name} 正在输入…`;
+    onChange();
+    await waitForModelTyping(next.content, controller.signal);
+    if (controller.signal.aborted) {
+      statusText = '已停止重新生成。';
+      return;
+    }
+    appendMessageVariant(message, next.content, next.stickerId);
+    conversation.updatedAt = Date.now();
+    statusText = '已重新生成，可用下方版本切换查看旧回复。';
+    saveState();
+  } catch (error) {
+    const abortStatus = replyAbortFinalStatus || '已停止重新生成。';
+    statusText = error instanceof Error && error.name === 'AbortError'
+      ? abortStatus
+      : error instanceof Error ? error.message : String(error);
+    if (error instanceof Error && error.name === 'AbortError') replyAbortFinalStatus = '';
+  } finally {
+    clearReplyController(controller);
+  }
+  onChange();
+}
+
+export function removeSingleMessage(messageId: string): boolean {
+  const index = state.messages.findIndex(item => item.id === messageId);
+  if (index < 0) return false;
+  state.messages.splice(index, 1);
+  for (const message of state.messages) {
+    if (message.replyToId === messageId) message.replyToId = undefined;
+  }
+  saveState();
+  return true;
+}
+
+export function setStatusText(value: string): void {
+  statusText = value;
+}
+
+function noteUserActivity(character: CharacterProfile, conversation: ConversationProfile, createdAt: number): void {
+  character.autoMessage.lastUserReplyAt = createdAt;
+  if (character.autoMessage.unansweredCount > 0) {
+    character.autoMessage.pendingResetDecision = true;
+    character.autoMessage.pacingReason = '用户已经回复，等待用户决定是否恢复主动联系频率。';
+  }
+  const userMessageCount = state.messages
+    .filter(message =>
+      message.conversationId === conversation.id
+      && message.role === 'user'
+      && !message.recalledAt
+    )
+    .length;
+  if (userMessageCount > 0 && userMessageCount % 5 === 0) {
+    character.relationship.affinity = Math.max(0, Math.round(character.relationship.affinity + 1));
+    character.relationship.updatedAt = createdAt;
+    addRelationshipTimelineEntry(
+      character,
+      `${character.name} 和你的关系更稳定了`,
+      `最近连续聊天让关系更熟悉，好感度 +1。`,
+      `${conversation.id}:chat:${userMessageCount}`,
+    );
+  }
+  conversation.updatedAt = createdAt;
+}
+
+function appendUserMessage(
+  character: CharacterProfile,
+  conversation: ConversationProfile,
+  content: string,
+  replyToId?: string,
+): void {
+  const createdAt = Date.now();
+  state.messages.push({
+    id: nowId('msg'),
+    conversationId: conversation.id,
+    characterId: character.id,
+    role: 'user',
+    content,
+    replyToId,
+    variants: [{
+      id: nowId('variant'),
+      content,
+      createdAt,
+    }],
+    activeVariantIndex: 0,
+    createdAt,
+    source: 'user',
+  });
+  noteUserActivity(character, conversation, createdAt);
+  saveState();
+}
+
+function hasPendingUserInput(character: CharacterProfile): boolean {
+  const visibleMessages = messagesFor(character.id)
+    .filter(message => !message.recalledAt)
+    .sort((left, right) => left.createdAt - right.createdAt);
+  const lastAssistantIndex = visibleMessages.findLastIndex(message => message.role === 'assistant');
+  return visibleMessages.slice(lastAssistantIndex + 1).some(message => message.role === 'user');
+}
+
+async function generateModelReply(
+  character: CharacterProfile,
+  conversation: ConversationProfile,
+  onChange: () => void,
+): Promise<void> {
+  if (replyController) {
+    statusText = '上一条消息仍在回复中。';
+    onChange();
+    return;
+  }
+  statusText = '正在回复中…';
+  const controller = new AbortController();
+  markReplyStarted(controller);
+  onChange();
+
+  try {
+    const reply = await callModel(character, '', false, true, controller.signal, { useChatPreset: true });
+    if (controller.signal.aborted) {
+      statusText = '已停止回复。';
+      return;
+    }
+    statusText = `${character.name} 正在输入…`;
+    onChange();
+    await waitForModelTyping(reply, controller.signal);
+    if (controller.signal.aborted) {
+      statusText = '已停止回复。';
+      return;
+    }
+    appendAssistantReply(character, conversation, reply, 'model_reply');
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      markConversationRead(character.id);
+    }
+    statusText = '回复完成。';
+  } catch (error) {
+    const abortStatus = replyAbortFinalStatus || '已停止回复。';
+    statusText = error instanceof Error && error.name === 'AbortError'
+      ? abortStatus
+      : error instanceof Error ? error.message : String(error);
+    if (error instanceof Error && error.name === 'AbortError') replyAbortFinalStatus = '';
+  } finally {
+    clearReplyController(controller);
+  }
+  saveState();
+  onChange();
+}
+
+export function appendAssistantReply(
+  character: CharacterProfile,
+  conversation: ConversationProfile,
+  rawReply: string,
+  source: ChatMessage['source'],
+  autoReason?: string,
+): ChatMessage[] {
+  const baseTime = Date.now();
+  const messages = parseModelChatOutput(rawReply, character).map((part, index) => {
+    const createdAt = baseTime + index;
+    return {
+      id: nowId(source === 'generated_opening' ? 'opening' : source === 'auto_message' ? 'auto' : 'msg'),
+      conversationId: conversation.id,
+      characterId: character.id,
+      role: 'assistant' as const,
+      content: part.content,
+      stickerId: part.stickerId,
+      autoReason: source === 'auto_message' ? autoReason : undefined,
+      variants: [{
+        id: nowId('variant'),
+        content: part.content,
+        stickerId: part.stickerId,
+        createdAt,
+      }],
+      activeVariantIndex: 0,
+      createdAt,
+      source,
+    };
+  });
+  state.messages.push(...messages);
+  conversation.updatedAt = messages.at(-1)?.createdAt ?? baseTime;
+  return messages;
+}
+
+export async function generateOpeningMessage(character: CharacterProfile, onChange: () => void): Promise<boolean> {
+  if (messagesFor(character.id).length > 0 || openingRequests.has(character.id)) {
+    return false;
+  }
+  if (!state.modelConfig.apiUrl.trim() || !state.modelConfig.model.trim()) {
+    statusText = `已导入 ${character.name}。配置模型后会自动生成新的开场消息。`;
+    onChange();
+    return false;
+  }
+
+  openingRequests.add(character.id);
+  statusText = `正在为 ${character.name} 生成新的开场消息…`;
+  onChange();
+  try {
+    const conversation = ensureConversation(character);
+    const content = await callModel(character, [
+      '这是这个角色与用户在本应用中的第一次私聊。',
+      '请根据角色描述、性格、当前场景、关系状态、世界书与近期世界事件，主动发出一条全新的开场消息。',
+      '不要读取、复述、改写或提及角色卡原本的 first_mes、first_message 或开场白。',
+      '写成聊天软件里自然发来的私信，不要写成长篇小说，不要替用户行动或说话。',
+      '控制在 1 到 4 个短段落内，可以有少量符合角色风格的动作或环境描写。',
+    ].join('\n'), true, true, undefined, { useChatPreset: true });
+    statusText = `${character.name} 正在输入…`;
+    onChange();
+    await waitForModelTyping(content);
+    appendAssistantReply(character, conversation, content, 'generated_opening');
+    statusText = `${character.name} 的新开场消息已生成。`;
+    saveState();
+    return true;
+  } catch (error) {
+    statusText = error instanceof Error ? `开场消息生成失败：${error.message}` : String(error);
+    saveState();
+    return false;
+  } finally {
+    openingRequests.delete(character.id);
+    onChange();
+  }
+}
+
+export async function sendUserMessageOnly(content: string, onChange: () => void, replyToId?: string): Promise<void> {
+  const character = activeCharacter();
+  if (!character) {
+    statusText = '请先导入角色卡。';
+    onChange();
+    return;
+  }
+  const text = content.trim();
+  if (!text) return;
+  if (replyController) {
+    statusText = '上一条消息仍在回复中。';
+    onChange();
+    return;
+  }
+  const conversation = ensureConversation(character);
+  appendUserMessage(character, conversation, text, replyToId);
+  statusText = '已发送。可以继续发短消息，或点生成回复。';
+  onChange();
+}
+
+export async function generateReply(onChange: () => void): Promise<void> {
+  const character = activeCharacter();
+  if (!character) {
+    statusText = '请先导入角色卡。';
+    onChange();
+    return;
+  }
+  const conversation = ensureConversation(character);
+  if (!hasPendingUserInput(character)) {
+    statusText = '先发一条短消息，再点生成回复。';
+    onChange();
+    return;
+  }
+  await generateModelReply(character, conversation, onChange);
+}
+
+export async function sendMessage(content: string, onChange: () => void, replyToId?: string): Promise<void> {
+  const character = activeCharacter();
+  if (!character) {
+    statusText = '请先导入角色卡。';
+    onChange();
+    return;
+  }
+  const text = content.trim();
+  if (!text) {
+    return;
+  }
+  if (replyController) {
+    statusText = '上一条消息仍在回复中。';
+    onChange();
+    return;
+  }
+  const conversation = ensureConversation(character);
+  appendUserMessage(character, conversation, text, replyToId);
+  await generateModelReply(character, conversation, onChange);
+}
+
+export async function sendStickerMessage(stickerId: string, onChange: () => void): Promise<void> {
+  const character = activeCharacter();
+  const sticker = findUserStickerById(stickerId);
+  if (!character || !sticker) {
+    statusText = '找不到这个表情包。';
+    onChange();
+    return;
+  }
+  if (replyController) {
+    statusText = '上一条消息仍在回复中。';
+    onChange();
+    return;
+  }
+  const conversation = ensureConversation(character);
+  const createdAt = Date.now();
+  state.messages.push({
+    id: nowId('sticker'),
+    conversationId: conversation.id,
+    characterId: character.id,
+    role: 'user',
+    content: `[表情包：${sticker.name}]`,
+    stickerId: sticker.id,
+    variants: [{
+      id: nowId('variant'),
+      content: `[表情包：${sticker.name}]`,
+      stickerId: sticker.id,
+      createdAt,
+    }],
+    activeVariantIndex: 0,
+    createdAt,
+    source: 'user',
+  });
+  noteUserActivity(character, conversation, createdAt);
+  saveState();
+  if (state.chatReplyMode === 'manual') {
+    statusText = '表情已发送。可以继续发短消息，或点生成回复。';
+    onChange();
+    return;
+  }
+  await generateModelReply(character, conversation, onChange);
+}

@@ -1,0 +1,23 @@
+appId: com.tavernsocial.desktop
+productName: Tavern Social
+asar: false
+directories:
+  app: desktop
+  output: release
+files:
+  - main.cjs
+  - package.json
+extraResources:
+  - from: scripts/independent-chat-server.mjs
+    to: scripts/independent-chat-server.mjs
+  - from: dist/independent-chat
+    to: dist/independent-chat
+win:
+  executableName: TavernSocial
+  target:
+    - nsis
+  artifactName: "${productName}-${version}-${arch}.${ext}"
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true

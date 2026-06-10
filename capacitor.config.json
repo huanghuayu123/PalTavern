@@ -1,0 +1,14 @@
+{
+  "appId": "com.tavernsocial.app",
+  "appName": "Pal Tavern",
+  "webDir": "dist/independent-chat",
+  "bundledWebRuntime": false,
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}
