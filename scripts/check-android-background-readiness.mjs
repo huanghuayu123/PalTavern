@@ -84,6 +84,13 @@ const checks = [
     detail: 'MainActivity.java',
   },
   {
+    name: 'Native in-app back bridge',
+    ok: mainActivity.includes('OnBackPressedCallback')
+      && mainActivity.includes('tavern-social-android-back')
+      && mainActivity.includes('evaluateJavascript'),
+    detail: 'MainActivity.java dispatches Android back into the web app',
+  },
+  {
     name: 'Android notification permission',
     ok: manifest.includes('android.permission.POST_NOTIFICATIONS'),
     detail: 'AndroidManifest.xml',

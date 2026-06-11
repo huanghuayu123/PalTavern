@@ -53,9 +53,11 @@ import { migrateInlineSettingsToWorldBook } from '../characters/settings';
 import {
   createTavernSocialDefaultGroupPromptPreset,
   createTavernSocialDefaultPromptPreset,
+  createTavernSocialDefaultWorldPromptPreset,
   normalizePromptPresets,
   TAVERN_SOCIAL_DEFAULT_GROUP_PROMPT_PRESET_ID,
   TAVERN_SOCIAL_DEFAULT_PROMPT_PRESET_ID,
+  TAVERN_SOCIAL_DEFAULT_WORLD_PROMPT_PRESET_ID,
 } from '../model/prompt-presets';
 import { clampVirtualTimeMinutes, minutesFromDate, normalizeCompanionTimeMode } from './time';
 import { firstString, isRecord, localDateKey, nowId, stableHash } from './utils';
@@ -306,6 +308,7 @@ export function defaultState(): AppState {
   const defaultCharacters = createDefaultCharacters(defaultWorld.id, now);
   const defaultPromptPreset = createTavernSocialDefaultPromptPreset(now);
   const defaultGroupPromptPreset = createTavernSocialDefaultGroupPromptPreset(now);
+  const defaultWorldPromptPreset = createTavernSocialDefaultWorldPromptPreset(now);
   return {
     worlds: [defaultWorld],
     characters: defaultCharacters,
@@ -338,11 +341,13 @@ export function defaultState(): AppState {
     virtualTimeMinutes: minutesFromDate(nowDate),
     userName: '我',
     userPersona: '',
-    promptPresets: [defaultPromptPreset, defaultGroupPromptPreset],
+    promptPresets: [defaultPromptPreset, defaultGroupPromptPreset, defaultWorldPromptPreset],
     activeChatPromptPresetId: defaultPromptPreset.id,
     chatPromptPresetEnabled: true,
     activeGroupPromptPresetId: defaultGroupPromptPreset.id,
     groupPromptPresetEnabled: true,
+    activeWorldPromptPresetId: defaultWorldPromptPreset.id,
+    worldPromptPresetEnabled: true,
     modelConfig: {
       provider: 'deepseek',
       apiUrl: DEEPSEEK_API_URL,
@@ -942,6 +947,30 @@ function normalizeWorldEventRpMessages(value: unknown): WorldEvent['rpMessages']
   })).filter(message => message.content.trim().length > 0);
 }
 
+function normalizeWorldEventLeadActor(value: unknown): WorldEvent['leadActor'] {
+  if (!isRecord(value)) return undefined;
+  const name = typeof value.name === 'string' && value.name.trim() ? value.name.trim() : '';
+  if (value.type === 'user') {
+    return {
+      type: 'user',
+      id: typeof value.id === 'string' && value.id.trim() ? value.id.trim() : 'user',
+      name: name || '我',
+    };
+  }
+  const characterId = typeof value.characterId === 'string' && value.characterId.trim()
+    ? value.characterId.trim()
+    : typeof value.id === 'string' && value.id.trim()
+      ? value.id.trim()
+      : '';
+  if (value.type !== 'character' || !characterId) return undefined;
+  return {
+    type: 'character',
+    id: characterId,
+    characterId,
+    name: name || '角色',
+  };
+}
+
 export function normalizeState(input: unknown): AppState {
   const fallback = defaultState();
   const parsed = isRecord(input) ? input as Partial<AppState> : {};
@@ -991,10 +1020,17 @@ export function normalizeState(input: unknown): AppState {
     ? normalizePromptPresets(parsed.promptPresets)
     : fallback.promptPresets;
   if (promptPresets.length === 0) {
-    promptPresets = [createTavernSocialDefaultPromptPreset(Date.now())];
+    promptPresets = [
+      createTavernSocialDefaultPromptPreset(Date.now()),
+      createTavernSocialDefaultGroupPromptPreset(Date.now()),
+      createTavernSocialDefaultWorldPromptPreset(Date.now()),
+    ];
   }
   if (!promptPresets.some(preset => preset.id === TAVERN_SOCIAL_DEFAULT_GROUP_PROMPT_PRESET_ID)) {
     promptPresets = [...promptPresets, createTavernSocialDefaultGroupPromptPreset(Date.now())];
+  }
+  if (!promptPresets.some(preset => preset.id === TAVERN_SOCIAL_DEFAULT_WORLD_PROMPT_PRESET_ID)) {
+    promptPresets = [...promptPresets, createTavernSocialDefaultWorldPromptPreset(Date.now())];
   }
   const activeChatPromptPresetId = typeof parsed.activeChatPromptPresetId === 'string'
     && promptPresets.some(preset => preset.id === parsed.activeChatPromptPresetId)
@@ -1006,6 +1042,11 @@ export function normalizeState(input: unknown): AppState {
     && promptPresets.some(preset => preset.id === parsed.activeGroupPromptPresetId)
     ? parsed.activeGroupPromptPresetId
     : promptPresets.find(preset => preset.id === TAVERN_SOCIAL_DEFAULT_GROUP_PROMPT_PRESET_ID)?.id
+      ?? activeChatPromptPresetId;
+  const activeWorldPromptPresetId = typeof parsed.activeWorldPromptPresetId === 'string'
+    && promptPresets.some(preset => preset.id === parsed.activeWorldPromptPresetId)
+    ? parsed.activeWorldPromptPresetId
+    : promptPresets.find(preset => preset.id === TAVERN_SOCIAL_DEFAULT_WORLD_PROMPT_PRESET_ID)?.id
       ?? activeChatPromptPresetId;
   const defaultChatPromptPresetEnabled = !hasStoredPromptPresets
     && activeChatPromptPresetId === TAVERN_SOCIAL_DEFAULT_PROMPT_PRESET_ID;
@@ -1061,6 +1102,12 @@ export function normalizeState(input: unknown): AppState {
           const content = typeof message.content === 'string' ? message.content : '';
           const stickerId = typeof message.stickerId === 'string' ? message.stickerId : undefined;
           const createdAt = typeof message.createdAt === 'number' ? message.createdAt : Date.now();
+          const role = message.role === 'assistant' || message.role === 'system' ? message.role : 'user';
+          // Big comment: A private chat still targets one character; these optional fields only preserve the selected speaking identity.
+          const speakerType = role === 'user' && message.speakerType === 'character' ? 'character' as const : 'user' as const;
+          const speakerCharacterId = speakerType === 'character' && typeof message.speakerCharacterId === 'string'
+            ? message.speakerCharacterId
+            : undefined;
           const variants = Array.isArray(message.variants)
             ? message.variants.filter(isRecord).map(variant => ({
               id: typeof variant.id === 'string' ? variant.id : nowId('variant'),
@@ -1085,7 +1132,9 @@ export function normalizeState(input: unknown): AppState {
           id: typeof message.id === 'string' ? message.id : nowId('msg'),
           conversationId: typeof message.conversationId === 'string' ? message.conversationId : '',
           characterId: typeof message.characterId === 'string' ? message.characterId : '',
-          role: message.role === 'assistant' || message.role === 'system' ? message.role : 'user',
+          role,
+          speakerType: role === 'user' ? speakerType : undefined,
+          speakerCharacterId,
           content: activeVariant.content,
           stickerId: activeVariant.stickerId,
           autoReason: typeof message.autoReason === 'string' ? message.autoReason : undefined,
@@ -1155,6 +1204,7 @@ export function normalizeState(input: unknown): AppState {
           participantCharacterIds: Array.isArray(event.participantCharacterIds)
             ? event.participantCharacterIds.filter((id): id is string => typeof id === 'string')
             : [],
+          leadActor: normalizeWorldEventLeadActor(event.leadActor),
           affinityDelta,
           choices: choices.length > 0 ? choices : defaultEventChoices(type, affinityDelta),
           decision: isRecord(event.decision)
@@ -1214,6 +1264,10 @@ export function normalizeState(input: unknown): AppState {
     groupPromptPresetEnabled: (typeof parsed.groupPromptPresetEnabled === 'boolean'
       ? parsed.groupPromptPresetEnabled
       : true) && Boolean(activeGroupPromptPresetId),
+    activeWorldPromptPresetId,
+    worldPromptPresetEnabled: (typeof parsed.worldPromptPresetEnabled === 'boolean'
+      ? parsed.worldPromptPresetEnabled
+      : true) && Boolean(activeWorldPromptPresetId),
     modelConfig: {
       provider: modelProvider,
       apiUrl: rawModelApiUrl.trim() || (modelProvider === 'deepseek' ? DEEPSEEK_API_URL : ''),

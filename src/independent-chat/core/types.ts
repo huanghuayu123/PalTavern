@@ -359,6 +359,9 @@ export interface ChatMessage {
   conversationId: string;
   characterId: string;
   role: MessageRole;
+  // Big comment: Private-chat messages always belong to characterId; speaker metadata only records who the user is writing as.
+  speakerType?: 'user' | 'character';
+  speakerCharacterId?: string;
   content: string;
   stickerId?: string;
   autoReason?: string;
@@ -459,6 +462,13 @@ export interface WorldEventRpMessage {
   source: 'manual' | 'model' | 'system';
 }
 
+export interface WorldEventLeadActor {
+  type: 'user' | 'character';
+  id: string;
+  name: string;
+  characterId?: string;
+}
+
 export interface WorldEvent {
   id: string;
   worldId: string;
@@ -466,6 +476,7 @@ export interface WorldEvent {
   description: string;
   type: WorldEventType;
   participantCharacterIds: string[];
+  leadActor?: WorldEventLeadActor;
   affinityDelta: number;
   choices: WorldEventChoice[];
   decision?: WorldEventDecision;
@@ -578,6 +589,8 @@ export interface AppState {
   chatPromptPresetEnabled: boolean;
   activeGroupPromptPresetId: string;
   groupPromptPresetEnabled: boolean;
+  activeWorldPromptPresetId: string;
+  worldPromptPresetEnabled: boolean;
   modelConfig: ModelConfig;
   modelUsage: ModelUsage;
 }

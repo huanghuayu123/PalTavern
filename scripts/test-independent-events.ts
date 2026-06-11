@@ -25,6 +25,7 @@ const impacts = require('../src/independent-chat/memory/impacts');
 const model = require('../src/independent-chat/model/client');
 const characterRelationships = require('../src/independent-chat/characters/relationships');
 const rpRendering = require('../src/independent-chat/ui/rp-rendering');
+const promptPresets = require('../src/independent-chat/model/prompt-presets');
 
 const character = {
   id: 'character_event_test',
@@ -74,6 +75,27 @@ const created = events.createWorldEvent({
   affinityDelta: 8,
   type: 'relationship',
 });
+const userLedManualEvent = events.createWorldEvent({
+  title: 'User-led cafe thread',
+  description: 'The current user identity starts a small cafe moment.',
+  participantCharacterIds: [companion.id, 'user', 'missing_character'],
+  leadActor: {
+    type: 'user',
+    id: 'user',
+    name: 'Event User',
+  },
+  affinityDelta: 0,
+  type: 'daily',
+});
+if (
+  userLedManualEvent.leadActor?.type !== 'user'
+  || userLedManualEvent.leadActor?.name !== 'Event User'
+  || userLedManualEvent.participantCharacterIds.length !== 1
+  || userLedManualEvent.participantCharacterIds[0] !== companion.id
+  || userLedManualEvent.participantCharacterIds.includes('user')
+) {
+  throw new Error('User-led events should keep user identity as leadActor without storing user as a character participant.');
+}
 if (!Array.isArray(created.rpMessages) || created.rpMessages.length !== 0) {
   throw new Error('New world events should start with their own empty RP message log.');
 }
@@ -81,15 +103,21 @@ if (
   typeof events.ensureWorldRpEvent !== 'function'
   || typeof events.appendWorldEventRpMessage !== 'function'
   || typeof events.worldEventRpMessages !== 'function'
+  || typeof events.editWorldEventRpMessage !== 'function'
 ) {
   throw new Error('World event RP log helpers are missing.');
 }
 const worldRpEvent = events.ensureWorldRpEvent(character);
 const userWorldTurn = events.appendWorldEventRpMessage(worldRpEvent.id, {
   role: 'user',
+  characterId: companion.id,
+  speaker: companion.name,
   content: 'I leave a note beside the umbrella.',
   source: 'manual',
 });
+if (!events.editWorldEventRpMessage(userWorldTurn.id, 'I revise the note beside the umbrella.')) {
+  throw new Error('World event RP user turns should be editable.');
+}
 const assistantWorldTurn = events.appendWorldEventRpMessage(worldRpEvent.id, {
   role: 'assistant',
   characterId: character.id,
@@ -101,10 +129,98 @@ const worldRpLog = events.worldEventRpMessages(worldRpEvent.id);
 if (
   worldRpLog.length !== 2
   || worldRpLog[0].id !== userWorldTurn.id
+  || worldRpLog[0].content !== 'I revise the note beside the umbrella.'
+  || worldRpLog[0].speaker !== companion.name
+  || worldRpLog[0].characterId !== companion.id
   || worldRpLog[1].id !== assistantWorldTurn.id
   || worldRpLog[1].characterId !== character.id
 ) {
   throw new Error('World event RP turns were not stored on the event log.');
+}
+
+const worldPromptPreset = promptPresets.parseSillyTavernPromptPreset(JSON.stringify({
+  regex_scripts: [{
+    id: 'world_regex_remove',
+    scriptName: 'Remove world test token',
+    findRegex: 'DROP_WORLD_TOKEN',
+    replaceString: '',
+  }],
+  prompts: [
+    {
+      identifier: 'world_rules',
+      name: 'World preset rules',
+      role: 'system',
+      content: 'WORLD_PRESET_RULE {{char}} {{user}} {{lastUserMessage}}',
+    },
+    { identifier: 'worldInfoBefore', name: 'World info', role: 'system', marker: true, content: '' },
+    { identifier: 'charDescription', name: 'Character info', role: 'system', marker: true, content: '' },
+    { identifier: 'chatHistory', name: 'World RP history', role: 'system', marker: true, content: '' },
+  ],
+  prompt_order: [{
+    character_id: 100001,
+    order: [
+      { identifier: 'world_rules', enabled: true },
+      { identifier: 'worldInfoBefore', enabled: true },
+      { identifier: 'charDescription', enabled: true },
+      { identifier: 'chatHistory', enabled: true },
+    ],
+  }],
+}), 'world-preset.json', 1200);
+stateModule.state.promptPresets.push(worldPromptPreset);
+stateModule.state.activeWorldPromptPresetId = worldPromptPreset.id;
+stateModule.state.worldPromptPresetEnabled = true;
+let worldRpPayload: any;
+async function assertWorldPresetGeneration() {
+  (globalThis as any).fetch = async (_input: string, init?: { body?: string }) => {
+    worldRpPayload = init?.body ? JSON.parse(init.body) : undefined;
+    return new Response(JSON.stringify({
+      choices: [{ message: { content: 'DROP_WORLD_TOKEN @bubble:Event Character|gentle|Preset reply.' } }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  const generated = await events.generateWorldEventRpReply(worldRpEvent.id, character);
+  const promptText = worldRpPayload?.messages?.map((message: { content: string }) => message.content).join('\n') ?? '';
+  if (
+    !promptText.includes('WORLD_PRESET_RULE Event Character')
+    || !promptText.includes('I revise the note beside the umbrella.')
+    || !promptText.includes('Event Companion')
+    || !promptText.includes('World RP history')
+    || generated.content.includes('DROP_WORLD_TOKEN')
+    || !generated.content.includes('Preset reply.')
+  ) {
+    throw new Error('World RP generation did not use the selected SillyTavern-style world prompt preset and regex script.');
+  }
+}
+let explicitEventPayload: any;
+async function assertExplicitEventGeneration() {
+  (globalThis as any).fetch = async (_input: string, init?: { body?: string }) => {
+    explicitEventPayload = init?.body ? JSON.parse(init.body) : undefined;
+    return new Response(JSON.stringify({
+      choices: [{
+        message: {
+          content: '{"title":"User-led generated thread","type":"daily","description":"A small cafe update is ready for the selected companion.","affinityDelta":0,"choices":[{"label":"Record it","intent":"Keep the update in the world event flow.","affinityDelta":0}]}',
+        },
+      }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  const generated = await events.generateWorldEvent(undefined, 'model', {
+    leadActor: {
+      type: 'user',
+      id: 'user',
+      name: 'Event User',
+    },
+    participantCharacterIds: [companion.id],
+  });
+  const promptText = explicitEventPayload?.messages?.map((message: { content: string }) => message.content).join('\n') ?? '';
+  if (
+    generated.leadActor?.type !== 'user'
+    || generated.participantCharacterIds.length !== 1
+    || generated.participantCharacterIds[0] !== companion.id
+    || promptText.includes('Event Character trusts Event Companion during storms.')
+    || !promptText.includes('Event User')
+    || !promptText.includes('Event Companion')
+  ) {
+    throw new Error('Explicit user-led event generation should use the chosen lead actor and selected participants only.');
+  }
 }
 const bracketlessBubbleSegments = rpRendering.parseRpRenderSegments('@bubble:Event Character|gentle|I saw the note.', {
   fallbackSpeaker: 'Event Character',
@@ -194,7 +310,7 @@ if (
   throw new Error('Event outcome prompt is missing phone-action constraints or leaked chat formatting.');
 }
 
-(globalThis as any).fetch = async () => new Response(JSON.stringify({
+const eventOutcomeFetch = async () => new Response(JSON.stringify({
   choices: [{
     message: {
       content: '{"result":"They talked it out under the umbrella and became more comfortable with each other.","affinityDelta":5}',
@@ -203,6 +319,12 @@ if (
 }), { status: 200, headers: { 'content-type': 'application/json' } });
 
 async function main() {
+  await assertExplicitEventGeneration();
+  await assertWorldPresetGeneration();
+  stateModule.state.activeWorldPromptPresetId = promptPresets.TAVERN_SOCIAL_DEFAULT_WORLD_PROMPT_PRESET_ID;
+  stateModule.state.worldPromptPresetEnabled = true;
+  (globalThis as any).fetch = eventOutcomeFetch;
+
   await events.resolveWorldEventChoice(created.id, created.choices[0].id);
   if (character.relationship.affinity !== 5 || !character.relationship.summary.includes('Unexpected rain')) {
     throw new Error('Event branch resolution did not update the participant relationship.');
@@ -292,6 +414,17 @@ async function main() {
   }
   if (direct.status !== 'resolved') {
     throw new Error('Resolved event status was not persisted.');
+  }
+  const directResolvedTimeline = stateModule.state.timelineEntries.find((entry: any) =>
+    entry.source.type === 'event' && entry.source.id === `${direct.id}:resolved`,
+  );
+  if (
+    !directResolvedTimeline
+    || directResolvedTimeline.type !== 'event'
+    || !directResolvedTimeline.includeInContext
+    || !directResolvedTimeline.summary.includes('This event is closed')
+  ) {
+    throw new Error('Directly ended events should be archived into the world timeline with an event-specific summary.');
   }
 
   const multi = events.createWorldEvent({
@@ -446,6 +579,8 @@ async function main() {
     deleteContext: true,
     eventTimeline: true,
     eventTimelineRevoked: true,
+    userLeadActor: true,
+    explicitEventGeneration: true,
     bracketlessBubbleRendering: true,
     secondWorldId: secondWorld.id,
   }));

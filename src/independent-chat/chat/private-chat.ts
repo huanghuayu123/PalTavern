@@ -11,6 +11,11 @@ import { addRelationshipTimelineEntry } from '../memory/timeline';
 import { waitForModelTyping } from './typing-delay';
 import { nowId } from '../core/utils';
 
+export type PrivateChatSpeaker = {
+  speakerType: 'user' | 'character';
+  speakerCharacterId?: string;
+};
+
 export let statusText = '独立应用已启动。';
 const openingRequests = new Set<string>();
 let replyController: AbortController | null = null;
@@ -295,13 +300,18 @@ function appendUserMessage(
   conversation: ConversationProfile,
   content: string,
   replyToId?: string,
+  speaker: PrivateChatSpeaker = { speakerType: 'user' },
 ): void {
   const createdAt = Date.now();
+  // Big comment: the message stays in the current private chat; this only records the selected speaking identity.
+  const speakerType = speaker.speakerType === 'character' && speaker.speakerCharacterId ? 'character' : 'user';
   state.messages.push({
     id: nowId('msg'),
     conversationId: conversation.id,
     characterId: character.id,
     role: 'user',
+    speakerType,
+    speakerCharacterId: speakerType === 'character' ? speaker.speakerCharacterId : undefined,
     content,
     replyToId,
     variants: [{
@@ -444,7 +454,12 @@ export async function generateOpeningMessage(character: CharacterProfile, onChan
   }
 }
 
-export async function sendUserMessageOnly(content: string, onChange: () => void, replyToId?: string): Promise<void> {
+export async function sendUserMessageOnly(
+  content: string,
+  onChange: () => void,
+  replyToId?: string,
+  speaker?: PrivateChatSpeaker,
+): Promise<void> {
   const character = activeCharacter();
   if (!character) {
     statusText = '请先导入角色卡。';
@@ -459,7 +474,7 @@ export async function sendUserMessageOnly(content: string, onChange: () => void,
     return;
   }
   const conversation = ensureConversation(character);
-  appendUserMessage(character, conversation, text, replyToId);
+  appendUserMessage(character, conversation, text, replyToId, speaker);
   statusText = '已发送。可以继续发短消息，或点生成回复。';
   onChange();
 }
@@ -480,7 +495,12 @@ export async function generateReply(onChange: () => void): Promise<void> {
   await generateModelReply(character, conversation, onChange);
 }
 
-export async function sendMessage(content: string, onChange: () => void, replyToId?: string): Promise<void> {
+export async function sendMessage(
+  content: string,
+  onChange: () => void,
+  replyToId?: string,
+  speaker?: PrivateChatSpeaker,
+): Promise<void> {
   const character = activeCharacter();
   if (!character) {
     statusText = '请先导入角色卡。';
@@ -497,11 +517,15 @@ export async function sendMessage(content: string, onChange: () => void, replyTo
     return;
   }
   const conversation = ensureConversation(character);
-  appendUserMessage(character, conversation, text, replyToId);
+  appendUserMessage(character, conversation, text, replyToId, speaker);
   await generateModelReply(character, conversation, onChange);
 }
 
-export async function sendStickerMessage(stickerId: string, onChange: () => void): Promise<void> {
+export async function sendStickerMessage(
+  stickerId: string,
+  onChange: () => void,
+  speaker: PrivateChatSpeaker = { speakerType: 'user' },
+): Promise<void> {
   const character = activeCharacter();
   const sticker = findUserStickerById(stickerId);
   if (!character || !sticker) {
@@ -516,11 +540,14 @@ export async function sendStickerMessage(stickerId: string, onChange: () => void
   }
   const conversation = ensureConversation(character);
   const createdAt = Date.now();
+  const speakerType = speaker.speakerType === 'character' && speaker.speakerCharacterId ? 'character' : 'user';
   state.messages.push({
     id: nowId('sticker'),
     conversationId: conversation.id,
     characterId: character.id,
     role: 'user',
+    speakerType,
+    speakerCharacterId: speakerType === 'character' ? speaker.speakerCharacterId : undefined,
     content: `[表情包：${sticker.name}]`,
     stickerId: sticker.id,
     variants: [{

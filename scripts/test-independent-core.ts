@@ -223,6 +223,10 @@ if (
 }
 
 const appSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/ui/app.ts'), 'utf8');
+const androidMainActivitySource = fs.readFileSync(path.join(
+  process.cwd(),
+  'android/app/src/main/java/com/tavernsocial/app/MainActivity.java',
+), 'utf8');
 const worldDialogueBody = functionBody(appSource, 'renderWorldDialogueStream');
 const worldComposerBindingBody = functionBody(appSource, 'bindUi');
 if (worldDialogueBody.includes('messagesFor(')) {
@@ -237,7 +241,29 @@ if (
 ) {
   throw new Error('World RP render-mode buttons should be wired as real world-stage controls.');
 }
-
+if (
+  !appSource.includes('data-end-world-rp-event')
+  || !appSource.includes('finishWorldEventManually')
+  || !appSource.includes('buildWorldEventAutoCloseSummary')
+) {
+  throw new Error('World RP detail should expose an end-event button that archives through the event timeline flow.');
+}
+if (
+  !appSource.includes('renderPrivateChatSpeakerPicker')
+  || !appSource.includes('id="private-chat-speaker-select"')
+  || !appSource.includes('privateChatSpeakerId')
+) {
+  throw new Error('Private chat should expose a stable user/character speaker switch.');
+}
+if (
+  !appSource.includes('activeWorldPromptPresetId')
+  || !appSource.includes('worldPromptPresetEnabled')
+  || !appSource.includes('id="active-world-prompt-preset"')
+  || !appSource.includes('id="world-prompt-preset-enabled"')
+  || !appSource.includes('restore-tavern-social-world-prompt-preset')
+) {
+  throw new Error('Settings prompt presets should expose a separate world RP preset slot.');
+}
 const weatherState = stateModule.normalizeState({
   worlds: [{
     id: 'weather_world',
@@ -698,6 +724,28 @@ if (
   throw new Error('Character-to-character relationship pairs should be unique and keep two independent non-affinity sides.');
 }
 character.personality = '克制、理性、疏离';
+stateModule.state.activeCharacterId = character.id;
+chat.sendUserMessageOnly('Relationship Peer borrows this private chat slot.', () => {}, undefined, {
+  speakerType: 'character',
+  speakerCharacterId: relationshipPeer.id,
+});
+const authoredPrivateMessage = stateModule.messagesFor(character.id).at(-1);
+if (
+  !authoredPrivateMessage
+  || authoredPrivateMessage.characterId !== character.id
+  || authoredPrivateMessage.speakerType !== 'character'
+  || authoredPrivateMessage.speakerCharacterId !== relationshipPeer.id
+) {
+  throw new Error('Private chat character-speaker messages should stay in the active conversation and keep speaker metadata.');
+}
+const authoredPromptMessages = model.buildModelMessages(character);
+if (
+  !authoredPromptMessages.some((message: { content: string }) =>
+    message.content.includes('Relationship Peer')
+    && message.content.includes('Relationship Peer borrows this private chat slot.'))
+) {
+  throw new Error('Private chat model context should label character-authored user turns with the selected speaker.');
+}
 character.firstMessage = 'FORBIDDEN_PROMPT_OPENING';
 character.stickers = [{
   id: 'sticker_smile',
@@ -1040,6 +1088,14 @@ const typingDelaySource = fs.existsSync(typingDelayPath)
   : '';
 const indexHtmlSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/index.html'), 'utf8');
 const styleSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/styles.css'), 'utf8');
+const switchInputBlock = styleSource.split('.switch-control input {')[1]?.split('}')[0] ?? '';
+const switchTrackBlock = styleSource.split('.switch-track {')[1]?.split('}')[0] ?? '';
+if (
+  !switchInputBlock.includes('z-index: 1;')
+  || !switchTrackBlock.includes('pointer-events: none;')
+) {
+  throw new Error('Custom switch decorations must not block taps on the real checkbox.');
+}
 const profileNoteGenerationBlock = uiSource
   .split('async function generateImportProfileNote')[1]
   ?.split('function cleanGeneratedPacingStrategy')[0] ?? '';
@@ -1094,6 +1150,15 @@ const timelineIdleRenderBranch = idleRenderBlock
 const eventComposerIdleRenderBranch = idleRenderBlock
   .split("input.closest('.event-composer-dialog')")[1]
   ?.split('} else if (input.dataset.eventManualInput)')[0] ?? '';
+const promptPresetSwitchHandlerBlock = uiSource
+  .split("document.querySelector<HTMLInputElement>('#chat-prompt-preset-enabled')?.addEventListener('change'")[1]
+  ?.split("document.querySelector<HTMLInputElement>('#prompt-preset-name')")[0] ?? '';
+const promptRowSwitchHandlerBlock = uiSource
+  .split("document.querySelectorAll<HTMLInputElement>('[data-preset-prompt]').forEach")[1]
+  ?.split("document.querySelectorAll<HTMLInputElement>('[data-preset-prompt-name]')")[0] ?? '';
+const regexSwitchHandlerBlock = uiSource
+  .split("document.querySelectorAll<HTMLInputElement>('[data-preset-regex]').forEach")[1]
+  ?.split("document.querySelectorAll<HTMLInputElement>('[data-preset-regex-name]')")[0] ?? '';
 const restoreScrollBlock = uiSource
   .split('function restoreScrollIfNeeded')[1]
   ?.split('function applyScrollSnapshot')[0] ?? '';
@@ -1109,6 +1174,15 @@ const openTimelineMobileHandlerBlock = uiSource
 const mobileBackButtonBlock = uiSource
   .split("document.querySelector<HTMLButtonElement>('[data-mobile-back]')?.addEventListener('click'")[1]
   ?.split("document.querySelectorAll<HTMLButtonElement>('[data-open-model-settings]')")[0] ?? '';
+const hasMobileBackTargetBlock = uiSource
+  .split('function hasMobileBackTarget')[1]
+  ?.split('function pushMobileHistory')[0] ?? '';
+const closeMobileLayerBlock = uiSource
+  .split('function closeMobileLayer')[1]
+  ?.split('function backMobileLayer')[0] ?? '';
+const androidBackListenerBlock = uiSource
+  .split("window.addEventListener('tavern-social-android-back'")[1]
+  ?.split('mobileNativeBackInstalled = true')[0] ?? '';
 const mobileGroupBackButtonBlock = uiSource
   .split("document.querySelector<HTMLButtonElement>('[data-mobile-group-back]')?.addEventListener('click'")[1]
   ?.split("document.querySelector<HTMLButtonElement>('[data-group-list-back]')")[0] ?? '';
@@ -1241,6 +1315,13 @@ if (
   || !/captureEventComposerDraftFromDom\(\);\r?\n\s*return;/.test(eventComposerIdleRenderBranch)
 ) {
   throw new Error('World and event forms should drop idle scheduler renders instead of refreshing after blur.');
+}
+if (
+  !promptPresetSwitchHandlerBlock.includes('preserveScrollForNextRender();')
+  || !promptRowSwitchHandlerBlock.includes('preserveScrollForNextRender();')
+  || !regexSwitchHandlerBlock.includes('preserveScrollForNextRender();')
+) {
+  throw new Error('Prompt preset switches should preserve the current scroll position when they re-render.');
 }
 if (
   !uiSource.includes("let actionMenuAnchor: { kind: 'message' | 'group'; id: string; top: number } | null = null")
@@ -1396,6 +1477,19 @@ if (
   throw new Error('Mobile navigation should push section history and route visible back buttons through the single-layer back handler.');
 }
 if (
+  !hasMobileBackTargetBlock.includes('Boolean(activeWorldRpEventId)')
+  || !hasMobileBackTargetBlock.includes('Boolean(worldRpMessageEditId)')
+  || closeMobileLayerBlock.indexOf('if (worldRpMessageEditId)') < 0
+  || closeMobileLayerBlock.indexOf('if (activeWorldRpEventId)') < 0
+  || closeMobileLayerBlock.indexOf('if (activeWorldRpEventId)') > closeMobileLayerBlock.indexOf("if (mobileSection !== 'messages')")
+  || !androidBackListenerBlock.includes('event.preventDefault();')
+  || !androidBackListenerBlock.includes('closeMobileLayer()')
+  || !androidMainActivitySource.includes('OnBackPressedCallback')
+  || !androidMainActivitySource.includes('tavern-social-android-back')
+) {
+  throw new Error('Android hardware back should be bridged into the mobile in-app back stack before the activity can exit.');
+}
+if (
   !momentComposerMarkupBlock.includes('id="moment-author-select"')
   || !momentComposerMarkupBlock.includes('renderMomentVisibilityControls()')
   || !momentComposeMetaBlock.includes('grid-template-columns: minmax(0, 1fr) minmax(0, 1fr)')
@@ -1489,29 +1583,104 @@ if (
 const worldTopbarFinalBlock = styleSource.split('/* World topbar final mobile arrangement guard */')[1] ?? '';
 if (
   !worldTopbarFinalBlock.includes('grid-template-areas:')
-  || !worldTopbarFinalBlock.includes('"persona . gear"')
-  || !worldTopbarFinalBlock.includes('"event event event"')
+  || !worldTopbarFinalBlock.includes('"persona stage actions"')
   || !worldTopbarFinalBlock.includes('position: relative')
   || !worldTopbarFinalBlock.includes('.world-stage-header {')
-  || !worldTopbarFinalBlock.includes('position: absolute')
-  || !worldTopbarFinalBlock.includes('left: 50%')
-  || !worldTopbarFinalBlock.includes('transform: translateX(-50%)')
+  || !worldTopbarFinalBlock.includes('grid-area: stage')
   || !worldTopbarFinalBlock.includes('.world-stage-actions {')
-  || !worldTopbarFinalBlock.includes('display: contents')
+  || !worldTopbarFinalBlock.includes('grid-area: actions')
   || !worldTopbarFinalBlock.includes('#generate-event')
-  || !worldTopbarFinalBlock.includes('grid-area: event')
+  || !worldTopbarFinalBlock.includes('width: 36px')
   || !worldTopbarFinalBlock.includes('white-space: nowrap')
 ) {
-  throw new Error('Mobile world topbar should keep persona/settings on the first row, center the world title, and move generate-event into a horizontal second row.');
+  throw new Error('Mobile world topbar should stay one-row, with a light generate-event icon and centered world title.');
 }
 if (
-  !worldPersonaSummaryBlock.includes('renderUserAvatar()')
-  || !worldPersonaSummaryBlock.includes('personaName')
+  !worldWorkbenchBlock.includes('aria-label="生成事件"')
+  || !worldWorkbenchBlock.includes('<span class="world-action-label">生成事件</span>')
+) {
+  throw new Error('World generate-event should keep an accessible label while rendering as a lighter topbar action.');
+}
+if (
+  !worldPersonaSelectorBlock.includes('renderUserAvatar()')
+  || !worldPersonaSelectorBlock.includes('personaName')
   || !worldPersonaSummaryBlock.includes('⌄')
   || worldPersonaSummaryBlock.includes('<small')
   || worldPersonaSummaryBlock.includes('personaSummary')
 ) {
   throw new Error('World persona selector should only show avatar, user name, and dropdown arrow in the top bar.');
+}
+if (
+  !uiSource.includes('worldRpActorId')
+  || !worldPersonaSelectorBlock.includes('renderWorldRpActorOptions')
+  || !uiSource.includes('value="user"')
+  || !worldPersonaSelectorBlock.includes('data-world-rp-actor')
+  || worldPersonaSelectorBlock.includes('workbench-user-persona')
+) {
+  throw new Error('World persona selector should switch directly between user and character identities without editing persona text.');
+}
+if (
+  !uiSource.includes('let worldRpActorId')
+  || !uiSource.includes('function worldRpActor')
+  || !uiSource.includes("document.querySelector<HTMLSelectElement>('[data-world-rp-actor]')")
+  || !uiSource.includes('characterId: actor.characterId')
+  || !uiSource.includes('speaker: actor.name')
+) {
+  throw new Error('World RP submissions should preserve the selected user/character speaker identity.');
+}
+if (
+  !uiSource.includes('participantIds: string[]')
+  || !uiSource.includes('leadActor')
+  || !uiSource.includes('[data-event-participant]:checked')
+  || !uiSource.includes('data-event-participant')
+  || !uiSource.includes('data-event-composer-submit')
+  || !uiSource.includes('eventComposerLeadActor')
+  || !uiSource.includes('eventComposerParticipantIds')
+  || uiSource.includes("fieldValue<HTMLSelectElement>('#event-participant-select')")
+  || uiSource.includes("mode: 'auto' | 'manual'")
+  || uiSource.includes('eventComposerDraft.mode')
+) {
+  throw new Error('World event composer should keep auto generation, lead actor, and multiple participating characters.');
+}
+const generateEventHandlerBlock = uiSource
+  .split("document.querySelector<HTMLButtonElement>('#generate-event')")[1]
+  ?.split("document.querySelectorAll<HTMLButtonElement>('[data-event-choice]')")[0] ?? '';
+if (
+  !generateEventHandlerBlock.includes('openEventComposer')
+  || generateEventHandlerBlock.includes('generateWorldEvent(')
+  || generateEventHandlerBlock.includes('modelIsReady()')
+) {
+  throw new Error('World generate-event button should open the unified event composer instead of generating immediately.');
+}
+if (
+  uiSource.includes('data-event-composer-mode')
+  || uiSource.includes('data-open-event-composer-mode="manual"')
+  || uiSource.includes("openEventComposer('manual')")
+  || uiSource.includes('手写记录')
+  || uiSource.includes('手写小事')
+  || uiSource.includes('记录一件事')
+) {
+  throw new Error('World event UI should remove the manual record feature and only expose generated events.');
+}
+const eventComposerDialogBlock = functionBody(uiSource, 'renderEventComposerDialog');
+if (
+  !eventComposerDialogBlock.includes('renderEventComposerLeadActor')
+  || !eventComposerDialogBlock.includes('renderEventParticipantSelect')
+  || !eventComposerDialogBlock.includes('data-event-composer-submit')
+) {
+  throw new Error('World event dialog should expose lead identity, participant picker, and one generated-event submit action.');
+}
+const eventComposerSubmitBlock = functionBody(uiSource, 'bindUi');
+if (
+  eventComposerSubmitBlock.includes('createWorldEvent(')
+  || eventComposerSubmitBlock.includes("eventComposerDraft.mode === 'auto'")
+  || !eventComposerSubmitBlock.includes('eventComposerLeadActor()')
+  || !eventComposerSubmitBlock.includes('eventComposerParticipantIds()')
+  || !eventComposerSubmitBlock.includes('generateWorldEvent(')
+  || !eventComposerSubmitBlock.includes('activeWorldRpEventId = worldEvent.id')
+  || !eventComposerSubmitBlock.includes('preserveScrollForNextRender()')
+) {
+  throw new Error('World event submit should only generate, carry lead actor/participants, open RP detail, and preserve scroll.');
 }
 if (
   !worldWorkbenchBlock.includes('旁白 + 对话')
@@ -1526,12 +1695,47 @@ if (
 ) {
   throw new Error('World workbench should render daily RP narration, dialogue, event, and world-setting surfaces.');
 }
+if (
+  !worldWorkbenchBlock.includes('const selectedEvent = selectedWorldRpEvent()')
+  || worldWorkbenchBlock.includes('ensureWorldRpEvent(character)')
+  || !worldWorkbenchBlock.includes('selectedEvent')
+  || !worldWorkbenchBlock.includes('? renderWorldEventRpDetail(selectedEvent, character)')
+  || !worldWorkbenchBlock.includes(': renderWorldEventLobby(worldEvents, character)')
+  || !worldWorkbenchBlock.includes("selectedEvent && selectedEvent.status !== 'resolved' ? renderWorldStageComposer(character)")
+) {
+  throw new Error('World page should default to the daily fragment list and only open RP detail after selecting an event.');
+}
+if (
+  !worldEventDetailBlock.includes('aria-label="返回日常"')
+  || !worldEventDetailBlock.includes('title="返回日常"')
+  || !worldEventDetailBlock.includes("icon('back')")
+  || worldEventDetailBlock.includes('>返回日常<')
+) {
+  throw new Error('World RP detail should use an icon-only return button with an accessible label.');
+}
+if (
+  !worldEventLobbyBlock.includes('conversation-entry')
+  || !worldEventLobbyBlock.includes('world-event-entry-main')
+  || !worldEventLobbyBlock.includes('world-event-entry-meta')
+  || !worldEventLobbyBlock.includes('world-event-entry-status')
+  || worldEventLobbyBlock.includes('settings-kicker')
+  || worldEventLobbyBlock.includes('手写记录')
+) {
+  throw new Error('World event lobby should read like a lightweight conversation list, not a management card stack.');
+}
+if (
+  worldDialogueBody.includes('render-mode-switch')
+  || worldDialogueBody.includes('data-world-rp-render-mode')
+  || !worldSettingsPanelBlock.includes('renderWorldRenderModeSetting')
+) {
+  throw new Error('World RP render-mode controls should move out of the main reading stream into the settings drawer.');
+}
 // Big guard: the world entry must feel like an RP stage first. Event controls and timeline memory belong in the drawer, not in the main stream.
 if (
   !uiSource.includes('id="world-rp-composer"')
   || !uiSource.includes('id="world-rp-input"')
   || !worldWorkbenchBlock.includes('renderWorldStageHeader')
-  || !worldWorkbenchBlock.includes('selectedEvent ? renderWorldStageComposer(character)')
+  || !worldWorkbenchBlock.includes("selectedEvent && selectedEvent.status !== 'resolved' ? renderWorldStageComposer(character)")
   || !worldEventDetailBlock.includes('renderWorldDialogueStream')
   || !worldEventDetailBlock.includes('data-close-world-event-rp')
   || !worldEventLobbyBlock.includes('data-open-world-event-rp')
@@ -1549,6 +1753,20 @@ if (
   || !styleSource.includes('.world-drawer-section')
 ) {
   throw new Error('World tab should list daily/event entries first and open RP dialogue only after selecting one.');
+}
+if (
+  !worldDialogueBody.includes('data-edit-world-rp-message')
+  || !worldWorkbenchBlock.includes('renderWorldRpMessageEditDialog')
+  || !appSource.includes('id="world-rp-message-edit-input"')
+  || !appSource.includes('editWorldEventRpMessage')
+) {
+  throw new Error('World RP user actions should be editable from inside the event dialogue.');
+}
+if (
+  !styleSource.includes('.world-event-detail-toolbar')
+  || !styleSource.includes('position: sticky')
+) {
+  throw new Error('World RP return toolbar should stay visible instead of forcing users to scroll back to the top.');
 }
 if (
   !idleRenderBlock.includes("input.id === 'world-rp-input'")

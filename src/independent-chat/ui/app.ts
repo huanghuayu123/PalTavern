@@ -22,6 +22,7 @@ import type {
   StickerAsset,
   TimelineEntry,
   WorldEvent,
+  WorldEventLeadActor,
   WorldWeatherLocation,
 } from '../core/types';
 import {
@@ -85,9 +86,9 @@ import {
   setStatusText as setChatStatusText,
   statusText,
   stopReply,
+  type PrivateChatSpeaker,
 } from '../chat/private-chat';
 import {
-  createWorldEvent,
   deleteWorldEvent,
   eventTypeLabel,
   eventsForActiveWorld,
@@ -95,6 +96,7 @@ import {
   generateWorldEvent,
   generateWorldEventRpReply,
   appendWorldEventRpMessage,
+  editWorldEventRpMessage,
   ensureWorldRpEvent,
   resolveWorldEvent,
   resolveWorldEventChoice,
@@ -192,10 +194,12 @@ import { callAuthoringModel, callModel, fetchModelList, testModelConnection } fr
 import {
   createTavernSocialDefaultGroupPromptPreset,
   createTavernSocialDefaultPromptPreset,
+  createTavernSocialDefaultWorldPromptPreset,
   parseSillyTavernPromptPreset,
   resetPromptPresetDefaults,
   TAVERN_SOCIAL_DEFAULT_GROUP_PROMPT_PRESET_ID,
   TAVERN_SOCIAL_DEFAULT_PROMPT_PRESET_ID,
+  TAVERN_SOCIAL_DEFAULT_WORLD_PROMPT_PRESET_ID,
 } from '../model/prompt-presets';
 import { findStickerById } from '../media/stickers';
 import { clampVirtualTimeMinutes, companionTimeModeLabel, formatClockMinutes, formatCompanionDateTime } from '../core/time';
@@ -232,7 +236,8 @@ type PendingStickerImport = {
 type EventComposerDraft = {
   title: string;
   description: string;
-  participantId: string;
+  participantIds: string[];
+  leadActor?: WorldEventLeadActor;
   affinityDelta: string;
 };
 type UiScrollSnapshot = {
@@ -273,6 +278,8 @@ type UiSessionSnapshot = {
   activeWorldRpEventId?: string;
   worldRpRenderMode?: 'narration' | 'bubble';
   worldRpReplyMode?: ChatReplyMode;
+  worldRpActorId?: string;
+  privateChatSpeakerId?: string;
   eventComposerOpen?: boolean;
   eventComposerDraft?: EventComposerDraft;
   messageDrafts?: Record<string, string>;
@@ -327,7 +334,10 @@ let worldRpInputDraft = '';
 let activeWorldRpEventId = '';
 let worldRpRenderMode: 'narration' | 'bubble' = 'narration';
 let worldRpReplyMode: ChatReplyMode = 'auto';
-let eventComposerDraft: EventComposerDraft = { title: '', description: '', participantId: '', affinityDelta: '0' };
+let worldRpMessageEditId = '';
+let worldRpActorId = 'user';
+let privateChatSpeakerId = 'user';
+let eventComposerDraft: EventComposerDraft = { title: '', description: '', participantIds: [], affinityDelta: '0' };
 const momentCommentDrafts = new Map<string, string>();
 const momentCommentAuthorDrafts = new Map<string, string>();
 const momentCommentReplyTargetDrafts = new Map<string, string>();
@@ -395,6 +405,7 @@ let modelOnboardingDraft = {
 const compactMedia = window.matchMedia('(max-width: 980px)');
 let mediaListenerInstalled = false;
 let mobileHistoryInstalled = false;
+let mobileNativeBackInstalled = false;
 let visualViewportListenerInstalled = false;
 let uiSessionPersistenceInstalled = false;
 let uiSessionSaveTimer: number | undefined;
@@ -421,12 +432,26 @@ function nonEmptyStringMap(value: unknown): Record<string, string> {
   return Object.fromEntries(entries) as Record<string, string>;
 }
 
+function isWorldEventLeadActor(value: unknown): value is WorldEventLeadActor {
+  if (!value || typeof value !== 'object') return false;
+  const actor = value as Record<string, unknown>;
+  return (actor.type === 'user' || actor.type === 'character')
+    && typeof actor.id === 'string'
+    && typeof actor.name === 'string';
+}
+
 function normalizeEventDraft(value: unknown): EventComposerDraft {
   const draft = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+  const participantIds = Array.isArray(draft.participantIds)
+    ? draft.participantIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+    : typeof draft.participantId === 'string' && draft.participantId
+      ? [draft.participantId]
+      : [];
   return {
     title: typeof draft.title === 'string' ? draft.title : '',
     description: typeof draft.description === 'string' ? draft.description : '',
-    participantId: typeof draft.participantId === 'string' ? draft.participantId : '',
+    participantIds,
+    leadActor: isWorldEventLeadActor(draft.leadActor) ? draft.leadActor : undefined,
     affinityDelta: typeof draft.affinityDelta === 'string' ? draft.affinityDelta : '0',
   };
 }
@@ -448,14 +473,13 @@ function currentScrollKey(): string {
 }
 
 function captureEventComposerDraftFromDom(): void {
-  const title = document.querySelector<HTMLInputElement>('#event-title')?.value;
-  const description = document.querySelector<HTMLTextAreaElement>('#event-description')?.value;
-  const participantId = document.querySelector<HTMLSelectElement>('#event-participant-select')?.value;
-  const affinityDelta = document.querySelector<HTMLInputElement>('#event-affinity-delta')?.value;
-  if (title !== undefined) eventComposerDraft.title = title;
-  if (description !== undefined) eventComposerDraft.description = description;
-  if (participantId !== undefined) eventComposerDraft.participantId = participantId;
-  if (affinityDelta !== undefined) eventComposerDraft.affinityDelta = affinityDelta || '0';
+  const participantInputs = Array.from(document.querySelectorAll<HTMLInputElement>('[data-event-participant]'));
+  if (participantInputs.length > 0) {
+    eventComposerDraft.participantIds = participantInputs
+      .filter(input => input.checked)
+      .map(input => input.value)
+      .filter(Boolean);
+  }
 }
 
 function captureVisibleDraftsFromDom(): void {
@@ -504,6 +528,8 @@ function captureVisibleDraftsFromDom(): void {
   if (timelineNote) timelineNoteDraft = timelineNote.value;
   const worldRpInput = document.querySelector<HTMLTextAreaElement>('#world-rp-input');
   if (worldRpInput) worldRpInputDraft = worldRpInput.value;
+  const privateChatSpeaker = document.querySelector<HTMLSelectElement>('#private-chat-speaker-select');
+  if (privateChatSpeaker) privateChatSpeakerId = privateChatSpeaker.value || 'user';
   document.querySelectorAll<HTMLInputElement>('[data-comment-input]').forEach(input => {
     const momentId = input.dataset.commentInput;
     if (momentId) {
@@ -563,6 +589,8 @@ function captureUiSessionSnapshot({ captureDom = true } = {}): UiSessionSnapshot
     activeWorldRpEventId,
     worldRpRenderMode,
     worldRpReplyMode,
+    worldRpActorId,
+    privateChatSpeakerId,
     eventComposerOpen,
     eventComposerDraft,
     messageDrafts: Object.fromEntries(messageDrafts),
@@ -684,12 +712,23 @@ function restoreUiSessionSnapshot(): void {
     }
     timelineNoteDraft = typeof parsed.timelineNoteDraft === 'string' ? parsed.timelineNoteDraft : '';
     worldRpInputDraft = typeof parsed.worldRpInputDraft === 'string' ? parsed.worldRpInputDraft : '';
-    activeWorldRpEventId = typeof parsed.activeWorldRpEventId === 'string'
-      && state.worldEvents.some(event => event.id === parsed.activeWorldRpEventId)
-      ? parsed.activeWorldRpEventId
-      : '';
+    activeWorldRpEventId = '';
     worldRpRenderMode = parsed.worldRpRenderMode === 'bubble' ? 'bubble' : 'narration';
     worldRpReplyMode = parsed.worldRpReplyMode === 'manual' ? 'manual' : 'auto';
+    worldRpActorId = typeof parsed.worldRpActorId === 'string'
+      && (
+        parsed.worldRpActorId === 'user'
+        || state.characters.some(character => character.id === parsed.worldRpActorId && character.worldId === activeWorld().id)
+      )
+      ? parsed.worldRpActorId
+      : 'user';
+    privateChatSpeakerId = typeof parsed.privateChatSpeakerId === 'string'
+      && (
+        parsed.privateChatSpeakerId === 'user'
+        || state.characters.some(character => character.id === parsed.privateChatSpeakerId && character.worldId === activeWorld().id)
+      )
+      ? parsed.privateChatSpeakerId
+      : 'user';
     eventComposerOpen = Boolean(parsed.eventComposerOpen);
     eventComposerDraft = normalizeEventDraft(parsed.eventComposerDraft);
     messageDrafts.clear();
@@ -812,6 +851,8 @@ function hasMobileBackTarget(): boolean {
     || momentsTutorialOpen
     || characterPanelOpen
     || eventComposerOpen
+    || Boolean(worldRpMessageEditId)
+    || Boolean(activeWorldRpEventId)
     || momentComposerOpen
     || stickerPickerOpen
     || Boolean(messageEditId)
@@ -906,6 +947,18 @@ function closeMobileLayer(): boolean {
   }
   if (eventComposerOpen) {
     eventComposerOpen = false;
+    saveUiSessionSnapshot();
+    return true;
+  }
+  if (worldRpMessageEditId) {
+    worldRpMessageEditId = '';
+    saveUiSessionSnapshot();
+    return true;
+  }
+  if (activeWorldRpEventId) {
+    activeWorldRpEventId = '';
+    worldRpInputDraft = '';
+    worldRpMessageEditId = '';
     saveUiSessionSnapshot();
     return true;
   }
@@ -1386,7 +1439,7 @@ function renderAvatar(character: CharacterProfile): string {
     : escapeHtml(character.name.slice(0, 1));
 }
 
-type IconName = 'message' | 'contacts' | 'world' | 'moments' | 'events' | 'timeline' | 'settings' | 'search' | 'send' | 'refresh' | 'import' | 'sticker' | 'add';
+type IconName = 'message' | 'contacts' | 'world' | 'moments' | 'events' | 'timeline' | 'settings' | 'search' | 'send' | 'refresh' | 'import' | 'sticker' | 'add' | 'back';
 
 function icon(name: IconName): string {
   const paths: Record<IconName, string> = {
@@ -1403,6 +1456,7 @@ function icon(name: IconName): string {
     import: '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/>',
     sticker: '<rect x="3" y="3" width="18" height="18" rx="5"/><path d="M8 10h.01M16 10h.01M8.5 15a5 5 0 0 0 7 0"/><path d="M15 21a6 6 0 0 1 6-6"/>',
     add: '<path d="M12 5v14M5 12h14"/>',
+    back: '<path d="M15 18 9 12l6-6"/><path d="M9 12h12"/>',
   };
   return `<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true">${paths[name]}</svg>`;
 }
@@ -1847,6 +1901,47 @@ function renderChatStatusShelf(character?: CharacterProfile): string {
   `;
 }
 
+function privateChatSpeaker(): PrivateChatSpeaker {
+  const speakerCharacter = state.characters.find(character =>
+    character.id === privateChatSpeakerId && character.worldId === activeWorld().id,
+  );
+  if (speakerCharacter) {
+    return { speakerType: 'character', speakerCharacterId: speakerCharacter.id };
+  }
+  privateChatSpeakerId = 'user';
+  return { speakerType: 'user' };
+}
+
+function privateChatSpeakerName(message: ChatMessage): string {
+  if (message.speakerType === 'character' && message.speakerCharacterId) {
+    return state.characters.find(character => character.id === message.speakerCharacterId)?.name ?? '已删除角色';
+  }
+  return state.userName.trim() || '我';
+}
+
+function privateChatSpeakerAvatar(message: ChatMessage): string {
+  if (message.speakerType === 'character' && message.speakerCharacterId) {
+    const character = state.characters.find(item => item.id === message.speakerCharacterId);
+    return character ? renderAvatar(character) : escapeHtml(privateChatSpeakerName(message).slice(0, 1));
+  }
+  return renderUserAvatar();
+}
+
+function renderPrivateChatSpeakerPicker(character?: CharacterProfile): string {
+  if (!character) return '';
+  const characters = state.characters.filter(item => item.worldId === activeWorld().id);
+  const selected = privateChatSpeaker().speakerType === 'character' ? privateChatSpeakerId : 'user';
+  return `
+    <label class="private-speaker-switch">
+      <span>发言身份</span>
+      <select id="private-chat-speaker-select" aria-label="选择私聊发言身份">
+        <option value="user" ${selected === 'user' ? 'selected' : ''}>${escapeHtml(userSelfLabel())}</option>
+        ${characters.map(item => `<option value="${escapeHtml(item.id)}" ${selected === item.id ? 'selected' : ''}>${escapeHtml(item.name)}</option>`).join('')}
+      </select>
+    </label>
+  `;
+}
+
 function renderMessages(character?: CharacterProfile): string {
   if (!character) {
     return `
@@ -1886,6 +1981,7 @@ function renderMessages(character?: CharacterProfile): string {
     const showTime = !previous || message.createdAt - previous.createdAt >= 5 * 60 * 1000;
     const variantInfo = messageVariantInfo(message);
     const memoryHint = messageTimelineHint(timelineEntriesByMessageId.get(message.id));
+    const selfAuthoredCharacter = message.role === 'user' && message.speakerType === 'character';
     if (message.impactRevokedAt) {
       return `
         ${showTime ? `<div class="message-time">${formatConversationTime(message.createdAt)}</div>` : ''}
@@ -1900,13 +1996,14 @@ function renderMessages(character?: CharacterProfile): string {
     }
     return `
     ${showTime ? `<div class="message-time">${formatConversationTime(message.createdAt)}</div>` : ''}
-    <div class="message-row ${message.role === 'assistant' ? 'assistant' : 'user'} ${messageActionId === message.id ? 'has-actions-open-above' : ''}">
+    <div class="message-row ${message.role === 'assistant' ? 'assistant' : 'user'} ${selfAuthoredCharacter ? 'is-authored-character' : ''} ${messageActionId === message.id ? 'has-actions-open-above' : ''}">
       ${message.role === 'assistant'
         ? `<button class="message-avatar assistant-avatar message-profile-trigger" type="button" data-message-profile-character="${escapeHtml(character.id)}" aria-label="查看 ${escapeHtml(character.name)} 和 user 的关系">${renderAvatar(character)}</button>`
-        : `<span class="message-avatar user-avatar" aria-hidden="true">${renderUserAvatar()}</span>`}
+        : `<span class="message-avatar user-avatar" aria-hidden="true">${privateChatSpeakerAvatar(message)}</span>`}
       <div class="message ${message.role === 'assistant' ? 'assistant' : 'user'} ${sticker ? 'sticker-message' : ''} ${messageActionId === message.id ? 'actions-open-above' : ''}"
         data-message-id="${escapeHtml(message.id)}" tabindex="0">
       <span class="swipe-quote-indicator" aria-hidden="true">↩</span>
+      ${selfAuthoredCharacter ? `<small class="message-speaker-label">${escapeHtml(privateChatSpeakerName(message))} · 手写身份</small>` : ''}
       ${quoted ? `<div class="message-quote">${quoted.impactRevokedAt ? '原消息影响已撤销' : quoted.recalledAt ? '原消息已撤回' : escapeHtml(compactText(quoted.content, 64))}</div>` : ''}
       ${sticker
         ? `<img src="${escapeHtml(sticker.dataUrl)}" alt="${escapeHtml(sticker.name)}" title="${escapeHtml(sticker.name)}" />`
@@ -2522,6 +2619,7 @@ function renderChatPane(character?: CharacterProfile, mobile = false): string {
       <section class="messages">${renderMessages(character)}</section>
       <div class="chat-composer-area">
         ${renderStickerPicker(character)}
+        ${renderPrivateChatSpeakerPicker(character)}
         ${quoted ? `
           <div class="composer-quote">
             <div><strong>引用消息</strong><span>${escapeHtml(compactText(quoted.content, 120))}</span></div>
@@ -2786,23 +2884,8 @@ function renderEventsPage(mobile = false): string {
               <span><b>${todayCount}</b><small>今日线索</small></span>
               <span><b>${activeCount}</b><small>待处理</small></span>
               </div>
-              <button class="secondary event-record-button" id="open-event-composer" type="button">记录一件事</button>
             </div>
           </section>
-          <template class="event-manual-panel">
-            <summary>记录一件事</summary>
-            <form id="event-composer" class="event-composer">
-              <div class="event-form-fields">
-                <input id="event-title" placeholder="事件标题" />
-                <textarea id="event-description" placeholder="发生了什么？这件事怎样影响后续生活？"></textarea>
-                ${renderEventParticipants()}
-                <label class="field"><span>建议关系影响（-20 到 20，分支结算后生效）</span><input id="event-affinity-delta" type="number" min="-20" max="20" value="0" /></label>
-              </div>
-              <div class="event-composer-actions">
-                <button class="primary" type="submit">创建事件</button>
-              </div>
-            </form>
-          </template>
           <div class="events-section-title"><strong>生活线索流</strong><span>${events.length} 条</span></div>
           <section class="events-feed">${renderEvents(events)}</section>
         </div>
@@ -2812,59 +2895,125 @@ function renderEventsPage(mobile = false): string {
   `;
 }
 
-function renderEventParticipantSelect(): string {
-  const characters = state.characters.filter(character => character.worldId === activeWorld().id);
+function currentWorldRpLeadActor(): WorldEventLeadActor {
+  const actor = worldRpActor();
+  if (actor.characterId) {
+    return {
+      type: 'character',
+      id: actor.characterId,
+      characterId: actor.characterId,
+      name: actor.name,
+    };
+  }
+  return {
+    type: 'user',
+    id: 'user',
+    name: actor.name || state.userName.trim() || '我',
+  };
+}
+
+function eventComposerLeadActor(): WorldEventLeadActor {
+  return isWorldEventLeadActor(eventComposerDraft.leadActor)
+    ? eventComposerDraft.leadActor
+    : currentWorldRpLeadActor();
+}
+
+function eventComposerParticipantIds(): string[] {
+  const worldId = activeWorld().id;
+  const leadActor = eventComposerLeadActor();
+  const selectedIds = eventComposerDraft.participantIds
+    .filter(id => state.characters.some(character => character.id === id && character.worldId === worldId));
+  const allIds = leadActor.type === 'character' && leadActor.characterId
+    ? [leadActor.characterId, ...selectedIds]
+    : selectedIds;
+  return [...new Set(allIds)];
+}
+
+function renderEventComposerLeadActor(): string {
+  const leadActor = eventComposerLeadActor();
+  const character = leadActor.characterId
+    ? state.characters.find(item => item.id === leadActor.characterId && item.worldId === activeWorld().id)
+    : undefined;
+  const avatar = character ? renderAvatar(character) : renderUserAvatar();
   return `
-    <label class="field event-linked-character-field">
-      <span>关联角色</span>
-      <select id="event-participant-select">
-        <option value="" ${eventComposerDraft.participantId ? '' : 'selected'}>整个世界</option>
-        ${characters.map(character =>
-          `<option value="${escapeHtml(character.id)}" ${character.id === eventComposerDraft.participantId ? 'selected' : ''}>${escapeHtml(character.name)}</option>`,
-        ).join('')}
-      </select>
-    </label>
+    <div class="event-lead-actor" data-event-lead-actor="${escapeHtml(leadActor.id)}">
+      <span class="avatar mini-avatar">${avatar}</span>
+      <span><small>当前身份</small><strong>${escapeHtml(leadActor.name)}</strong></span>
+    </div>
+  `;
+}
+
+function renderEventParticipantSelect(): string {
+  const leadActor = eventComposerLeadActor();
+  const characters = state.characters
+    .filter(character => character.worldId === activeWorld().id)
+    .filter(character => character.id !== leadActor.characterId);
+  if (characters.length === 0) {
+    return '<p class="muted">当前身份已参与；没有额外角色可选时，会按当前身份创建这件事。</p>';
+  }
+  const selected = new Set(eventComposerDraft.participantIds);
+  return `
+    <fieldset class="field event-linked-character-field event-participant-options">
+      <legend>额外参与角色</legend>
+      <div class="event-participant-grid">
+        ${characters.map(character => `
+          <label class="event-participant-option ${selected.has(character.id) ? 'is-active' : ''}">
+            <input type="checkbox" data-event-participant value="${escapeHtml(character.id)}" ${selected.has(character.id) ? 'checked' : ''} />
+            <span class="avatar mini-avatar">${renderAvatar(character)}</span>
+            <span>${escapeHtml(character.name)}</span>
+          </label>
+        `).join('')}
+      </div>
+      <small>当前身份会自动参与；这里勾选的是额外参与的人。</small>
+    </fieldset>
   `;
 }
 
 function renderEventComposerDialog(): string {
   if (!eventComposerOpen) return '';
   return `
-    <div class="event-composer-overlay" role="dialog" aria-modal="true" aria-label="记录一件事">
-      <button class="event-composer-backdrop" id="close-event-composer-backdrop" type="button" aria-label="关闭记录窗口"></button>
+    <div class="event-composer-overlay" role="dialog" aria-modal="true" aria-label="生成事件">
+      <button class="event-composer-backdrop" id="close-event-composer-backdrop" type="button" aria-label="关闭生成窗口"></button>
       <section class="event-composer-dialog">
         <header class="event-composer-dialog-header">
           <div>
-            <span>手动记录</span>
-            <h2>记录一件事</h2>
-            <p>写下刚发生的生活片段。完成后会进入生活线索，也会成为后续聊天可参考的近期记忆。</p>
+            <span>世界事件</span>
+            <h2>生成一件小事件</h2>
+            <p>确认当前身份和参与角色后，会直接生成一段日常片段并进入 RP 舞台。</p>
           </div>
-          <button class="icon-button" id="close-event-composer" type="button" aria-label="关闭记录窗口">×</button>
+          <button class="icon-button" id="close-event-composer" type="button" aria-label="关闭生成窗口">×</button>
         </header>
         <form id="event-composer" class="event-composer event-composer-modal">
           <div class="event-form-fields">
-            <label class="field">
-              <span>标题</span>
-              <input id="event-title" value="${escapeHtml(eventComposerDraft.title)}" placeholder="例如：两个人在便利店门口碰见了" />
-            </label>
+            ${renderEventComposerLeadActor()}
             ${renderEventParticipantSelect()}
-            <label class="field">
-              <span>正文</span>
-              <textarea id="event-description" placeholder="发生了什么？这件事可能怎样影响后续生活？">${escapeHtml(eventComposerDraft.description)}</textarea>
-            </label>
-            <label class="field">
-              <span>建议关系影响（-20 到 20，分支结算后生效）</span>
-              <input id="event-affinity-delta" type="number" min="-20" max="20" value="${escapeHtml(eventComposerDraft.affinityDelta || '0')}" />
-            </label>
+            <p class="event-auto-hint">会按当前身份和勾选角色生成一段日常生活事件，并直接插入世界 RP 流。</p>
           </div>
           <footer class="event-composer-actions">
             <button class="secondary" id="cancel-event-composer" type="button">取消</button>
-            <button class="primary" type="submit">创建事件</button>
+            <button class="primary" data-event-composer-submit type="submit" ${eventGenerating ? 'disabled' : ''}>${eventGenerating ? '生成中…' : '生成事件'}</button>
           </footer>
         </form>
       </section>
     </div>
   `;
+}
+
+function openEventComposer(): void {
+  captureVisibleDraftsFromDom();
+  const leadActor = currentWorldRpLeadActor();
+  eventComposerDraft = {
+    ...eventComposerDraft,
+    leadActor,
+    participantIds: eventComposerDraft.participantIds.filter(id => id !== leadActor.characterId),
+  };
+  eventComposerOpen = true;
+  preserveScrollForNextRender();
+  saveUiSessionSnapshot();
+  render();
+  window.requestAnimationFrame(() => {
+    document.querySelector<HTMLButtonElement>('[data-event-composer-submit]')?.focus();
+  });
 }
 
 function renderSettingsItems(): string {
@@ -3059,10 +3208,13 @@ function renderEventAvatars(event: WorldEvent): string {
 }
 
 function renderEventParticipantNames(event: WorldEvent): string {
-  return event.participantCharacterIds
+  const names = event.participantCharacterIds
     .map(id => state.characters.find(character => character.id === id)?.name)
-    .filter((name): name is string => Boolean(name))
-    .join('、') || '整个世界';
+    .filter((name): name is string => Boolean(name));
+  const leadName = event.leadActor?.name && !names.includes(event.leadActor.name)
+    ? event.leadActor.name
+    : '';
+  return [leadName, ...names].filter(Boolean).join('、') || '整个世界';
 }
 
 function eventImpactText(event: WorldEvent): string {
@@ -3333,13 +3485,45 @@ function renderTimelinePage(mobile = false): string {
   `;
 }
 
+function worldRpActor(): { id: string; name: string; character?: CharacterProfile; characterId?: string } {
+  const characters = state.characters.filter(character => character.worldId === activeWorld().id);
+  const selectedCharacter = characters.find(character => character.id === worldRpActorId);
+  if (selectedCharacter) {
+    return {
+      id: selectedCharacter.id,
+      name: selectedCharacter.name,
+      character: selectedCharacter,
+      characterId: selectedCharacter.id,
+    };
+  }
+  worldRpActorId = 'user';
+  return { id: 'user', name: state.userName.trim() || '我' };
+}
+
+function worldRpActiveCharacter(): CharacterProfile | undefined {
+  return worldRpActor().character
+    ?? activeCharacter()
+    ?? state.characters.find(character => character.worldId === activeWorld().id);
+}
+
+function renderWorldRpActorOptions(): string {
+  const characters = state.characters.filter(character => character.worldId === activeWorld().id);
+  return [
+    `<option value="user" ${worldRpActorId === 'user' ? 'selected' : ''}>${escapeHtml(state.userName.trim() || '我')}</option>`,
+    ...characters.map(character =>
+      `<option value="${escapeHtml(character.id)}" ${character.id === worldRpActorId ? 'selected' : ''}>${escapeHtml(character.name)}</option>`,
+    ),
+  ].join('');
+}
+
 function renderWorldPersonaSelector(): string {
-  const world = activeWorld();
-  const personaName = state.userName.trim() || '我';
+  const actor = worldRpActor();
+  const personaName = actor.name;
+  const avatar = actor.character ? renderAvatar(actor.character) : renderUserAvatar();
   return `
     <details class="world-persona-select">
       <summary>
-        <span class="avatar header-avatar">${renderUserAvatar()}</span>
+        <span class="avatar header-avatar">${avatar}</span>
         <span class="world-persona-name">
           <strong>${escapeHtml(personaName)}</strong>
         </span>
@@ -3347,14 +3531,9 @@ function renderWorldPersonaSelector(): string {
       </summary>
       <div class="world-persona-menu">
         <label class="field">
-          <span>你的名字</span>
-          <input id="workbench-user-name" value="${escapeHtml(state.userName)}" />
-        </label>
-        <label class="field">
           <span>当前身份</span>
-          <textarea id="workbench-user-persona" placeholder="例如：同班同学、合租室友、常一起去便利店的人。">${escapeHtml(world.userPersona)}</textarea>
+          <select data-world-rp-actor aria-label="选择世界 RP 身份">${renderWorldRpActorOptions()}</select>
         </label>
-        <button class="secondary" data-save-workbench-user type="button">保存身份</button>
       </div>
     </details>
   `;
@@ -3382,12 +3561,25 @@ function renderWorldSettingsPanel(): string {
             <label class="field"><span>当前氛围</span><input id="workbench-world-scene-atmosphere" value="${escapeHtml(world.sceneAtmosphere)}" placeholder="例如：雨天、放松、微妙亲近" /></label>
             <label class="field"><span>场景摘要</span><textarea id="workbench-world-scene-summary" placeholder="当前日常 RP 正在发生什么。">${escapeHtml(world.sceneSummary)}</textarea></label>
           </section>
+          ${renderWorldRenderModeSetting()}
           ${renderWorldDrawerTimeline()}
           ${renderWorldDrawerEvents()}
           ${renderWorldDrawerEventSchedule()}
         </div>
       </section>
     </details>
+  `;
+}
+
+function renderWorldRenderModeSetting(): string {
+  return `
+    <section class="world-drawer-section world-render-mode-setting">
+      <h3>阅读样式</h3>
+      <div class="render-mode-switch drawer-render-mode" aria-label="世界 RP 阅读样式">
+        <button class="${worldRpRenderMode === 'narration' ? 'is-active' : ''}" data-world-rp-render-mode="narration" type="button">旁白 + 对话</button>
+        <button class="${worldRpRenderMode === 'bubble' ? 'is-active' : ''}" data-world-rp-render-mode="bubble" type="button">聊天气泡</button>
+      </div>
+    </section>
   `;
 }
 
@@ -3438,10 +3630,10 @@ function renderWorldDrawerEvents(): string {
   return `
     <section class="world-drawer-section">
       <h3>小事件</h3>
-      <div class="world-drawer-event-actions">
-        <button class="secondary event-record-button" id="open-event-composer" type="button">手写小事</button>
-      </div>
-      <div class="events-feed world-drawer-events">${renderEvents(events)}</div>
+      <details class="world-drawer-details">
+        <summary>查看事件列表 · ${events.length} 条</summary>
+        <div class="events-feed world-drawer-events">${renderEvents(events)}</div>
+      </details>
     </section>
   `;
 }
@@ -3454,10 +3646,13 @@ function renderWorldDrawerEventSchedule(): string {
   return `
     <section class="world-drawer-section">
       <h3>定时事件</h3>
-      <p class="muted">自动小事件沿用角色主动事件节奏，完整设置仍在设置页维护。</p>
-      <div class="world-schedule-row">
-        <span><strong>${escapeHtml(character?.name ?? '未选择角色')}</strong><small>${escapeHtml(enabled)} · 下次 ${escapeHtml(next)}</small></span>
-      </div>
+      <details class="world-drawer-details">
+        <summary>${escapeHtml(enabled)} · 下次 ${escapeHtml(next)}</summary>
+        <p class="muted">自动小事件沿用角色主动事件节奏，完整设置仍在设置页维护。</p>
+        <div class="world-schedule-row">
+          <span><strong>${escapeHtml(character?.name ?? '未选择角色')}</strong><small>${escapeHtml(enabled)} · 下次 ${escapeHtml(next)}</small></span>
+        </div>
+      </details>
     </section>
   `;
 }
@@ -3520,6 +3715,39 @@ function selectedWorldRpEvent(): WorldEvent | undefined {
   return state.worldEvents.find(event => event.id === activeWorldRpEventId && event.worldId === worldId);
 }
 
+function editableWorldRpMessage() {
+  const event = selectedWorldRpEvent();
+  return event?.rpMessages.find(message => message.id === worldRpMessageEditId && message.role === 'user');
+}
+
+function renderWorldRpMessageEditDialog(): string {
+  const message = editableWorldRpMessage();
+  if (!message) return '';
+  return `
+    <div class="message-edit-overlay" role="dialog" aria-modal="true" aria-label="修改世界 RP">
+      <button class="message-edit-backdrop" id="close-world-rp-message-edit-backdrop" type="button" aria-label="关闭修改世界 RP"></button>
+      <section class="message-edit-dialog">
+        <header>
+          <div>
+            <span>世界事件内修改</span>
+            <h2>修改这次行动</h2>
+            <p>保存后只会更新当前世界事件里的这条 RP 记录，不会改动私聊内容。</p>
+          </div>
+          <button class="icon-button" id="close-world-rp-message-edit" type="button" aria-label="关闭修改世界 RP">×</button>
+        </header>
+        <label class="field">
+          <span>行动内容</span>
+          <textarea id="world-rp-message-edit-input">${escapeHtml(message.content)}</textarea>
+        </label>
+        <footer>
+          <button class="secondary" id="cancel-world-rp-message-edit" type="button">取消</button>
+          <button class="primary" id="confirm-world-rp-message-edit" type="button">保存修改</button>
+        </footer>
+      </section>
+    </div>
+  `;
+}
+
 function worldEventRpPreview(event: WorldEvent, character?: CharacterProfile): string {
   const latest = worldEventRpMessages(event.id).slice(-1)[0];
   const raw = latest?.content || event.decision?.result || event.description;
@@ -3532,13 +3760,29 @@ function worldEventRpPreview(event: WorldEvent, character?: CharacterProfile): s
   return compactText(text || event.description, 140);
 }
 
+function buildWorldEventAutoCloseSummary(event: WorldEvent): string {
+  const recentRp = worldEventRpMessages(event.id)
+    .slice(-4)
+    .map(message => `${message.speaker || (message.role === 'assistant' ? '角色回应' : '旁白')}：${message.content}`)
+    .join('\n');
+  // Big comment: the end button writes a useful archive note without asking the user to fill another modal.
+  return [
+    event.description.trim(),
+    recentRp ? `最近 RP 记录：\n${recentRp}` : '',
+    `事件「${event.title}」已结束，作为当前世界的日常片段归档。`,
+  ].filter(Boolean).join('\n\n');
+}
+
 function renderWorldEventLobby(events: WorldEvent[], character?: CharacterProfile): string {
   if (events.length === 0) {
     return `
       <div class="world-event-lobby">
         <div class="world-event-empty">
           <strong>还没有日常片段</strong>
-          <span>点右上角生成事件，或者手动记录一个今天正在发生的小场景。</span>
+          <span>生成一个小事件后，再进入里面继续旁白和对话。</span>
+          <div class="world-event-empty-actions">
+            <button class="primary" data-open-event-composer type="button">${icon('add')}<span>生成事件</span></button>
+          </div>
         </div>
       </div>
     `;
@@ -3546,23 +3790,22 @@ function renderWorldEventLobby(events: WorldEvent[], character?: CharacterProfil
   return `
     <section class="world-event-lobby" aria-label="日常片段列表">
       <div class="world-event-lobby-heading">
-        <span class="settings-kicker">日常片段</span>
-        <strong>选择一个片段进入 RP</strong>
-        <small>外面只放入口；点进去以后再和角色继续聊。</small>
+        <strong>日常片段</strong>
+        <small>点进一个片段后，再继续旁白和对话。</small>
       </div>
       <div class="world-event-entry-list">
         ${events.map(event => {
           const messageCount = worldEventRpMessages(event.id).length;
           return `
-            <button class="world-event-entry-card" data-open-world-event-rp="${escapeHtml(event.id)}" type="button">
+            <button class="world-event-entry-card conversation-entry" data-open-world-event-rp="${escapeHtml(event.id)}" type="button">
               <div class="event-avatar-stack">${renderEventAvatars(event)}</div>
-              <div>
-                <span class="event-kicker">${escapeHtml(eventTypeLabel(event.type))} · ${escapeHtml(renderEventParticipantNames(event))}</span>
+              <div class="world-event-entry-main">
                 <strong>${escapeHtml(event.title)}</strong>
                 <p>${escapeHtml(worldEventRpPreview(event, character))}</p>
-                <footer>
-                  <span>${messageCount > 0 ? `${messageCount} 条 RP 记录` : '点进去开始聊'}</span>
-                  <span>${event.status === 'resolved' ? '已归档' : '正在发生'}</span>
+                <footer class="world-event-entry-meta">
+                  <span>${escapeHtml(renderEventParticipantNames(event))}</span>
+                  <span>${messageCount > 0 ? `${messageCount} 条` : escapeHtml(eventTypeLabel(event.type))}</span>
+                  <span class="world-event-entry-status ${event.status === 'resolved' ? 'is-resolved' : ''}">${event.status === 'resolved' ? '已归档' : '进行中'}</span>
                 </footer>
               </div>
             </button>
@@ -3586,9 +3829,13 @@ function renderWorldDialogueStream(event: WorldEvent, character?: CharacterProfi
       if (item.kind === 'event') return renderWorldEventNarration(item.event);
       const message = item.message;
       if (message.role === 'user') {
+        const actionLabel = message.speaker?.trim() || '你的行动';
         return `
-          <article class="player-action-card">
-            <span class="render-label">你的行动</span>
+          <article class="player-action-card" data-world-rp-message-id="${escapeHtml(message.id)}">
+            <div class="player-action-head">
+              <span class="render-label">${escapeHtml(actionLabel)}</span>
+              <button class="plain-button" data-edit-world-rp-message="${escapeHtml(message.id)}" type="button">修改</button>
+            </div>
             <p class="narrative-text">${escapeHtml(message.content)}</p>
           </article>
         `;
@@ -3603,10 +3850,6 @@ function renderWorldDialogueStream(event: WorldEvent, character?: CharacterProfi
       }).map(segment => renderRpSegment(segment, character)).join('');
     }).join('');
   return `
-    <div class="render-mode-switch" aria-label="渲染模式">
-      <button class="${worldRpRenderMode === 'narration' ? 'is-active' : ''}" data-world-rp-render-mode="narration" type="button">旁白 + 对话</button>
-      <button class="${worldRpRenderMode === 'bubble' ? 'is-active' : ''}" data-world-rp-render-mode="bubble" type="button">聊天气泡</button>
-    </div>
     <article class="narrative-card">
       <span class="render-label">旁白</span>
       <p class="narrative-text">${escapeHtml(sceneSummary)}</p>
@@ -3624,11 +3867,12 @@ function renderWorldEventRpDetail(event: WorldEvent, character?: CharacterProfil
   return `
     <section class="world-event-rp-detail" aria-label="事件 RP 对话">
       <div class="world-event-detail-toolbar">
-        <button class="secondary" data-close-world-event-rp type="button">返回日常</button>
+        <button class="icon-button world-detail-back-button" data-close-world-event-rp type="button" aria-label="返回日常" title="返回日常">${icon('back')}</button>
         <div>
           <span>${escapeHtml(eventTypeLabel(event.type))} · ${escapeHtml(renderEventParticipantNames(event))}</span>
           <strong>${escapeHtml(event.title)}</strong>
         </div>
+        <button class="secondary end-event-button" data-end-world-rp-event="${escapeHtml(event.id)}" type="button" ${event.status === 'resolved' ? 'disabled' : ''}>${event.status === 'resolved' ? '已归档' : '结束事件'}</button>
       </div>
       ${renderWorldDialogueStream(event, character)}
     </section>
@@ -3636,7 +3880,8 @@ function renderWorldEventRpDetail(event: WorldEvent, character?: CharacterProfil
 }
 
 function renderWorldStageComposer(character?: CharacterProfile): string {
-  const disabled = !character || worldRpGenerating;
+  const selectedEvent = selectedWorldRpEvent();
+  const disabled = !character || worldRpGenerating || selectedEvent?.status === 'resolved';
   const placeholder = character
     ? `继续和 ${character.name} RP，可以写台词、动作或旁白…`
     : '先选择一个角色，再继续世界 RP';
@@ -3653,8 +3898,7 @@ function renderWorldStageComposer(character?: CharacterProfile): string {
 }
 
 function renderWorldWorkbenchPage(mobile = false): string {
-  const character = activeCharacter();
-  ensureWorldRpEvent(character);
+  const character = worldRpActiveCharacter();
   const selectedEvent = selectedWorldRpEvent();
   const worldEvents = eventsForActiveWorld();
   // 小注释：事件页和时间线页不再是主入口，但保留为世界内部详情能力的渲染来源。
@@ -3667,7 +3911,7 @@ function renderWorldWorkbenchPage(mobile = false): string {
         ${renderWorldPersonaSelector()}
         ${renderWorldStageHeader()}
         <div class="world-stage-actions">
-          <button class="primary" id="generate-event" type="button" ${eventGenerating ? 'disabled' : ''}>生成事件</button>
+          <button class="secondary world-generate-button" id="generate-event" type="button" aria-label="生成事件" title="生成事件" ${eventGenerating ? 'disabled' : ''}>${icon('add')}<span class="world-action-label">生成事件</span></button>
           ${renderWorldSettingsPanel()}
         </div>
       </header>
@@ -3678,26 +3922,10 @@ function renderWorldWorkbenchPage(mobile = false): string {
             : renderWorldEventLobby(worldEvents, character)}
         </div>
       </section>
-      ${selectedEvent ? renderWorldStageComposer(character) : ''}
+      ${selectedEvent && selectedEvent.status !== 'resolved' ? renderWorldStageComposer(character) : ''}
+      ${renderWorldRpMessageEditDialog()}
       ${renderEventComposerDialog()}
     </main>
-  `;
-}
-
-function renderEventParticipants(): string {
-  const characters = state.characters.filter(character => character.worldId === activeWorld().id);
-  if (characters.length === 0) {
-    return '<p class="muted">当前世界暂无角色。事件仍可作为全局事件创建。</p>';
-  }
-  return `
-    <div class="event-participants">
-      ${characters.map(character => `
-        <label>
-          <input type="checkbox" name="event-participant" value="${escapeHtml(character.id)}" />
-          <span>${escapeHtml(character.name)}</span>
-        </label>
-      `).join('')}
-    </div>
   `;
 }
 
@@ -3911,6 +4139,7 @@ function activePromptPreset(): PromptPreset | undefined {
   const preferredId = editingPromptPresetId
     || state.activeChatPromptPresetId
     || state.activeGroupPromptPresetId
+    || state.activeWorldPromptPresetId
     || state.promptPresets[0]?.id
     || '';
   const preset = state.promptPresets.find(item => item.id === preferredId) ?? state.promptPresets[0];
@@ -4037,11 +4266,12 @@ function renderPromptPresetSettings(): string {
   const active = activePromptPreset();
   const chatActive = promptPresetById(state.activeChatPromptPresetId);
   const groupActive = promptPresetById(state.activeGroupPromptPresetId);
+  const worldActive = promptPresetById(state.activeWorldPromptPresetId);
   return `
     <section class="settings-card prompt-preset-settings">
       <div class="settings-heading">
         <div><h2>提示词预设</h2></div>
-        <p>私聊和群聊可以分别选择预设；下面编辑的是当前选中的那一套。</p>
+        <p>私聊、群聊和世界 RP 可以分别选择预设；下面编辑的是当前选中的那一套。</p>
       </div>
       <div class="prompt-preset-actions">
         <label class="file-button secondary-file">
@@ -4050,8 +4280,9 @@ function renderPromptPresetSettings(): string {
         </label>
         <button id="restore-tavern-social-prompt-preset" class="secondary" type="button">写入默认回复策略预设</button>
         <button id="restore-tavern-social-group-prompt-preset" class="secondary" type="button">写入默认群聊策略预设</button>
+        <button id="restore-tavern-social-world-prompt-preset" class="secondary" type="button">写入默认世界 RP 预设</button>
       </div>
-      <p class="muted">会完整保存原始 JSON、扩展字段、正则脚本和 SPreset 数据；私聊和群聊分别执行自己选中的 prompts、prompt_order 和输出正则。</p>
+      <p class="muted">会完整保存原始 JSON、扩展字段、正则脚本和 SPreset 数据；私聊、群聊、世界 RP 分别执行自己选中的 prompts、prompt_order 和输出正则。</p>
       ${state.promptPresets.length > 0 ? `
         <div class="settings-divider"></div>
         <div class="prompt-preset-scope-grid">
@@ -4070,6 +4301,14 @@ function renderPromptPresetSettings(): string {
           <label class="field">
             <span>群聊预设</span>
             <select id="active-group-prompt-preset" aria-label="选择群聊预设">${renderPromptPresetOptions(groupActive?.id)}</select>
+          </label>
+          <label class="field field-inline prompt-preset-enable">
+            <span>世界 RP 启用预设</span>
+            ${renderSwitchControl('id="world-prompt-preset-enabled"', state.worldPromptPresetEnabled, '世界 RP 启用预设')}
+          </label>
+          <label class="field">
+            <span>世界 RP 预设</span>
+            <select id="active-world-prompt-preset" aria-label="选择世界 RP 预设">${renderPromptPresetOptions(worldActive?.id)}</select>
           </label>
           <label class="field prompt-preset-editor-select">
             <span>正在编辑</span>
@@ -5454,6 +5693,21 @@ export function render(): void {
     });
     mobileHistoryInstalled = true;
   }
+  if (!mobileNativeBackInstalled) {
+    window.addEventListener('tavern-social-android-back', event => {
+      if (hasMobileBackTarget()) {
+        event.preventDefault();
+        backMobileLayer();
+        return;
+      }
+      if (closeMobileLayer()) {
+        event.preventDefault();
+        render();
+        window.setTimeout(ensureMobileHistoryForState, 0);
+      }
+    });
+    mobileNativeBackInstalled = true;
+  }
   ensureMobileHistoryForState();
 }
 
@@ -6021,6 +6275,10 @@ function bindUi(): void {
           : mobileSection === 'world' ? 'world'
             : 'chat',
       );
+      if (mobileSection === 'world') {
+        activeWorldRpEventId = '';
+        worldRpMessageEditId = '';
+      }
       if (mobileSection === 'moments') openMomentsTutorialIfNeeded();
       if (mobileSection !== 'moments') {
         momentComposerOpen = false;
@@ -6042,6 +6300,8 @@ function bindUi(): void {
       captureVisibleDraftsFromDom();
       setActiveView('world');
       mobileSection = 'world';
+      activeWorldRpEventId = '';
+      worldRpMessageEditId = '';
       mobileChatOpen = false;
       mobileGroupChatOpen = false;
       groupSettingsOpen = false;
@@ -6103,6 +6363,10 @@ function bindUi(): void {
           ? 'world'
           : 'chat';
       setActiveView(nextView);
+      if (nextView === 'world') {
+        activeWorldRpEventId = '';
+        worldRpMessageEditId = '';
+      }
       if (nextView === 'groups') desktopGroupChatOpen = false;
       if (nextView === 'moments') openMomentsTutorialIfNeeded();
       if (nextView !== 'moments') {
@@ -6750,6 +7014,16 @@ function bindUi(): void {
     setStatusText('当前身份已保存。');
     render();
   });
+  document.querySelector<HTMLSelectElement>('[data-world-rp-actor]')?.addEventListener('change', event => {
+    const actorId = (event.currentTarget as HTMLSelectElement).value || 'user';
+    worldRpActorId = actorId === 'user'
+      || state.characters.some(character => character.id === actorId && character.worldId === activeWorld().id)
+      ? actorId
+      : 'user';
+    saveUiSessionSnapshot();
+    preserveScrollForNextRender();
+    render();
+  });
   document.querySelector<HTMLButtonElement>('#delete-world')?.addEventListener('click', () => {
     const world = activeWorld();
     if (!window.confirm(`确定删除世界“${world.name}”及其中全部数据吗？`)) return;
@@ -6917,6 +7191,8 @@ function bindUi(): void {
       state.promptPresets.push(preset);
       state.activeChatPromptPresetId = preset.id;
       state.chatPromptPresetEnabled = true;
+      state.activeWorldPromptPresetId = preset.id;
+      state.worldPromptPresetEnabled = true;
       editingPromptPresetId = preset.id;
       saveState();
       setStatusText(`已导入提示词预设：${preset.name}`);
@@ -6967,10 +7243,32 @@ function bindUi(): void {
     setStatusText('已写入 Tavern Social 默认群聊策略预设，可以在下方直接编辑群聊规则。');
     render();
   });
+  document.querySelector<HTMLButtonElement>('#restore-tavern-social-world-prompt-preset')?.addEventListener('click', () => {
+    const existingIndex = state.promptPresets.findIndex(item => item.id === TAVERN_SOCIAL_DEFAULT_WORLD_PROMPT_PRESET_ID);
+    if (
+      existingIndex >= 0
+      && !window.confirm('这会用 Tavern Social 默认内容覆盖当前默认世界 RP 预设。继续吗？')
+    ) {
+      return;
+    }
+    const preset = createTavernSocialDefaultWorldPromptPreset();
+    if (existingIndex >= 0) {
+      state.promptPresets.splice(existingIndex, 1, preset);
+    } else {
+      state.promptPresets.push(preset);
+    }
+    state.activeWorldPromptPresetId = preset.id;
+    state.worldPromptPresetEnabled = true;
+    editingPromptPresetId = preset.id;
+    saveState();
+    setStatusText('已写入 Tavern Social 默认世界 RP 预设，可以在下方直接编辑世界舞台规则。');
+    render();
+  });
   document.querySelector<HTMLInputElement>('#chat-prompt-preset-enabled')?.addEventListener('change', event => {
     state.chatPromptPresetEnabled = (event.currentTarget as HTMLInputElement).checked
       && Boolean(promptPresetById(state.activeChatPromptPresetId));
     saveState();
+    preserveScrollForNextRender();
     setStatusText(state.chatPromptPresetEnabled ? '私聊已启用当前提示词预设。' : '私聊已关闭提示词预设。');
     render();
   });
@@ -6978,13 +7276,23 @@ function bindUi(): void {
     state.groupPromptPresetEnabled = (event.currentTarget as HTMLInputElement).checked
       && Boolean(promptPresetById(state.activeGroupPromptPresetId));
     saveState();
+    preserveScrollForNextRender();
     setStatusText(state.groupPromptPresetEnabled ? '群聊已启用当前提示词预设。' : '群聊已关闭提示词预设。');
+    render();
+  });
+  document.querySelector<HTMLInputElement>('#world-prompt-preset-enabled')?.addEventListener('change', event => {
+    state.worldPromptPresetEnabled = (event.currentTarget as HTMLInputElement).checked
+      && Boolean(promptPresetById(state.activeWorldPromptPresetId));
+    saveState();
+    preserveScrollForNextRender();
+    setStatusText(state.worldPromptPresetEnabled ? '世界 RP 已启用当前提示词预设。' : '世界 RP 已关闭提示词预设。');
     render();
   });
   document.querySelector<HTMLSelectElement>('#active-chat-prompt-preset')?.addEventListener('change', event => {
     state.activeChatPromptPresetId = (event.currentTarget as HTMLSelectElement).value;
     state.chatPromptPresetEnabled = Boolean(promptPresetById(state.activeChatPromptPresetId));
     saveState();
+    preserveScrollForNextRender();
     setStatusText('已切换私聊提示词预设。');
     render();
   });
@@ -6992,11 +7300,21 @@ function bindUi(): void {
     state.activeGroupPromptPresetId = (event.currentTarget as HTMLSelectElement).value;
     state.groupPromptPresetEnabled = Boolean(promptPresetById(state.activeGroupPromptPresetId));
     saveState();
+    preserveScrollForNextRender();
     setStatusText('已切换群聊提示词预设。');
+    render();
+  });
+  document.querySelector<HTMLSelectElement>('#active-world-prompt-preset')?.addEventListener('change', event => {
+    state.activeWorldPromptPresetId = (event.currentTarget as HTMLSelectElement).value;
+    state.worldPromptPresetEnabled = Boolean(promptPresetById(state.activeWorldPromptPresetId));
+    saveState();
+    preserveScrollForNextRender();
+    setStatusText('已切换世界 RP 提示词预设。');
     render();
   });
   document.querySelector<HTMLSelectElement>('#editing-prompt-preset')?.addEventListener('change', event => {
     editingPromptPresetId = (event.currentTarget as HTMLSelectElement).value;
+    preserveScrollForNextRender();
     setStatusText('已切换正在编辑的提示词预设。');
     render();
   });
@@ -7015,6 +7333,7 @@ function bindUi(): void {
       if (!prompt) return;
       prompt.enabled = (event.currentTarget as HTMLInputElement).checked;
       saveState();
+      preserveScrollForNextRender();
       render();
     });
   });
@@ -7039,6 +7358,7 @@ function bindUi(): void {
       const role = (event.currentTarget as HTMLSelectElement).value;
       prompt.role = role === 'assistant' || role === 'user' ? role : 'system';
       saveState();
+      preserveScrollForNextRender();
       render();
     });
   });
@@ -7067,6 +7387,7 @@ function bindUi(): void {
     });
     preset.regexScriptCount = preset.regexScripts.length;
     saveState();
+    preserveScrollForNextRender();
     render();
   });
   document.querySelectorAll<HTMLInputElement>('[data-preset-regex]').forEach(input => {
@@ -7078,6 +7399,7 @@ function bindUi(): void {
       if (!script) return;
       script.enabled = (event.currentTarget as HTMLInputElement).checked;
       saveState();
+      preserveScrollForNextRender();
       render();
     });
   });
@@ -7145,9 +7467,15 @@ function bindUi(): void {
         ?? state.promptPresets[0]?.id
         ?? '';
     }
+    if (state.activeWorldPromptPresetId === preset.id) {
+      state.activeWorldPromptPresetId = state.promptPresets.find(item => item.id === TAVERN_SOCIAL_DEFAULT_WORLD_PROMPT_PRESET_ID)?.id
+        ?? state.promptPresets[0]?.id
+        ?? '';
+    }
     editingPromptPresetId = state.promptPresets[0]?.id ?? '';
     state.chatPromptPresetEnabled = state.chatPromptPresetEnabled && Boolean(state.activeChatPromptPresetId);
     state.groupPromptPresetEnabled = state.groupPromptPresetEnabled && Boolean(state.activeGroupPromptPresetId);
+    state.worldPromptPresetEnabled = state.worldPromptPresetEnabled && Boolean(state.activeWorldPromptPresetId);
     saveState();
     setStatusText(`已删除提示词预设：${preset.name}`);
     render();
@@ -7491,6 +7819,14 @@ function bindUi(): void {
     messageInput.addEventListener('keydown', event => requestTextareaFormSubmit(messageInput, event));
     messageInput.addEventListener('beforeinput', event => requestTextareaFormSubmitFromBeforeInput(messageInput, event));
   }
+  document.querySelector<HTMLSelectElement>('#private-chat-speaker-select')?.addEventListener('change', event => {
+    const selected = (event.currentTarget as HTMLSelectElement).value || 'user';
+    privateChatSpeakerId = selected === 'user'
+      || state.characters.some(character => character.id === selected && character.worldId === activeWorld().id)
+      ? selected
+      : 'user';
+    scheduleUiSessionSnapshotSave();
+  });
   document.querySelector<HTMLFormElement>('#composer')?.addEventListener('submit', event => {
     event.preventDefault();
     const character = activeCharacter();
@@ -7511,10 +7847,11 @@ function bindUi(): void {
     if (shouldKeepKeyboard) requestMessageComposerFocusAfterSubmit(character?.id ?? '');
     const replyToId = clearMessageComposerAfterSubmit(character, input, content, shouldKeepKeyboard);
     requestChatStickToBottom();
+    const speaker = privateChatSpeaker();
     if (state.chatReplyMode === 'manual') {
-      void sendUserMessageOnly(content, render, replyToId);
+      void sendUserMessageOnly(content, render, replyToId, speaker);
     } else {
-      void sendMessage(content, render, replyToId);
+      void sendMessage(content, render, replyToId, speaker);
     }
   });
   const worldRpInput = document.querySelector<HTMLTextAreaElement>('#world-rp-input');
@@ -7564,12 +7901,59 @@ function bindUi(): void {
   document.querySelector<HTMLButtonElement>('[data-close-world-event-rp]')?.addEventListener('click', () => {
     activeWorldRpEventId = '';
     worldRpInputDraft = '';
+    worldRpMessageEditId = '';
     saveUiSessionSnapshot({ captureDom: false });
+    render();
+  });
+  document.querySelector<HTMLButtonElement>('[data-end-world-rp-event]')?.addEventListener('click', buttonEvent => {
+    const button = buttonEvent.currentTarget as HTMLButtonElement;
+    const eventId = button.dataset.endWorldRpEvent ?? '';
+    const worldEvent = state.worldEvents.find(event => event.id === eventId && event.worldId === activeWorld().id);
+    if (!worldEvent || worldEvent.status === 'resolved') return;
+    try {
+      const archived = finishWorldEventManually(eventId, buildWorldEventAutoCloseSummary(worldEvent));
+      activeWorldRpEventId = '';
+      worldRpInputDraft = '';
+      worldRpMessageEditId = '';
+      preserveScrollForNextRender();
+      saveUiSessionSnapshot({ captureDom: false });
+      setStatusText(`事件已结束并写入时间线：${archived.title}`);
+    } catch (error) {
+      setStatusText(error instanceof Error ? error.message : String(error));
+    }
+    render();
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-edit-world-rp-message]').forEach(button => {
+    button.addEventListener('click', () => {
+      worldRpMessageEditId = button.dataset.editWorldRpMessage ?? '';
+      render();
+      window.requestAnimationFrame(() => {
+        const input = document.querySelector<HTMLTextAreaElement>('#world-rp-message-edit-input');
+        input?.focus();
+        input?.setSelectionRange(input.value.length, input.value.length);
+      });
+    });
+  });
+  const closeWorldRpMessageEdit = () => {
+    worldRpMessageEditId = '';
+    render();
+  };
+  document.querySelector<HTMLButtonElement>('#close-world-rp-message-edit')?.addEventListener('click', closeWorldRpMessageEdit);
+  document.querySelector<HTMLButtonElement>('#close-world-rp-message-edit-backdrop')?.addEventListener('click', closeWorldRpMessageEdit);
+  document.querySelector<HTMLButtonElement>('#cancel-world-rp-message-edit')?.addEventListener('click', closeWorldRpMessageEdit);
+  document.querySelector<HTMLButtonElement>('#confirm-world-rp-message-edit')?.addEventListener('click', () => {
+    const messageId = worldRpMessageEditId;
+    const content = document.querySelector<HTMLTextAreaElement>('#world-rp-message-edit-input')?.value ?? '';
+    if (editWorldEventRpMessage(messageId, content)) {
+      setStatusText('世界 RP 记录已修改。');
+    }
+    worldRpMessageEditId = '';
     render();
   });
   document.querySelector<HTMLFormElement>('#world-rp-composer')?.addEventListener('submit', event => {
     event.preventDefault();
-    const character = activeCharacter();
+    const actor = worldRpActor();
+    const character = worldRpActiveCharacter();
     const input = document.querySelector<HTMLTextAreaElement>('#world-rp-input');
     const content = input?.value ?? worldRpInputDraft;
     if (!character || !content.trim()) return;
@@ -7590,6 +7974,8 @@ function bindUi(): void {
     appendWorldEventRpMessage(worldEvent.id, {
       role: 'user',
       content,
+      characterId: actor.characterId,
+      speaker: actor.name,
       source: 'manual',
     });
     worldRpInputDraft = '';
@@ -7872,7 +8258,7 @@ function bindUi(): void {
   document.querySelectorAll<HTMLButtonElement>('[data-send-sticker]').forEach(button => {
     button.addEventListener('click', () => {
       stickerPickerOpen = false;
-      void sendStickerMessage(button.dataset.sendSticker ?? '', render);
+      void sendStickerMessage(button.dataset.sendSticker ?? '', render, privateChatSpeaker());
     });
   });
   document.querySelector<HTMLSelectElement>('#moment-author-select')?.addEventListener('change', event => {
@@ -8265,93 +8651,72 @@ function bindUi(): void {
       render();
     });
   });
-  document.querySelector<HTMLButtonElement>('#open-event-composer')?.addEventListener('click', () => {
-    eventComposerOpen = true;
-    render();
-    window.requestAnimationFrame(() => {
-      document.querySelector<HTMLInputElement>('#event-title')?.focus();
-    });
-  });
   const closeEventComposer = () => {
     captureEventComposerDraftFromDom();
     eventComposerOpen = false;
+    preserveScrollForNextRender();
     saveUiSessionSnapshot();
     render();
   };
   document.querySelector<HTMLButtonElement>('#close-event-composer')?.addEventListener('click', closeEventComposer);
   document.querySelector<HTMLButtonElement>('#close-event-composer-backdrop')?.addEventListener('click', closeEventComposer);
   document.querySelector<HTMLButtonElement>('#cancel-event-composer')?.addEventListener('click', closeEventComposer);
-  document.querySelector<HTMLInputElement>('#event-title')?.addEventListener('input', event => {
-    eventComposerDraft.title = (event.currentTarget as HTMLInputElement).value;
-    scheduleUiSessionSnapshotSave();
-  });
-  document.querySelector<HTMLTextAreaElement>('#event-description')?.addEventListener('input', event => {
-    eventComposerDraft.description = (event.currentTarget as HTMLTextAreaElement).value;
-    scheduleUiSessionSnapshotSave();
-  });
-  document.querySelector<HTMLSelectElement>('#event-participant-select')?.addEventListener('change', event => {
-    eventComposerDraft.participantId = (event.currentTarget as HTMLSelectElement).value;
-    scheduleUiSessionSnapshotSave();
-  });
-  document.querySelector<HTMLInputElement>('#event-affinity-delta')?.addEventListener('input', event => {
-    eventComposerDraft.affinityDelta = (event.currentTarget as HTMLInputElement).value || '0';
-    scheduleUiSessionSnapshotSave();
+  document.querySelectorAll<HTMLInputElement>('[data-event-participant]').forEach(input => {
+    input.addEventListener('change', () => {
+      eventComposerDraft.participantIds = Array.from(document.querySelectorAll<HTMLInputElement>('[data-event-participant]:checked'))
+        .map(item => item.value)
+        .filter(Boolean);
+      scheduleUiSessionSnapshotSave();
+    });
   });
   document.querySelector<HTMLFormElement>('#event-composer')?.addEventListener('submit', event => {
     event.preventDefault();
-    const linkedCharacterId = fieldValue<HTMLSelectElement>('#event-participant-select');
-    const participantIds = linkedCharacterId ? [linkedCharacterId] : [];
+    captureEventComposerDraftFromDom();
+    const leadActor = eventComposerLeadActor();
+    const participantIds = eventComposerParticipantIds();
     try {
-      const title = fieldValue('#event-title');
-      const description = fieldValue('#event-description');
-      if (!title.trim() || !description.trim()) {
-        setStatusText('事件标题和内容都至少要写一个字。');
+      if (!modelIsReady()) {
+        setStatusText('请先到“设置 -> 模型连接”配置模型，再生成生活线索。');
+        preserveScrollForNextRender();
         render();
         return;
       }
-      const worldEvent = createWorldEvent({
-        title,
-        description,
-        participantCharacterIds: participantIds,
-        affinityDelta: Number(fieldValue('#event-affinity-delta') || '0'),
-      });
-      eventComposerOpen = false;
-      eventComposerDraft = { title: '', description: '', participantId: '', affinityDelta: '0' };
-      saveUiSessionSnapshot();
-      setStatusText(`已创建世界事件：${worldEvent.title}`);
+      const leadCharacter = leadActor.characterId
+        ? state.characters.find(character => character.id === leadActor.characterId && character.worldId === activeWorld().id)
+        : undefined;
+      eventGenerating = true;
+      setStatusText(`正在生成 ${leadActor.name} 发起的生活线索…`);
+      preserveScrollForNextRender();
+      render();
+      void generateWorldEvent(leadCharacter, 'model', { leadActor, participantCharacterIds: participantIds })
+        .then(worldEvent => {
+          activeWorldRpEventId = worldEvent.id;
+          eventComposerOpen = false;
+          eventComposerDraft = { title: '', description: '', participantIds: [], affinityDelta: '0' };
+          saveUiSessionSnapshot();
+          setStatusText(`生活线索已生成：${worldEvent.title}`);
+        })
+        .catch(error => {
+          setStatusText(error instanceof Error ? error.message : String(error));
+        })
+        .finally(() => {
+          eventGenerating = false;
+          preserveScrollForNextRender();
+          render();
+        });
+      return;
     } catch (error) {
       setStatusText(error instanceof Error ? error.message : String(error));
     }
     render();
   });
   document.querySelector<HTMLButtonElement>('#generate-event')?.addEventListener('click', () => {
-    const character = activeCharacter();
-    if (!character) {
-      setStatusText('请先选择一个角色，再生成角色身边的事件。');
-      render();
-      return;
-    }
-    if (!modelIsReady()) {
-      setStatusText('请先到“设置 -> 模型连接”配置模型，再生成生活线索。');
-      render();
-      return;
-    }
-    eventGenerating = true;
-    setStatusText(`正在为 ${character.name} 生成生活线索…`);
-    render();
-    void generateWorldEvent(character)
-      .then(worldEvent => {
-        setStatusText(`生活线索已生成：${worldEvent.title}`);
-        render();
-      })
-      .catch(error => {
-        setStatusText(error instanceof Error ? error.message : String(error));
-        render();
-      })
-      .finally(() => {
-        eventGenerating = false;
-        render();
-      });
+    openEventComposer();
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-open-event-composer]').forEach(button => {
+    button.addEventListener('click', () => {
+      openEventComposer();
+    });
   });
   document.querySelectorAll<HTMLButtonElement>('[data-event-choice]').forEach(button => {
     button.addEventListener('click', () => {

@@ -330,6 +330,20 @@ function renderPresetMacros(content: string, character: CharacterProfile, contex
     .trim();
 }
 
+function privateChatSpeakerName(message: ChatMessage): string {
+  if (message.speakerType === 'character' && message.speakerCharacterId) {
+    return state.characters.find(character => character.id === message.speakerCharacterId)?.name ?? '已删除角色';
+  }
+  return state.userName || '我';
+}
+
+function privateChatContextContent(message: ChatMessage, content: string): string {
+  if (message.role !== 'user' || message.speakerType !== 'character') return content;
+  const speakerName = privateChatSpeakerName(message);
+  // Big comment: role stays "user" for API compatibility, while this label tells the model which in-app identity authored it.
+  return `[手写发言身份：${speakerName}]\n${speakerName}: ${content}`;
+}
+
 function contextAsModelMessages(contextMessages: ChatMessage[]): ModelMessage[] {
   return contextMessages
     .filter(message => !message.impactRevokedAt)
@@ -341,11 +355,12 @@ function contextAsModelMessages(contextMessages: ChatMessage[]): ModelMessage[] 
       const content = message.recalledAt
         ? `[这条消息已被撤回，但角色仍然记得原内容：${message.content}]`
         : message.content;
+      const renderedContent = privateChatContextContent(message, content);
       return {
         role: message.role === 'assistant' ? 'assistant' as const : 'user' as const,
         content: quoted
-          ? `[引用消息：${quoted.content.slice(0, 240)}]\n${content}`
-          : content,
+          ? `[引用消息：${quoted.content.slice(0, 240)}]\n${renderedContent}`
+          : renderedContent,
       };
     });
 }

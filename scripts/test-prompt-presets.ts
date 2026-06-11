@@ -141,16 +141,33 @@ if (
   throw new Error('Tavern Social default group prompt preset was not created in editable shape.');
 }
 
+const defaultWorldPreset = promptPresets.createTavernSocialDefaultWorldPromptPreset(2002);
+if (
+  defaultWorldPreset.id !== promptPresets.TAVERN_SOCIAL_DEFAULT_WORLD_PROMPT_PRESET_ID
+  || defaultWorldPreset.sourceFileName !== 'tavern-social-default-world-preset.json'
+  || !defaultWorldPreset.prompts.some((prompt: { identifier: string; marker: boolean }) =>
+    prompt.identifier === 'worldInfoBefore' && prompt.marker)
+  || !defaultWorldPreset.prompts.some((prompt: { identifier: string; marker: boolean }) =>
+    prompt.identifier === 'chatHistory' && prompt.marker)
+  || !defaultWorldPreset.prompts.some((prompt: { identifier: string; marker: boolean }) =>
+    prompt.identifier === 'tavernSocialWorldRpRules' && !prompt.marker)
+  || defaultWorldPreset.order.length !== defaultWorldPreset.prompts.length
+) {
+  throw new Error('Tavern Social default world RP prompt preset was not created in editable SillyTavern-like shape.');
+}
+
 const migrated = stateModule.normalizeState({
   worlds: [{ id: 'preset_world', name: 'Preset World', description: 'World description', createdAt: 1, updatedAt: 1 }],
   activeWorldId: 'preset_world',
 });
 if (
-  migrated.promptPresets.length !== 2
+  migrated.promptPresets.length !== 3
   || migrated.activeChatPromptPresetId !== promptPresets.TAVERN_SOCIAL_DEFAULT_PROMPT_PRESET_ID
   || !migrated.chatPromptPresetEnabled
   || migrated.activeGroupPromptPresetId !== promptPresets.TAVERN_SOCIAL_DEFAULT_GROUP_PROMPT_PRESET_ID
   || !migrated.groupPromptPresetEnabled
+  || migrated.activeWorldPromptPresetId !== promptPresets.TAVERN_SOCIAL_DEFAULT_WORLD_PROMPT_PRESET_ID
+  || !migrated.worldPromptPresetEnabled
 ) {
   throw new Error('Legacy state did not install the editable Tavern Social default prompt presets safely.');
 }

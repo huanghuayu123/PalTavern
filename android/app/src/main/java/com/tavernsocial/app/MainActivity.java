@@ -1,6 +1,7 @@
 package com.tavernsocial.app;
 
 import android.os.Bundle;
+import androidx.activity.OnBackPressedCallback;
 import com.getcapacitor.BridgeActivity;
 import java.lang.ref.WeakReference;
 
@@ -12,6 +13,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(TavernSocialBackgroundPlugin.class);
         super.onCreate(savedInstanceState);
         currentActivity = new WeakReference<>(this);
+        installInAppBackDispatcher();
     }
 
     @Override
@@ -34,5 +36,37 @@ public class MainActivity extends BridgeActivity {
             )
         );
         return true;
+    }
+
+    private void installInAppBackDispatcher() {
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                dispatchInAppBackOrDefault(this);
+            }
+        });
+    }
+
+    private void dispatchInAppBackOrDefault(OnBackPressedCallback callback) {
+        if (getBridge() == null || getBridge().getWebView() == null) {
+            runDefaultBack(callback);
+            return;
+        }
+        String script = "(function(){"
+            + "var event=new CustomEvent('tavern-social-android-back',{cancelable:true});"
+            + "window.dispatchEvent(event);"
+            + "return event.defaultPrevented===true;"
+            + "})()";
+        getBridge().getWebView().evaluateJavascript(script, handled -> {
+            if (!"true".equals(handled)) {
+                runDefaultBack(callback);
+            }
+        });
+    }
+
+    private void runDefaultBack(OnBackPressedCallback callback) {
+        callback.setEnabled(false);
+        getOnBackPressedDispatcher().onBackPressed();
+        callback.setEnabled(true);
     }
 }
