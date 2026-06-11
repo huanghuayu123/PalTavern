@@ -36,8 +36,8 @@ Object.defineProperty(globalThis, 'fetch', {
   },
 });
 
-const stateModule = require('../src/independent-chat/state');
-const scheduler = require('../src/independent-chat/scheduler');
+const stateModule = require('../src/independent-chat/core/state');
+const scheduler = require('../src/independent-chat/automation/scheduler');
 
 function makeCharacter(id: string, name: string) {
   return {

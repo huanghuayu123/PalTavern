@@ -19,13 +19,13 @@ Object.defineProperty(globalThis, 'localStorage', {
   },
 });
 
-const stateModule = require('../src/independent-chat/state');
-const events = require('../src/independent-chat/events');
-const timeline = require('../src/independent-chat/timeline');
-const characterStatus = require('../src/independent-chat/character-status');
-const dailyBrief = require('../src/independent-chat/daily-brief');
-const interactions = require('../src/independent-chat/character-interactions');
-const model = require('../src/independent-chat/model');
+const stateModule = require('../src/independent-chat/core/state');
+const events = require('../src/independent-chat/social/events');
+const timeline = require('../src/independent-chat/memory/timeline');
+const characterStatus = require('../src/independent-chat/memory/character-status');
+const dailyBrief = require('../src/independent-chat/memory/daily-brief');
+const interactions = require('../src/independent-chat/social/character-interactions');
+const model = require('../src/independent-chat/model/client');
 
 const character = {
   id: 'status_character',

@@ -1,0 +1,867 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PalTavern 世界对话工作台产品贴合版</title>
+    <style>
+      /* 大注释：本原型保留“酒馆对话式世界工作台”的结构，但视觉令牌贴近 PalTavern 当前产品 UI。 */
+      :root {
+        color-scheme: light dark;
+        font-family: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+        --accent: hsl(230 62% 55%);
+        --accent-strong: hsl(230 69% 47%);
+        --accent-soft: hsl(230 50% 92%);
+        --page: #edf0f6;
+        --surface: rgba(250, 251, 254, 0.9);
+        --surface-solid: #fafbfe;
+        --surface-raised: #ffffff;
+        --surface-soft: #f1f3f8;
+        --text: #171b26;
+        --text-soft: #6d7588;
+        --line: rgba(29, 36, 53, 0.09);
+        --shadow: 0 18px 55px rgba(25, 31, 48, 0.1);
+        --shadow-soft: 0 8px 24px rgba(25, 31, 48, 0.08);
+        --radius-panel: 18px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        color: var(--text);
+        background:
+          radial-gradient(circle at 10% 0%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 34rem),
+          var(--page);
+      }
+
+      button,
+      input,
+      textarea {
+        color: inherit;
+        font: inherit;
+      }
+
+      button {
+        border: 0;
+        cursor: pointer;
+      }
+
+      .app-shell {
+        display: grid;
+        grid-template-columns: 280px minmax(0, 1fr);
+        height: 100vh;
+        overflow: hidden;
+      }
+
+      .sidebar {
+        display: flex;
+        min-height: 0;
+        flex-direction: column;
+        padding: 22px 18px 16px;
+        background: var(--surface);
+        border-right: 1px solid var(--line);
+        backdrop-filter: blur(22px);
+      }
+
+      .brand-row,
+      .chat-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .brand {
+        display: grid;
+        gap: 3px;
+      }
+
+      .brand h1 {
+        margin: 0;
+        font-size: 23px;
+        letter-spacing: -0.03em;
+      }
+
+      .brand span,
+      .muted {
+        color: var(--text-soft);
+        font-size: 12px;
+      }
+
+      .world-switcher {
+        display: grid;
+        gap: 6px;
+        margin-top: 18px;
+      }
+
+      .world-switcher span,
+      .panel-label {
+        color: var(--text-soft);
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      .world-switcher select,
+      .contact-search,
+      .field-value,
+      textarea {
+        width: 100%;
+        color: var(--text);
+        background: var(--surface-raised);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        outline: none;
+      }
+
+      .world-switcher select {
+        min-height: 42px;
+        padding: 0 11px;
+      }
+
+      .contact-search {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 7px;
+        align-items: center;
+        min-height: 42px;
+        padding: 0 11px;
+        margin: 10px 0;
+      }
+
+      .contact-search input {
+        min-width: 0;
+        background: transparent;
+        border: 0;
+        outline: none;
+      }
+
+      .contact-list {
+        display: grid;
+        align-content: start;
+        gap: 5px;
+        min-height: 0;
+        margin-top: 12px;
+        overflow-y: auto;
+      }
+
+      .contact {
+        display: grid;
+        grid-template-columns: 44px minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+        width: 100%;
+        min-height: 64px;
+        padding: 8px;
+        color: var(--text);
+        text-align: left;
+        background: transparent;
+        border-radius: 15px;
+      }
+
+      .contact.is-active,
+      .contact:hover {
+        background: color-mix(in srgb, var(--accent) 12%, transparent);
+      }
+
+      .avatar {
+        display: grid;
+        width: 44px;
+        height: 44px;
+        place-items: center;
+        overflow: hidden;
+        color: #fff;
+        font-weight: 850;
+        background: linear-gradient(145deg, var(--accent), var(--accent-strong));
+        border-radius: 15px;
+      }
+
+      .avatar.secondary-avatar {
+        background: linear-gradient(145deg, #697084, #313848);
+      }
+
+      .contact-copy {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+      }
+
+      .contact-name {
+        overflow: hidden;
+        font-size: 14px;
+        font-weight: 800;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .contact-subtitle {
+        overflow: hidden;
+        color: var(--text-soft);
+        font-size: 12px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .unread-badge {
+        display: grid;
+        min-width: 19px;
+        height: 19px;
+        padding: 0 5px;
+        place-items: center;
+        color: #fff;
+        font-size: 10px;
+        font-weight: 800;
+        background: var(--accent);
+        border-radius: 999px;
+      }
+
+      .chat {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        min-width: 0;
+        min-height: 0;
+        background: color-mix(in srgb, var(--page) 86%, var(--accent-soft));
+      }
+
+      /* 大注释：这里是新版世界工作台的关键结构，顶栏保留产品 chat-header 语义，只把世界能力放进工具位。 */
+      .chat-header {
+        min-height: 76px;
+        gap: 12px;
+        padding: 14px 22px;
+        background: color-mix(in srgb, var(--surface-solid) 90%, transparent);
+        border-bottom: 1px solid var(--line);
+        backdrop-filter: blur(18px);
+      }
+
+      .identity-select,
+      .gear-wrap {
+        position: relative;
+      }
+
+      .identity-button {
+        display: grid;
+        grid-template-columns: 45px minmax(0, 1fr) auto;
+        gap: 11px;
+        align-items: center;
+        min-width: 230px;
+        padding: 0;
+        text-align: left;
+        background: transparent;
+      }
+
+      .identity-button .avatar {
+        width: 45px;
+        height: 45px;
+        border-radius: 16px;
+      }
+
+      .identity-copy {
+        display: grid;
+        gap: 3px;
+        min-width: 0;
+      }
+
+      .identity-copy strong {
+        overflow: hidden;
+        font-size: 16px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .identity-copy span {
+        color: var(--text-soft);
+        font-size: 12px;
+      }
+
+      .chevron {
+        color: var(--text-soft);
+        font-size: 16px;
+      }
+
+      .identity-menu,
+      .gear-panel {
+        position: absolute;
+        z-index: 20;
+        top: calc(100% + 10px);
+        background: var(--surface-solid);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        box-shadow: var(--shadow);
+      }
+
+      .identity-menu {
+        left: 0;
+        display: grid;
+        width: 280px;
+        gap: 5px;
+        padding: 8px;
+      }
+
+      .identity-option {
+        display: grid;
+        grid-template-columns: 38px minmax(0, 1fr);
+        gap: 9px;
+        align-items: center;
+        width: 100%;
+        padding: 8px;
+        text-align: left;
+        background: transparent;
+        border-radius: 12px;
+      }
+
+      .identity-option.is-active,
+      .identity-option:hover {
+        background: color-mix(in srgb, var(--accent) 12%, transparent);
+      }
+
+      .identity-option .avatar {
+        width: 38px;
+        height: 38px;
+        border-radius: 13px;
+      }
+
+      .event-tools {
+        display: flex;
+        min-width: 0;
+        flex: 1;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+      }
+
+      .event-status-pill {
+        display: flex;
+        min-width: 0;
+        max-width: 44vw;
+        align-items: center;
+        gap: 7px;
+        min-height: 34px;
+        padding: 0 12px;
+        color: var(--text-soft);
+        background: var(--surface-soft);
+        border-radius: 12px;
+      }
+
+      .event-status-pill strong,
+      .event-status-pill span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .event-status-pill strong {
+        color: var(--text);
+        font-size: 12px;
+      }
+
+      .event-status-pill span {
+        font-size: 12px;
+      }
+
+      .primary,
+      .secondary {
+        display: grid;
+        min-height: 40px;
+        padding: 0 14px;
+        place-items: center;
+        font-weight: 750;
+        border-radius: 12px;
+      }
+
+      .primary {
+        color: #fff;
+        background: var(--accent);
+      }
+
+      .secondary {
+        color: var(--text);
+        background: color-mix(in srgb, var(--accent) 12%, var(--surface-soft));
+      }
+
+      .icon-button {
+        display: grid;
+        width: 38px;
+        height: 38px;
+        place-items: center;
+        color: var(--text);
+        font-size: 20px;
+        background: var(--surface-soft);
+        border-radius: 12px;
+      }
+
+      .gear-panel {
+        right: 0;
+        width: min(420px, calc(100vw - 24px));
+        overflow: hidden;
+      }
+
+      .panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .panel-head strong {
+        font-size: 16px;
+      }
+
+      .panel-tabs {
+        display: flex;
+        gap: 5px;
+        padding: 10px 14px;
+        background: var(--surface-soft);
+      }
+
+      .panel-tabs button {
+        min-height: 32px;
+        padding: 0 12px;
+        color: var(--text-soft);
+        background: transparent;
+        border-radius: 9px;
+      }
+
+      .panel-tabs button.is-active {
+        color: var(--text);
+        background: var(--surface-raised);
+        box-shadow: var(--shadow-soft);
+      }
+
+      .panel-body {
+        display: grid;
+        gap: 12px;
+        padding: 14px;
+      }
+
+      .field {
+        display: grid;
+        gap: 6px;
+      }
+
+      .field-value {
+        min-height: 39px;
+        padding: 10px 11px;
+        font-size: 13px;
+      }
+
+      .timeline-mini {
+        display: grid;
+        gap: 7px;
+      }
+
+      .timeline-item {
+        display: grid;
+        grid-template-columns: 58px minmax(0, 1fr);
+        gap: 9px;
+        padding: 9px;
+        color: var(--text-soft);
+        background: var(--surface-soft);
+        border-radius: 12px;
+        font-size: 12px;
+      }
+
+      .timeline-item strong {
+        color: var(--text);
+      }
+
+      .messages {
+        display: flex;
+        min-height: 0;
+        flex-direction: column;
+        gap: 10px;
+        padding: 18px clamp(20px, 5vw, 72px);
+        overflow-y: auto;
+      }
+
+      .scene-strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: center;
+        margin-bottom: 4px;
+      }
+
+      .scene-chip,
+      .system-note {
+        color: var(--text-soft);
+        background: var(--surface);
+        border-radius: 12px;
+        font-size: 12px;
+      }
+
+      .scene-chip {
+        padding: 7px 10px;
+      }
+
+      .scene-chip strong {
+        color: var(--text);
+      }
+
+      .world-event-card {
+        display: grid;
+        width: min(680px, 100%);
+        gap: 10px;
+        align-self: center;
+        padding: 14px;
+        color: var(--text);
+        background: color-mix(in srgb, var(--surface-raised) 92%, white 8%);
+        border: 1px solid color-mix(in srgb, var(--line) 82%, white 8%);
+        border-radius: var(--radius-panel);
+      }
+
+      .world-event-card header,
+      .event-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .world-event-card h2 {
+        margin: 0;
+        font-size: 16px;
+        letter-spacing: -0.01em;
+      }
+
+      .world-event-card p {
+        margin: 0;
+        color: var(--text-soft);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+
+      .small-button {
+        min-height: 32px;
+        padding: 0 10px;
+        color: var(--text);
+        background: var(--surface-soft);
+        border-radius: 9px;
+        font-size: 12px;
+        font-weight: 750;
+      }
+
+      .small-button.primary-small {
+        color: #fff;
+        background: var(--accent);
+      }
+
+      .message-row {
+        position: relative;
+        display: block;
+        width: 100%;
+        min-width: 0;
+      }
+
+      .message-row.user .message {
+        margin-left: auto;
+      }
+
+      .message {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        width: fit-content;
+        max-width: min(560px, 76%);
+        min-height: 0;
+        padding: 8px 11px;
+        overflow-wrap: anywhere;
+        font-size: 14px;
+        line-height: 1.45;
+        white-space: pre-wrap;
+        border-radius: 11px;
+      }
+
+      .message.user {
+        color: #fff;
+        background: var(--accent);
+        border-bottom-right-radius: 3px;
+      }
+
+      .message.assistant {
+        background: var(--surface-soft);
+        border-bottom-left-radius: 3px;
+      }
+
+      .message-name {
+        margin-bottom: 4px;
+        color: color-mix(in srgb, currentColor 72%, transparent);
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .message-copy {
+        display: block;
+        min-width: 0;
+        max-width: 100%;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
+
+      .system-note {
+        align-self: center;
+        max-width: min(680px, 100%);
+        padding: 7px 11px;
+        line-height: 1.45;
+      }
+
+      .composer {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: end;
+        padding: 12px clamp(20px, 5vw, 72px) 16px;
+        background: var(--surface-solid);
+        border-top: 1px solid var(--line);
+      }
+
+      textarea {
+        min-height: 44px;
+        max-height: 130px;
+        padding: 11px 12px;
+        resize: vertical;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --page: #0d1018;
+          --surface: rgba(18, 22, 32, 0.9);
+          --surface-solid: #121620;
+          --surface-raised: #191e2a;
+          --surface-soft: #202633;
+          --text: #f2f4f9;
+          --text-soft: #939bad;
+          --line: rgba(226, 232, 246, 0.09);
+          --shadow: 0 22px 70px rgba(0, 0, 0, 0.38);
+        }
+      }
+
+      @media (max-width: 820px) {
+        .app-shell {
+          grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+          display: none;
+        }
+
+        .chat-header {
+          min-height: 62px;
+          padding: 10px;
+        }
+
+        .identity-button {
+          min-width: 0;
+          grid-template-columns: 42px minmax(0, 1fr) auto;
+        }
+
+        .identity-copy span,
+        .event-status-pill,
+        .secondary {
+          display: none;
+        }
+
+        .event-tools {
+          flex: 0 0 auto;
+        }
+
+        .primary {
+          min-width: 44px;
+          padding: 0 10px;
+          font-size: 12px;
+        }
+
+        .messages {
+          padding: 14px 10px;
+        }
+
+        .message {
+          max-width: 82%;
+        }
+
+        .composer {
+          padding: 10px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- 大注释：侧栏沿用产品会话列表形态；世界只是会话上下文，不把用户拉进另一个管理页。 -->
+    <main class="app-shell">
+      <aside class="sidebar">
+        <div class="brand-row">
+          <div class="brand">
+            <h1>PalTavern</h1>
+            <span>消息、角色和世界都在当前空间内隔离</span>
+          </div>
+        </div>
+        <label class="world-switcher">
+          <span>当前世界</span>
+          <select>
+            <option>雾港世界</option>
+            <option>夏日校园</option>
+          </select>
+        </label>
+        <label class="contact-search">
+          <span>⌕</span>
+          <input placeholder="搜索角色、群聊或地点" />
+        </label>
+        <section class="contact-list">
+          <button class="contact is-active">
+            <span class="avatar">澪</span>
+            <span class="contact-copy">
+              <span class="contact-name">澪 · 私聊</span>
+              <span class="contact-subtitle">后台灯光忽然断了。</span>
+            </span>
+            <span class="unread-badge">2</span>
+          </button>
+          <button class="contact">
+            <span class="avatar secondary-avatar">群</span>
+            <span class="contact-copy">
+              <span class="contact-name">旧剧院调查组</span>
+              <span class="contact-subtitle">世界事件轻提示已同步</span>
+            </span>
+          </button>
+          <button class="contact">
+            <span class="avatar secondary-avatar">鸦</span>
+            <span class="contact-copy">
+              <span class="contact-name">鸦先生</span>
+              <span class="contact-subtitle">他问你是否带来了票根。</span>
+            </span>
+          </button>
+        </section>
+      </aside>
+
+      <section class="chat">
+        <header class="chat-header">
+          <!-- 小注释：身份选择放在角色头像同一视觉位置，减少新功能的陌生感。 -->
+          <div class="identity-select">
+            <button class="identity-button" aria-expanded="true">
+              <span class="avatar">林</span>
+              <span class="identity-copy">
+                <strong>林栖 · 调查员</strong>
+                <span>当前身份，点击切换我是谁</span>
+              </span>
+              <span class="chevron">⌄</span>
+            </button>
+            <div class="identity-menu">
+              <button class="identity-option is-active">
+                <span class="avatar">林</span>
+                <span class="contact-copy">
+                  <span class="contact-name">林栖 · 调查员</span>
+                  <span class="contact-subtitle">第一人称参与雾港剧情</span>
+                </span>
+              </button>
+              <button class="identity-option">
+                <span class="avatar secondary-avatar">许</span>
+                <span class="contact-copy">
+                  <span class="contact-name">许愿 · 剧院学徒</span>
+                  <span class="contact-subtitle">只影响当前世界内对话</span>
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 小注释：事件入口使用产品按钮和状态 pill，不再像独立剧情看板。 -->
+          <div class="event-tools">
+            <div class="event-status-pill">
+              <strong>旧剧院断电</strong>
+              <span>相关角色：澪、鸦先生</span>
+            </div>
+            <button class="primary">生成事件</button>
+            <button class="secondary">续写场景</button>
+          </div>
+
+          <div class="gear-wrap">
+            <button class="icon-button" title="世界与时间线">⚙</button>
+            <section class="gear-panel" aria-label="世界设置与时间线">
+              <div class="panel-head">
+                <div>
+                  <strong>雾港世界</strong>
+                  <div class="muted">世界设置、时间线和记忆</div>
+                </div>
+                <button class="small-button primary-small">保存</button>
+              </div>
+              <nav class="panel-tabs">
+                <button class="is-active">世界</button>
+                <button>时间线</button>
+                <button>记忆</button>
+                <button>定时事件</button>
+              </nav>
+              <div class="panel-body">
+                <label class="field">
+                  <span class="panel-label">当前地点</span>
+                  <span class="field-value">雾港旧剧院 · 后台走廊</span>
+                </label>
+                <label class="field">
+                  <span class="panel-label">当前目标</span>
+                  <span class="field-value">在停电前找到被调包的演出名单。</span>
+                </label>
+                <div class="field">
+                  <span class="panel-label">最近时间线</span>
+                  <div class="timeline-mini">
+                    <div class="timeline-item"><strong>23:10</strong><span>澪发现后台门锁有新划痕。</span></div>
+                    <div class="timeline-item"><strong>23:18</strong><span>旧剧院全楼断电，事件进入进行中。</span></div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </header>
+
+        <section class="messages">
+          <div class="scene-strip">
+            <span class="scene-chip"><strong>地点</strong> 旧剧院后台</span>
+            <span class="scene-chip"><strong>状态</strong> 低光、封闭、有人接近</span>
+            <span class="scene-chip"><strong>目标</strong> 找到演出名单</span>
+          </div>
+
+          <!-- 大注释：事件卡保持产品现有卡片风格，只作为聊天流里的剧情控制块。 -->
+          <article class="world-event-card">
+            <header>
+              <h2>世界事件 · 旧剧院断电</h2>
+              <div class="event-actions">
+                <button class="small-button">编辑</button>
+                <button class="small-button primary-small">结束事件</button>
+              </div>
+            </header>
+            <p>后台灯光突然熄灭，远处道具间传来金属盒落地的声音。完整事件停留在当前世界工作台，相关角色聊天里只出现轻提示。</p>
+          </article>
+
+          <div class="message-row assistant">
+            <div class="message assistant">
+              <span class="message-name">澪</span>
+              <span class="message-copy">你听见了吗？不是电闸，是有人在后台移动。别急着开手电，先看地上的反光。</span>
+            </div>
+          </div>
+
+          <div class="system-note">世界事件轻提示：旧剧院断电，相关角色已察觉异常。</div>
+
+          <div class="message-row user">
+            <div class="message user">
+              <span class="message-name">林栖</span>
+              <span class="message-copy">我蹲下来，用票根压住门缝，确认有没有风从里面吹出来。</span>
+            </div>
+          </div>
+
+          <div class="message-row assistant">
+            <div class="message assistant">
+              <span class="message-name">鸦先生</span>
+              <span class="message-copy">很好。门后有人，但他不是从走廊进来的。你现在应该问：剧院还有没有第二个后台入口。</span>
+            </div>
+          </div>
+        </section>
+
+        <footer class="composer">
+          <button class="icon-button" title="添加素材">＋</button>
+          <textarea placeholder="以当前身份继续对话，或描述你的行动..."></textarea>
+          <button class="primary">发送</button>
+        </footer>
+      </section>
+    </main>
+  </body>
+</html>

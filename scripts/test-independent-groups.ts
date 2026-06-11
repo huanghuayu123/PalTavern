@@ -30,11 +30,11 @@ Object.defineProperty(globalThis, 'navigator', {
   value: { userAgent: 'node-test' },
 });
 
-const stateModule = require('../src/independent-chat/state');
-const groupChat = require('../src/independent-chat/group-chat');
-const cards = require('../src/independent-chat/cards');
-const timeline = require('../src/independent-chat/timeline');
-const characterRelationships = require('../src/independent-chat/character-relationships');
+const stateModule = require('../src/independent-chat/core/state');
+const groupChat = require('../src/independent-chat/chat/group-chat');
+const cards = require('../src/independent-chat/characters/cards');
+const timeline = require('../src/independent-chat/memory/timeline');
+const characterRelationships = require('../src/independent-chat/characters/relationships');
 
 function testCharacter(id: string, name: string) {
   return {

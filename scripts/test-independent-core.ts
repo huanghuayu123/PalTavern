@@ -34,15 +34,34 @@ Object.defineProperty(globalThis, 'navigator', {
   value: { userAgent: 'node-test' },
 });
 
-const stateModule = require('../src/independent-chat/state');
-const scheduler = require('../src/independent-chat/scheduler');
-const model = require('../src/independent-chat/model');
-const cards = require('../src/independent-chat/cards');
-const characterRelationships = require('../src/independent-chat/character-relationships');
-const autoStrategy = require('../src/independent-chat/auto-message-strategy');
-const characterSettings = require('../src/independent-chat/character-settings');
-const chatFormat = require('../src/independent-chat/chat-format');
-const chat = require('../src/independent-chat/chat');
+const stateModule = require('../src/independent-chat/core/state');
+const scheduler = require('../src/independent-chat/automation/scheduler');
+const model = require('../src/independent-chat/model/client');
+const cards = require('../src/independent-chat/characters/cards');
+const characterRelationships = require('../src/independent-chat/characters/relationships');
+const autoStrategy = require('../src/independent-chat/chat/auto-message-strategy');
+const characterSettings = require('../src/independent-chat/characters/settings');
+const chatFormat = require('../src/independent-chat/chat/format');
+const chat = require('../src/independent-chat/chat/private-chat');
+const rpRendering = require('../src/independent-chat/ui/rp-rendering');
+
+function functionBody(source: string, name: string): string {
+  const start = source.indexOf(`function ${name}`);
+  if (start < 0) {
+    throw new Error(`Missing ${name} in UI source.`);
+  }
+  const open = source.indexOf('{', start);
+  let depth = 0;
+  for (let index = open; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === '{') depth += 1;
+    if (char === '}') {
+      depth -= 1;
+      if (depth === 0) return source.slice(open + 1, index);
+    }
+  }
+  throw new Error(`Could not read ${name} body.`);
+}
 
 const freshDefault = stateModule.defaultState();
 if (
@@ -144,6 +163,29 @@ if (migrated.worldInteractionHighSimulation !== false) {
 if (migrated.companionTimeMode !== 'system' || typeof migrated.virtualTimeMinutes !== 'number') {
   throw new Error('Legacy state did not default to system companion time.');
 }
+// 大注释：世界工作台成为新主入口后，旧的事件/时间线主视图要迁移到 world，避免旧会话打开到被收起的入口。
+const worldViewState = stateModule.normalizeState({
+  worlds: [{ id: 'world_view', name: 'World View', description: '', createdAt: 1, updatedAt: 1 }],
+  activeWorldId: 'world_view',
+  activeView: 'world',
+});
+const legacyEventsViewState = stateModule.normalizeState({
+  worlds: [{ id: 'events_view', name: 'Events View', description: '', createdAt: 1, updatedAt: 1 }],
+  activeWorldId: 'events_view',
+  activeView: 'events',
+});
+const legacyTimelineViewState = stateModule.normalizeState({
+  worlds: [{ id: 'timeline_view', name: 'Timeline View', description: '', createdAt: 1, updatedAt: 1 }],
+  activeWorldId: 'timeline_view',
+  activeView: 'timeline',
+});
+if (
+  worldViewState.activeView !== 'world'
+  || legacyEventsViewState.activeView !== 'world'
+  || legacyTimelineViewState.activeView !== 'world'
+) {
+  throw new Error('World workbench should be the persisted entry for world, event, and timeline views.');
+}
 if (!Array.isArray(migrated.timelineEntries) || migrated.timelineEntries.length !== 0) {
   throw new Error('Legacy state did not receive an empty world timeline.');
 }
@@ -158,6 +200,42 @@ if (
 }
 if (migrated.moments[0].visibility.mode !== 'public') {
   throw new Error('Legacy moments did not default to public visibility.');
+}
+
+const rpSegments = rpRendering.parseRpRenderSegments([
+  '雨点贴着便利店的玻璃往下滑。',
+  '@bubble:夏梨|犹豫|[现在吃的话，会不会太没耐心？]',
+  '@bubble:夏梨|害羞|[*他好像真的注意到我想吃这个。*]',
+  '她把冰淇淋推到桌子中间。',
+].join('\n'), { fallbackSpeaker: '夏梨', fallbackEmotion: '日常' });
+if (
+  rpSegments.length !== 4
+  || rpSegments[0].kind !== 'narration'
+  || rpSegments[1].kind !== 'dialogue'
+  || rpSegments[1].speaker !== '夏梨'
+  || rpSegments[1].emotion !== '犹豫'
+  || rpSegments[1].text !== '现在吃的话，会不会太没耐心？'
+  || rpSegments[2].kind !== 'thought'
+  || !rpSegments[2].text.includes('注意到')
+  || rpSegments[3].kind !== 'narration'
+) {
+  throw new Error('RP rendering parser should split narration, dialogue, and inner thoughts.');
+}
+
+const appSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/ui/app.ts'), 'utf8');
+const worldDialogueBody = functionBody(appSource, 'renderWorldDialogueStream');
+const worldComposerBindingBody = functionBody(appSource, 'bindUi');
+if (worldDialogueBody.includes('messagesFor(')) {
+  throw new Error('World RP stream must not render private-chat messages.');
+}
+if (worldComposerBindingBody.includes('void sendMessage(content, render);')) {
+  throw new Error('World RP composer must not submit through the private-chat sender.');
+}
+if (
+  !appSource.includes('data-world-rp-render-mode="narration"')
+  || !appSource.includes('data-world-rp-render-mode="bubble"')
+) {
+  throw new Error('World RP render-mode buttons should be wired as real world-stage controls.');
 }
 
 const weatherState = stateModule.normalizeState({
@@ -241,7 +319,7 @@ const timelineViewState = stateModule.normalizeState({
   }],
 });
 if (
-  timelineViewState.activeView !== 'timeline'
+  timelineViewState.activeView !== 'world'
   || timelineViewState.timelineEntries.length !== 1
   || timelineViewState.timelineEntries[0].characterNames.deleted_character !== 'Deleted Character'
 ) {
@@ -952,11 +1030,11 @@ if (
   throw new Error('Deleting a character left related local data behind.');
 }
 
-const uiSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/ui.ts'), 'utf8');
-const chatSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/chat.ts'), 'utf8');
-const schedulerSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/scheduler.ts'), 'utf8');
-const groupChatSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/group-chat.ts'), 'utf8');
-const typingDelayPath = path.join(process.cwd(), 'src/independent-chat/typing-delay.ts');
+const uiSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/ui/app.ts'), 'utf8');
+const chatSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/chat/private-chat.ts'), 'utf8');
+const schedulerSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/automation/scheduler.ts'), 'utf8');
+const groupChatSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/chat/group-chat.ts'), 'utf8');
+const typingDelayPath = path.join(process.cwd(), 'src/independent-chat/chat/typing-delay.ts');
 const typingDelaySource = fs.existsSync(typingDelayPath)
   ? fs.readFileSync(typingDelayPath, 'utf8')
   : '';
@@ -998,9 +1076,27 @@ const composerSubmitBlock = uiSource
 const groupComposerSubmitBlock = uiSource
   .split("document.querySelector<HTMLFormElement>('#group-composer')?.addEventListener('submit'")[1]
   ?.split("document.querySelector<HTMLButtonElement>('#generate-group-inline')")[0] ?? '';
+const privateMessageActionOpenBlock = uiSource
+  .split("document.querySelectorAll<HTMLElement>('[data-message-id]').forEach")[1]
+  ?.split('const cancelLongPress = () => {')[0] ?? '';
+const groupMessageActionOpenBlock = uiSource
+  .split("document.querySelectorAll<HTMLElement>('[data-group-message-id]').forEach")[1]
+  ?.split('const cancelLongPress = () => {')[0] ?? '';
 const requestBeforeInputSubmitBlock = uiSource
   .split('function requestTextareaFormSubmitFromBeforeInput')[1]
   ?.split('function focusPendingMessageComposer')[0] ?? '';
+const idleRenderBlock = uiSource
+  .split('export function renderWhenChatInputIdle')[1]
+  ?.split('function bindUi')[0] ?? '';
+const timelineIdleRenderBranch = idleRenderBlock
+  .split("} else if (input.id === 'timeline-note-input')")[1]
+  ?.split('} else if (input.dataset.commentInput)')[0] ?? '';
+const eventComposerIdleRenderBranch = idleRenderBlock
+  .split("input.closest('.event-composer-dialog')")[1]
+  ?.split('} else if (input.dataset.eventManualInput)')[0] ?? '';
+const restoreScrollBlock = uiSource
+  .split('function restoreScrollIfNeeded')[1]
+  ?.split('function applyScrollSnapshot')[0] ?? '';
 const openSettingsBlock = uiSource
   .split('const openSettings = () => {')[1]
   ?.split("document.querySelector<HTMLButtonElement>('#open-settings')")[0] ?? '';
@@ -1041,6 +1137,30 @@ const mobileMomentComposerOpenBlock = (styleSource.split('.moment-compose-fab {'
 const keepMomentComposerVisibleBlock = uiSource
   .split('function keepMomentComposerVisible')[1]
   ?.split('function updateKeyboardOffset')[0] ?? '';
+const desktopViewControlsBlock = uiSource
+  .split('function renderDesktopViewControls')[1]
+  ?.split('function renderCharacterPanelTabs')[0] ?? '';
+const mobileBottomNavBlock = uiSource
+  .split('<nav class="bottom-nav"')[1]
+  ?.split('</nav>')[0] ?? '';
+const bottomNavFinalBlock = styleSource
+  .split('/* Bottom nav final alignment guard */')[1] ?? '';
+const worldWorkbenchBlock = uiSource
+  .split('function renderWorldWorkbenchPage')[1]
+  ?.split('function renderDesktop')[0] ?? '';
+const worldEventLobbyBlock = uiSource
+  .split('function renderWorldEventLobby')[1]
+  ?.split('function renderWorldDialogueStream')[0] ?? '';
+const worldEventDetailBlock = uiSource
+  .split('function renderWorldEventRpDetail')[1]
+  ?.split('function renderWorldStageComposer')[0] ?? '';
+const worldSettingsPanelBlock = uiSource
+  .split('function renderWorldSettingsPanel')[1]
+  ?.split('function renderWorldStageHeader')[0] ?? '';
+const worldPersonaSelectorBlock = functionBody(uiSource, 'renderWorldPersonaSelector');
+const worldPersonaSummaryBlock = worldPersonaSelectorBlock
+  .split('<summary>')[1]
+  ?.split('</summary>')[0] ?? '';
 const focusAfterSubmitIndex = composerSubmitBlock.indexOf("requestMessageComposerFocusAfterSubmit(character?.id ?? '');");
 const replyModeBranchIndex = composerSubmitBlock.indexOf("if (state.chatReplyMode === 'manual')");
 const groupSentBranchIndex = groupComposerSubmitBlock.indexOf('if (sent) {');
@@ -1093,6 +1213,59 @@ if (
   || !uiSource.includes('COMPOSER_FOCUS_KEEPALIVE_MS')
 ) {
   throw new Error('Composer focus should be kept alive across mobile re-renders after sending.');
+}
+if (
+  !idleRenderBlock.includes("input.closest('.sticker-import-dialog')")
+  || !idleRenderBlock.includes('窗口失焦时不能让后台调度触发重渲染清空内容')
+  || !idleRenderBlock.includes('return;')
+) {
+  throw new Error('Idle scheduler renders should not refresh non-draft form fields on window blur.');
+}
+if (
+  !idleRenderBlock.includes("input.id === 'group-message-input'")
+  || !idleRenderBlock.includes('setGroupMessageDraft(activeGroupChat(), input.value)')
+  || !idleRenderBlock.includes("input.id === 'timeline-note-input'")
+  || !idleRenderBlock.includes('timelineNoteDraft = input.value')
+  || !idleRenderBlock.includes('captureEventComposerDraftFromDom()')
+  || !idleRenderBlock.includes('input.dataset.eventManualInput')
+  || !idleRenderBlock.includes('.world-gear-panel')
+  || !idleRenderBlock.includes('.world-persona-select')
+  || !idleRenderBlock.includes('.message-edit-dialog')
+) {
+  throw new Error('Idle scheduler renders should protect every visible text box from draft loss and keyboard focus drops.');
+}
+if (
+  !timelineIdleRenderBranch.includes('return;')
+  || !eventComposerIdleRenderBranch.includes('return;')
+  || !/timelineNoteDraft = input\.value;\r?\n\s*return;/.test(timelineIdleRenderBranch)
+  || !/captureEventComposerDraftFromDom\(\);\r?\n\s*return;/.test(eventComposerIdleRenderBranch)
+) {
+  throw new Error('World and event forms should drop idle scheduler renders instead of refreshing after blur.');
+}
+if (
+  !uiSource.includes("let actionMenuAnchor: { kind: 'message' | 'group'; id: string; top: number } | null = null")
+  || !uiSource.includes('function captureActionMenuAnchor')
+  || !uiSource.includes('function restoreActionMenuAnchorIfNeeded')
+  || privateMessageActionOpenBlock.indexOf("captureActionMenuAnchor('message', messageId, message);") < 0
+  || privateMessageActionOpenBlock.indexOf('messageActionId = messageId;') < 0
+  || privateMessageActionOpenBlock.indexOf("captureActionMenuAnchor('message', messageId, message);") > privateMessageActionOpenBlock.indexOf('messageActionId = messageId;')
+  || groupMessageActionOpenBlock.indexOf("captureActionMenuAnchor('group', messageId, message);") < 0
+  || groupMessageActionOpenBlock.indexOf('groupMessageActionId = messageId;') < 0
+  || groupMessageActionOpenBlock.indexOf("captureActionMenuAnchor('group', messageId, message);") > groupMessageActionOpenBlock.indexOf('groupMessageActionId = messageId;')
+  || !uiSource.includes('restoreScrollIfNeeded() || restoreActionMenuAnchorIfNeeded()')
+  || !uiSource.includes('has-actions-open-above')
+  || !uiSource.includes('is-actions-open is-actions-open-above')
+  || !styleSource.includes('.message-row.has-actions-open-above')
+  || !styleSource.includes('--message-actions-space: 150px')
+  || !styleSource.includes('.group-message.is-actions-open-above .group-message-actions')
+) {
+  throw new Error('Message action menus should open above while anchoring the tapped bubble in place.');
+}
+if (
+  !restoreScrollBlock.includes('window.setTimeout(() => applyScrollSnapshot(snapshot), 0)')
+  || !restoreScrollBlock.includes('动作菜单和图片可能在首轮布局后再改变高度')
+) {
+  throw new Error('Scroll restoration should run a second pass after message action layout settles.');
 }
 if (
   keepMomentComposerVisibleBlock.includes('scrollTop')
@@ -1177,7 +1350,7 @@ if (
 if (
   !uiSource.includes('id="test-model-connection"')
   || !uiSource.includes('测试连接')
-  || !uiSource.includes("import { callAuthoringModel, callModel, fetchModelList, testModelConnection } from './model';")
+  || !uiSource.includes("import { callAuthoringModel, callModel, fetchModelList, testModelConnection } from '../model/client';")
   || !modelConnectionTestBlock.includes('testModelConnection({')
   || !modelConnectionTestBlock.includes("apiUrl: apiUrlForProvider(provider, fieldValue('#api-url'))")
   || !modelConnectionTestBlock.includes("model: fieldValue('#model-name')")
@@ -1284,6 +1457,106 @@ if (
 ) {
   throw new Error('Moment composer should stay visible and scrollable above the mobile keyboard.');
 }
+// 大注释：世界工作台导航契约。主入口只暴露消息、角色、世界、动态、设置；事件和时间线只作为世界内部能力出现。
+if (
+  !uiSource.includes("type MobileSection = 'messages' | 'contacts' | 'groups' | 'world' | 'moments' | 'settings'")
+  || !desktopViewControlsBlock.includes('data-view="world"')
+  || !desktopViewControlsBlock.includes('>世界<')
+  || desktopViewControlsBlock.includes('data-view="events"')
+  || desktopViewControlsBlock.includes('data-view="timeline"')
+  || !mobileBottomNavBlock.includes("['messages', '消息'")
+  || !mobileBottomNavBlock.includes("['contacts', '角色'")
+  || !mobileBottomNavBlock.includes("['world', '世界'")
+  || !mobileBottomNavBlock.includes("['moments', '动态'")
+  || !mobileBottomNavBlock.includes("['settings', '设置'")
+  || mobileBottomNavBlock.includes("['events'")
+  || mobileBottomNavBlock.includes("['timeline'")
+) {
+  throw new Error('Main navigation should expose messages, characters, world, moments, and settings only.');
+}
+if (
+  !bottomNavFinalBlock.includes('grid-template-columns: repeat(5, minmax(0, 1fr))')
+  || !bottomNavFinalBlock.includes('grid-auto-flow: column')
+  || !bottomNavFinalBlock.includes('justify-items: stretch')
+  || !bottomNavFinalBlock.includes('width: 100%')
+  || !bottomNavFinalBlock.includes('min-width: 0')
+  || !bottomNavFinalBlock.includes('place-items: center')
+  || !bottomNavFinalBlock.includes('width: 36px')
+  || !bottomNavFinalBlock.includes('height: 28px')
+) {
+  throw new Error('Mobile bottom navigation should lock five equal slots and centered icon/label alignment.');
+}
+const worldTopbarFinalBlock = styleSource.split('/* World topbar final mobile arrangement guard */')[1] ?? '';
+if (
+  !worldTopbarFinalBlock.includes('grid-template-areas:')
+  || !worldTopbarFinalBlock.includes('"persona . gear"')
+  || !worldTopbarFinalBlock.includes('"event event event"')
+  || !worldTopbarFinalBlock.includes('position: relative')
+  || !worldTopbarFinalBlock.includes('.world-stage-header {')
+  || !worldTopbarFinalBlock.includes('position: absolute')
+  || !worldTopbarFinalBlock.includes('left: 50%')
+  || !worldTopbarFinalBlock.includes('transform: translateX(-50%)')
+  || !worldTopbarFinalBlock.includes('.world-stage-actions {')
+  || !worldTopbarFinalBlock.includes('display: contents')
+  || !worldTopbarFinalBlock.includes('#generate-event')
+  || !worldTopbarFinalBlock.includes('grid-area: event')
+  || !worldTopbarFinalBlock.includes('white-space: nowrap')
+) {
+  throw new Error('Mobile world topbar should keep persona/settings on the first row, center the world title, and move generate-event into a horizontal second row.');
+}
+if (
+  !worldPersonaSummaryBlock.includes('renderUserAvatar()')
+  || !worldPersonaSummaryBlock.includes('personaName')
+  || !worldPersonaSummaryBlock.includes('⌄')
+  || worldPersonaSummaryBlock.includes('<small')
+  || worldPersonaSummaryBlock.includes('personaSummary')
+) {
+  throw new Error('World persona selector should only show avatar, user name, and dropdown arrow in the top bar.');
+}
+if (
+  !worldWorkbenchBlock.includes('旁白 + 对话')
+  || !worldWorkbenchBlock.includes('当前氛围')
+  || worldWorkbenchBlock.includes('当前目标')
+  || !worldWorkbenchBlock.includes('renderWorldEventLobby')
+  || !worldWorkbenchBlock.includes('renderWorldEventRpDetail')
+  || !worldWorkbenchBlock.includes('renderWorldSettingsPanel')
+  || !styleSource.includes('.world-workbench')
+  || !styleSource.includes('.narrative-card')
+  || !styleSource.includes('.dialogue-turn')
+) {
+  throw new Error('World workbench should render daily RP narration, dialogue, event, and world-setting surfaces.');
+}
+// Big guard: the world entry must feel like an RP stage first. Event controls and timeline memory belong in the drawer, not in the main stream.
+if (
+  !uiSource.includes('id="world-rp-composer"')
+  || !uiSource.includes('id="world-rp-input"')
+  || !worldWorkbenchBlock.includes('renderWorldStageHeader')
+  || !worldWorkbenchBlock.includes('selectedEvent ? renderWorldStageComposer(character)')
+  || !worldEventDetailBlock.includes('renderWorldDialogueStream')
+  || !worldEventDetailBlock.includes('data-close-world-event-rp')
+  || !worldEventLobbyBlock.includes('data-open-world-event-rp')
+  || worldEventLobbyBlock.includes('renderWorldDialogueStream')
+  || worldEventLobbyBlock.includes('id="world-rp-composer"')
+  || worldWorkbenchBlock.includes('renderWorldEventSummary')
+  || worldWorkbenchBlock.includes('world-timeline-panel')
+  || !worldSettingsPanelBlock.includes('world-drawer-section')
+  || !worldSettingsPanelBlock.includes('renderWorldDrawerEvents')
+  || !worldSettingsPanelBlock.includes('renderWorldDrawerTimeline')
+  || !uiSource.includes('activeWorldRpEventId')
+  || !styleSource.includes('.world-stage-composer')
+  || !styleSource.includes('.world-event-narration')
+  || !styleSource.includes('.world-event-lobby')
+  || !styleSource.includes('.world-drawer-section')
+) {
+  throw new Error('World tab should list daily/event entries first and open RP dialogue only after selecting one.');
+}
+if (
+  !idleRenderBlock.includes("input.id === 'world-rp-input'")
+  || !idleRenderBlock.includes('worldRpInputDraft = input.value')
+  || !uiSource.includes("document.querySelector<HTMLTextAreaElement>('#world-rp-input')")
+) {
+  throw new Error('World RP input should be protected from idle scheduler refreshes and keyboard drops.');
+}
 
 console.log(JSON.stringify({
   migration: true,
@@ -1333,4 +1606,7 @@ console.log(JSON.stringify({
   characterRelationshipUi: true,
   characterRelationshipDeleteCascade: true,
   momentComposerKeyboardSafe: true,
+  worldWorkbenchNavigation: true,
+  worldWorkbenchNarrationMode: true,
+  immersiveWorldStage: true,
 }));

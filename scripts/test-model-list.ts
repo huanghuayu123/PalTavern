@@ -1,14 +1,18 @@
 export {};
 declare const require: (id: string) => any;
 
+const values = new Map<string, string>();
+
 Object.defineProperty(globalThis, 'localStorage', {
   value: {
-    getItem() { return null; },
-    setItem() {},
+    getItem(key: string) { return values.get(key) ?? null; },
+    setItem(key: string, value: string) { values.set(key, value); },
+    removeItem(key: string) { values.delete(key); },
+    clear() { values.clear(); },
   },
 });
 
-const model = require('../src/independent-chat/model');
+const model = require('../src/independent-chat/model/client');
 
 const urls = [
   ['https://example.com', 'https://example.com/v1/models'],
@@ -129,10 +133,67 @@ async function testModelConnectionRequiresModelName(): Promise<void> {
   throw new Error('Model connection test should require a model name.');
 }
 
+async function testReasoningContentIsNotUsedAsChatText(): Promise<void> {
+  const stateModule = require('../src/independent-chat/core/state');
+  const originalFetch = globalThis.fetch;
+  values.clear();
+  stateModule.replaceState(stateModule.defaultState());
+  const character = stateModule.state.characters[0];
+  stateModule.state.modelConfig.apiUrl = 'https://example.com';
+  stateModule.state.modelConfig.model = 'reasoning-only-model';
+  stateModule.state.modelConfig.apiKey = 'secret';
+  globalThis.fetch = (async () => new Response(JSON.stringify({
+    choices: [{ message: { content: '', reasoning_content: '内部推理不应该进入聊天气泡。' } }],
+  }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  })) as typeof fetch;
+  try {
+    try {
+      await model.callModel(character, '', false, true);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('没有可用文本')) return;
+      throw error;
+    }
+    throw new Error('Chat model calls should reject reasoning-only responses.');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+async function testReasoningContentIsNotUsedAsAuthoringText(): Promise<void> {
+  const stateModule = require('../src/independent-chat/core/state');
+  const originalFetch = globalThis.fetch;
+  values.clear();
+  stateModule.replaceState(stateModule.defaultState());
+  stateModule.state.modelConfig.apiUrl = 'https://example.com';
+  stateModule.state.modelConfig.model = 'reasoning-only-model';
+  stateModule.state.modelConfig.apiKey = 'secret';
+  globalThis.fetch = (async () => new Response(JSON.stringify({
+    choices: [{ message: { content: '', reasoning_content: '创作推理草稿也不能当正文。' } }],
+  }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  })) as typeof fetch;
+  try {
+    try {
+      await model.callAuthoringModel([{ role: 'user', content: '生成事件' }]);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('没有可用文本')) return;
+      throw error;
+    }
+    throw new Error('Authoring model calls should reject reasoning-only responses.');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
 async function main(): Promise<void> {
   await testHtmlProxyFallback();
   await testModelConnectionUsesCurrentFormConfig();
   await testModelConnectionRequiresModelName();
+  await testReasoningContentIsNotUsedAsChatText();
+  await testReasoningContentIsNotUsedAsAuthoringText();
 }
 
 void main().then(() => {
@@ -143,5 +204,6 @@ void main().then(() => {
     deduplicated: true,
     htmlProxyFallback: true,
     modelConnectionTest: true,
+    reasoningContentHidden: true,
   }));
 });

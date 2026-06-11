@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PalTavern 世界工作台 UI 线框</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #eef1f5;
+      --panel: #ffffff;
+      --soft: #f5f6f9;
+      --line: #dde2ea;
+      --text: #171b25;
+      --muted: #717a8d;
+      --accent: #4d67d8;
+      --accent-soft: #e8ecff;
+      --danger: #b9444d;
+      font-family: "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--text);
+      background: var(--bg);
+    }
+
+    .shell {
+      display: grid;
+      grid-template-columns: 248px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    aside {
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      gap: 18px;
+      padding: 22px 18px;
+      background: rgba(255, 255, 255, 0.78);
+      border-right: 1px solid var(--line);
+    }
+
+    .brand h1 { margin: 0; font-size: 24px; }
+    .brand p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+
+    .world-select {
+      display: grid;
+      gap: 8px;
+    }
+
+    .label {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    select,
+    input,
+    textarea {
+      width: 100%;
+      color: var(--text);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      outline: none;
+    }
+
+    select,
+    input { min-height: 40px; padding: 0 11px; }
+    textarea { min-height: 92px; padding: 11px; resize: vertical; }
+
+    nav {
+      display: grid;
+      gap: 7px;
+      align-content: start;
+    }
+
+    nav button {
+      display: grid;
+      grid-template-columns: 24px minmax(0, 1fr);
+      gap: 10px;
+      align-items: center;
+      min-height: 44px;
+      padding: 0 12px;
+      color: var(--text);
+      text-align: left;
+      background: transparent;
+      border: 0;
+      border-radius: 12px;
+      cursor: default;
+    }
+
+    nav button.active {
+      color: #fff;
+      background: var(--accent);
+    }
+
+    .main {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      min-width: 0;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 76px;
+      padding: 16px 26px;
+      background: rgba(255, 255, 255, 0.86);
+      border-bottom: 1px solid var(--line);
+    }
+
+    header h2 { margin: 0; font-size: 22px; }
+    header p { margin: 3px 0 0; color: var(--muted); font-size: 13px; }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .button {
+      display: grid;
+      min-height: 40px;
+      padding: 0 14px;
+      place-items: center;
+      color: #fff;
+      background: var(--accent);
+      border: 0;
+      border-radius: 10px;
+      font-weight: 700;
+    }
+
+    .button.secondary {
+      color: var(--text);
+      background: var(--soft);
+      border: 1px solid var(--line);
+    }
+
+    .content {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+      gap: 18px;
+      min-height: 0;
+      padding: 22px 26px;
+      overflow: auto;
+    }
+
+    section {
+      min-width: 0;
+    }
+
+    .stack {
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }
+
+    .panel {
+      min-width: 0;
+      padding: 16px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .panel h3 {
+      margin: 0 0 10px;
+      font-size: 15px;
+    }
+
+    .scene-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+
+    .field span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .summary {
+      display: grid;
+      grid-column: 1 / -1;
+      gap: 6px;
+    }
+
+    .event-card {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: start;
+      padding: 13px;
+      background: var(--soft);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .event-card strong,
+    .memory-card strong { display: block; margin-bottom: 4px; }
+    .event-card p,
+    .memory-card p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
+
+    .tag {
+      display: inline-grid;
+      min-height: 24px;
+      padding: 0 9px;
+      place-items: center;
+      color: var(--accent);
+      background: var(--accent-soft);
+      border-radius: 999px;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .character-row,
+    .memory-card {
+      display: grid;
+      gap: 5px;
+      padding: 12px;
+      background: var(--soft);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .character-row {
+      grid-template-columns: 38px minmax(0, 1fr) auto;
+      align-items: center;
+    }
+
+    .avatar {
+      display: grid;
+      width: 38px;
+      height: 38px;
+      place-items: center;
+      color: #fff;
+      background: var(--accent);
+      border-radius: 11px;
+      font-weight: 800;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 6px;
+      padding: 4px;
+      background: var(--soft);
+      border-radius: 10px;
+    }
+
+    .tabs span {
+      padding: 7px 10px;
+      color: var(--muted);
+      border-radius: 8px;
+      font-size: 13px;
+    }
+
+    .tabs span.active {
+      color: #fff;
+      background: var(--accent);
+    }
+
+    .mobile-note {
+      display: none;
+      padding: 10px 14px;
+      color: var(--muted);
+      font-size: 12px;
+      background: #fff;
+      border-top: 1px solid var(--line);
+    }
+
+    @media (max-width: 860px) {
+      .shell { grid-template-columns: 1fr; }
+      aside { display: none; }
+      header { padding: 14px 16px; }
+      .content { grid-template-columns: 1fr; padding: 14px; }
+      .scene-grid { grid-template-columns: 1fr; }
+      .mobile-note { display: block; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <aside>
+      <div class="brand">
+        <h1>PalTavern</h1>
+        <p>把旧 UI 收束成 RP 工作台，不重做视觉语言。</p>
+      </div>
+
+      <label class="world-select">
+        <span class="label">当前世界</span>
+        <select>
+          <option>现实都市线</option>
+          <option>学院长 RP 线</option>
+        </select>
+      </label>
+
+      <nav>
+        <button><span>💬</span><strong>消息</strong></button>
+        <button><span>👤</span><strong>角色</strong></button>
+        <button class="active"><span>🌐</span><strong>世界</strong></button>
+        <button><span>✦</span><strong>动态</strong></button>
+        <button><span>⚙</span><strong>设置</strong></button>
+      </nav>
+    </aside>
+
+    <section class="main">
+      <header>
+        <div>
+          <h2>世界工作台</h2>
+          <p>第一屏聚焦“当前场景续写”，事件和记忆收进世界里。</p>
+        </div>
+        <div class="actions">
+          <button class="button secondary">切换世界</button>
+          <button class="button">保存场景</button>
+        </div>
+      </header>
+
+      <div class="content">
+        <section class="stack">
+          <div class="panel">
+            <h3>当前场景</h3>
+            <div class="scene-grid">
+              <label class="field">
+                <span>当前地点</span>
+                <input value="雨夜后的市中心公寓" />
+              </label>
+              <label class="field">
+                <span>剧情状态</span>
+                <input value="关系刚缓和，但还有未说出口的事" />
+              </label>
+              <label class="field">
+                <span>当前目标</span>
+                <input value="让角色自然接住昨晚的冲突余波" />
+              </label>
+              <label class="field">
+                <span>世界天气/时间</span>
+                <input value="系统时间 · 深夜 · 小雨" />
+              </label>
+              <label class="summary">
+                <span>场景摘要</span>
+                <textarea>用户离开后，角色没有追问，只把没发出去的消息留在草稿里。下一次互动应从克制的试探开始，而不是直接解释设定。</textarea>
+              </label>
+            </div>
+          </div>
+
+          <div class="panel stack">
+            <h3>进行中的事件</h3>
+            <article class="event-card">
+              <div>
+                <strong>未处理：楼下便利店的偶遇</strong>
+                <p>相关角色会在私聊里收到轻提示，完整剧情节拍只在世界页展开。</p>
+              </div>
+              <span class="tag">待结算</span>
+            </article>
+            <article class="event-card">
+              <div>
+                <strong>AI 草稿：朋友圈里被误会的一句话</strong>
+                <p>用户可以改写后发布，也可以直接归档为世界记忆。</p>
+              </div>
+              <span class="tag">草稿</span>
+            </article>
+            <div class="actions">
+              <button class="button secondary">手写事件</button>
+              <button class="button secondary">AI 生成事件</button>
+              <button class="button">结束事件</button>
+            </div>
+          </div>
+        </section>
+
+        <aside class="stack">
+          <div class="panel stack">
+            <h3>相关角色</h3>
+            <div class="character-row">
+              <span class="avatar">叶</span>
+              <div>
+                <strong>叶昀</strong>
+                <p>当前计划：假装只是顺路问候</p>
+              </div>
+              <span class="tag">在线</span>
+            </div>
+            <div class="character-row">
+              <span class="avatar">沈</span>
+              <div>
+                <strong>沈灵</strong>
+                <p>当前计划：等对方先开口</p>
+              </div>
+              <span class="tag">旁观</span>
+            </div>
+          </div>
+
+          <div class="panel stack">
+            <div class="tabs">
+              <span class="active">记忆摘要</span>
+              <span>完整记录</span>
+              <span>设置</span>
+            </div>
+            <article class="memory-card">
+              <strong>最近记忆</strong>
+              <p>昨晚的争执已经进入长期记忆，但不会在每条回复里复述。</p>
+            </article>
+            <article class="memory-card">
+              <strong>重要关系变化</strong>
+              <p>叶昀的关系阶段建议待确认，可以在详情里应用或忽略。</p>
+            </article>
+          </div>
+
+          <div class="panel stack">
+            <h3>世界管理</h3>
+            <button class="button secondary">创建世界</button>
+            <button class="button secondary">编辑世界名称</button>
+            <p style="margin:0;color:var(--muted);font-size:12px;line-height:1.55;">第一版不放删除世界，避免误删角色、聊天和记忆。</p>
+          </div>
+        </aside>
+      </div>
+
+      <div class="mobile-note">手机底栏同样只保留：消息 / 角色 / 世界 / 动态 / 设置。事件、时间线收进世界详情。</div>
+    </section>
+  </main>
+</body>
+</html>

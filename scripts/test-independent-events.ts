@@ -19,11 +19,12 @@ Object.defineProperty(globalThis, 'localStorage', {
   },
 });
 
-const stateModule = require('../src/independent-chat/state');
-const events = require('../src/independent-chat/events');
-const impacts = require('../src/independent-chat/impacts');
-const model = require('../src/independent-chat/model');
-const characterRelationships = require('../src/independent-chat/character-relationships');
+const stateModule = require('../src/independent-chat/core/state');
+const events = require('../src/independent-chat/social/events');
+const impacts = require('../src/independent-chat/memory/impacts');
+const model = require('../src/independent-chat/model/client');
+const characterRelationships = require('../src/independent-chat/characters/relationships');
+const rpRendering = require('../src/independent-chat/ui/rp-rendering');
 
 const character = {
   id: 'character_event_test',
@@ -73,6 +74,52 @@ const created = events.createWorldEvent({
   affinityDelta: 8,
   type: 'relationship',
 });
+if (!Array.isArray(created.rpMessages) || created.rpMessages.length !== 0) {
+  throw new Error('New world events should start with their own empty RP message log.');
+}
+if (
+  typeof events.ensureWorldRpEvent !== 'function'
+  || typeof events.appendWorldEventRpMessage !== 'function'
+  || typeof events.worldEventRpMessages !== 'function'
+) {
+  throw new Error('World event RP log helpers are missing.');
+}
+const worldRpEvent = events.ensureWorldRpEvent(character);
+const userWorldTurn = events.appendWorldEventRpMessage(worldRpEvent.id, {
+  role: 'user',
+  content: 'I leave a note beside the umbrella.',
+  source: 'manual',
+});
+const assistantWorldTurn = events.appendWorldEventRpMessage(worldRpEvent.id, {
+  role: 'assistant',
+  characterId: character.id,
+  speaker: character.name,
+  content: '@bubble:Event Character|gentle|I saw the note.',
+  source: 'model',
+});
+const worldRpLog = events.worldEventRpMessages(worldRpEvent.id);
+if (
+  worldRpLog.length !== 2
+  || worldRpLog[0].id !== userWorldTurn.id
+  || worldRpLog[1].id !== assistantWorldTurn.id
+  || worldRpLog[1].characterId !== character.id
+) {
+  throw new Error('World event RP turns were not stored on the event log.');
+}
+const bracketlessBubbleSegments = rpRendering.parseRpRenderSegments('@bubble:Event Character|gentle|I saw the note.', {
+  fallbackSpeaker: 'Event Character',
+  fallbackEmotion: 'reply',
+  plainTextMode: 'dialogue',
+});
+if (
+  bracketlessBubbleSegments.length !== 1
+  || bracketlessBubbleSegments[0].kind !== 'dialogue'
+  || bracketlessBubbleSegments[0].speaker !== 'Event Character'
+  || bracketlessBubbleSegments[0].emotion !== 'gentle'
+  || bracketlessBubbleSegments[0].text !== 'I saw the note.'
+) {
+  throw new Error('World RP renderer should parse bracketless @bubble lines instead of showing raw markup.');
+}
 stateModule.state.worldEvents.push({
   id: 'other_world_today_event',
   worldId: 'other_world',
@@ -399,6 +446,7 @@ async function main() {
     deleteContext: true,
     eventTimeline: true,
     eventTimelineRevoked: true,
+    bracketlessBubbleRendering: true,
     secondWorldId: secondWorld.id,
   }));
 }

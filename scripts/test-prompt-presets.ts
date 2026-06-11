@@ -19,11 +19,11 @@ Object.defineProperty(globalThis, 'localStorage', {
   },
 });
 
-const stateModule = require('../src/independent-chat/state');
-const model = require('../src/independent-chat/model');
-const cards = require('../src/independent-chat/cards');
-const promptPresets = require('../src/independent-chat/prompt-presets');
-const replyStrategy = require('../src/independent-chat/reply-strategy');
+const stateModule = require('../src/independent-chat/core/state');
+const model = require('../src/independent-chat/model/client');
+const cards = require('../src/independent-chat/characters/cards');
+const promptPresets = require('../src/independent-chat/model/prompt-presets');
+const replyStrategy = require('../src/independent-chat/model/reply-strategy');
 
 const preset = promptPresets.parseSillyTavernPromptPreset(JSON.stringify({
   temperature: 0.82,

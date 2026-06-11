@@ -23,7 +23,7 @@ Object.defineProperty(globalThis, 'localStorage', {
   },
 });
 
-const welcomeCover = require('../src/independent-chat/welcome-cover');
+const welcomeCover = require('../src/independent-chat/ui/welcome-cover');
 
 values.clear();
 if (!welcomeCover.shouldShowWelcomeCover()) {
@@ -48,7 +48,7 @@ if (!html.includes('id="enter-welcome-cover"')) {
   throw new Error('Welcome cover should provide an enter button.');
 }
 
-const uiSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/ui.ts'), 'utf8');
+const uiSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/ui/app.ts'), 'utf8');
 if (
   !uiSource.includes('renderWelcomeCover()')
   || !uiSource.includes('markWelcomeCoverSeen()')

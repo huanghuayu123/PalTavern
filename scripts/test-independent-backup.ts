@@ -19,10 +19,10 @@ Object.defineProperty(globalThis, 'localStorage', {
   },
 });
 
-const stateModule = require('../src/independent-chat/state');
-const backup = require('../src/independent-chat/backup');
-const promptPresets = require('../src/independent-chat/prompt-presets');
-const characterRelationships = require('../src/independent-chat/character-relationships');
+const stateModule = require('../src/independent-chat/core/state');
+const backup = require('../src/independent-chat/data/backup');
+const promptPresets = require('../src/independent-chat/model/prompt-presets');
+const characterRelationships = require('../src/independent-chat/characters/relationships');
 
 const character = {
   id: 'backup_character',

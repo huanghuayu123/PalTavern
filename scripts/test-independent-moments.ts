@@ -21,11 +21,11 @@ Object.defineProperty(globalThis, 'localStorage', {
 });
 
 // Load application modules only after the browser storage substitute exists.
-const moments = require('../src/independent-chat/moments');
-const interactions = require('../src/independent-chat/character-interactions');
-const momentVisibility = require('../src/independent-chat/moment-visibility');
-const stateModule = require('../src/independent-chat/state');
-const timeline = require('../src/independent-chat/timeline');
+const moments = require('../src/independent-chat/social/moments');
+const interactions = require('../src/independent-chat/social/character-interactions');
+const momentVisibility = require('../src/independent-chat/social/moment-visibility');
+const stateModule = require('../src/independent-chat/core/state');
+const timeline = require('../src/independent-chat/memory/timeline');
 
 async function main() {
 const promptCharacter = {

@@ -1,7 +1,7 @@
 export {};
 declare const require: (id: string) => any;
 
-const exporter = require('../src/independent-chat/tavern-export');
+const exporter = require('../src/independent-chat/characters/tavern-export');
 
 const character = {
   id: 'card_test',

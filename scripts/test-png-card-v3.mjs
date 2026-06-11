@@ -1,4 +1,4 @@
-import { extractPngCharacterJson } from '../src/independent-chat/png-card-parser.mjs';
+import { extractPngCharacterJson } from '../src/independent-chat/characters/png-card-parser.mjs';
 
 const encoder = new TextEncoder();
 const signature = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10]);

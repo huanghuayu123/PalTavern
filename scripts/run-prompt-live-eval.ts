@@ -212,12 +212,12 @@ function installFetchCapture(calls: CapturedModelCall[]): () => void {
 function loadAppModules() {
   ensureBrowserLikeGlobals();
   return {
-    stateModule: require('../src/independent-chat/state'),
-    groupChat: require('../src/independent-chat/group-chat'),
-    model: require('../src/independent-chat/model'),
-    moments: require('../src/independent-chat/moments'),
-    events: require('../src/independent-chat/events'),
-    scheduler: require('../src/independent-chat/scheduler'),
+    stateModule: require('../src/independent-chat/core/state'),
+    groupChat: require('../src/independent-chat/chat/group-chat'),
+    model: require('../src/independent-chat/model/client'),
+    moments: require('../src/independent-chat/social/moments'),
+    events: require('../src/independent-chat/social/events'),
+    scheduler: require('../src/independent-chat/automation/scheduler'),
   };
 }
 

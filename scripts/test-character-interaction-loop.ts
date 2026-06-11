@@ -19,10 +19,10 @@ Object.defineProperty(globalThis, 'localStorage', {
   },
 });
 
-const stateModule = require('../src/independent-chat/state');
-const moments = require('../src/independent-chat/moments');
-const backgroundInteractions = require('../src/independent-chat/background-interactions');
-const characterRelationships = require('../src/independent-chat/character-relationships');
+const stateModule = require('../src/independent-chat/core/state');
+const moments = require('../src/independent-chat/social/moments');
+const backgroundInteractions = require('../src/independent-chat/social/background-interactions');
+const characterRelationships = require('../src/independent-chat/characters/relationships');
 
 function testCharacter(id: string, name: string, worldId = 'world_default') {
   return {

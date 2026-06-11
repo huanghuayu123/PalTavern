@@ -57,12 +57,12 @@ Object.defineProperty(globalThis, 'fetch', {
   },
 });
 
-const stateModule = require('../src/independent-chat/state');
-const scheduler = require('../src/independent-chat/scheduler');
-const chat = require('../src/independent-chat/chat');
-const impacts = require('../src/independent-chat/impacts');
-const model = require('../src/independent-chat/model');
-const notifications = require('../src/independent-chat/notifications');
+const stateModule = require('../src/independent-chat/core/state');
+const scheduler = require('../src/independent-chat/automation/scheduler');
+const chat = require('../src/independent-chat/chat/private-chat');
+const impacts = require('../src/independent-chat/memory/impacts');
+const model = require('../src/independent-chat/model/client');
+const notifications = require('../src/independent-chat/platform/notifications');
 
 const character = {
   id: 'runtime_character',
@@ -156,6 +156,16 @@ async function main(): Promise<void> {
   if (renderCount !== 1 || stateModule.state.modelUsage.requestCount !== 1) {
     throw new Error('Scheduler completion or model budget accounting failed.');
   }
+
+  // Big guard: an idle scheduler pass must stay silent so focused composers are not rebuilt every minute.
+  const renderCountAfterDueMessage = renderCount;
+  await scheduler.runAutoMessageCheckNow(() => {
+    renderCount += 1;
+  });
+  if (renderCount !== renderCountAfterDueMessage) {
+    throw new Error('Idle scheduler check should not re-render the UI when no automation state changed.');
+  }
+
   const rollback = impacts.rollbackTimelineEntryImpact(autoTimelineEntry.id);
   const promptAfterRollback = model.buildModelMessages(character).map((message: any) => message.content).join('\n');
   if (
