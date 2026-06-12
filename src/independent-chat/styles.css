@@ -2995,24 +2995,6 @@ button:active,
     justify-content: space-between;
   }
 
-  .inbox-orbit {
-    display: grid;
-    width: 58px;
-    height: 58px;
-    flex: 0 0 auto;
-    place-items: center;
-    color: #fff;
-    background: linear-gradient(145deg, var(--accent), var(--accent-strong));
-    border-radius: 21px;
-    box-shadow: 0 14px 30px color-mix(in srgb, var(--accent) 23%, transparent);
-    transform: rotate(5deg);
-  }
-
-  .inbox-orbit .ui-icon {
-    width: 26px;
-    height: 26px;
-  }
-
   .mobile-conversation-list {
     gap: 9px;
   }
@@ -3146,12 +3128,6 @@ button:active,
 
   .mobile-inbox-header {
     padding-right: 4px;
-  }
-
-  .inbox-orbit {
-    width: 52px;
-    height: 52px;
-    border-radius: 19px;
   }
 
   .sticker-picker-grid,
@@ -5916,10 +5892,6 @@ textarea::placeholder {
 
   .mobile-page-header {
     padding-bottom: 20px;
-  }
-
-  .inbox-orbit {
-    display: none;
   }
 
   .chat-header,
@@ -11526,16 +11498,6 @@ body,
   padding: 0 16px 12px;
 }
 
-.mobile-inbox-summary {
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--line);
-}
-
-.mobile-inbox-panel .daily-brief-banner {
-  width: 100%;
-  margin: 0;
-}
-
 .mobile-section-label {
   display: flex;
   align-items: baseline;
@@ -12048,7 +12010,7 @@ body,
     grid-template-areas:
       "persona stage actions";
     position: relative;
-    grid-template-columns: minmax(94px, 118px) minmax(0, 1fr) auto;
+    grid-template-columns: minmax(122px, 146px) minmax(0, 1fr) auto;
     grid-template-rows: 44px;
     gap: 8px;
     align-items: center;
@@ -12065,6 +12027,16 @@ body,
     grid-template-columns: 36px minmax(0, 1fr) 10px;
     min-height: 44px;
     gap: 7px;
+  }
+
+  .world-persona-select .header-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+  }
+
+  .world-persona-name strong {
+    font-size: 14px;
   }
 
   .world-stage-header {
@@ -12206,50 +12178,248 @@ body,
   }
 }
 
-/* 大注释：UI 重叠自查修复层。
-   这层专门处理全局重置后最容易互相挤压的地方：外层私信对象选择、移动端列表工具、顶栏标题、弹窗高度和输入区。
-   具体聊天窗口不再放角色选择，私信对象只在消息/通讯录外层切换。 */
-.private-chat-target-switch {
-  display: grid;
-  min-width: 0;
-  gap: 6px;
-  margin-top: 12px;
+/* 小注释：左上角私信角色选择器用透明原生 select 承接点击，最后覆盖全局 select 样式，避免重复显示选项文字。 */
+.private-chat-identity-select select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  color: transparent;
+  cursor: pointer;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  opacity: 0;
 }
 
-.private-chat-target-switch span {
+.private-chat-identity-select select:focus-visible {
+  outline: 0;
+}
+
+/* 大注释：消息页原型落地层。
+   移动端消息首屏只保留身份选择、角色快捷头像和私信列表，去掉旧的“今日变化”工作台感。 */
+.mobile-character-story-strip {
+  display: grid;
+  grid-auto-columns: 74px;
+  grid-auto-flow: column;
+  gap: 12px;
+  overflow-x: auto;
+  padding: 16px 18px 12px;
+  scrollbar-width: none;
+}
+
+.mobile-character-story-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.mobile-character-story {
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 0;
+  color: var(--text-soft);
+  text-align: center;
+  background: transparent;
+  border: 0;
+}
+
+.mobile-character-story .avatar {
+  width: 58px;
+  height: 58px;
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px var(--surface-solid), 0 0 0 4px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.mobile-character-story small {
+  max-width: 100%;
   overflow: hidden;
-  color: var(--text-faint);
-  font-size: 10px;
-  font-weight: 820;
-  letter-spacing: 0.08em;
+  font-size: 12px;
+  line-height: 1.2;
   text-overflow: ellipsis;
-  text-transform: uppercase;
   white-space: nowrap;
 }
 
-.private-chat-target-switch select {
+.mobile-inbox-private-panel {
+  padding: 0 18px 14px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.mobile-inbox-private-panel .mobile-conversation-list {
+  gap: 10px;
+  padding-inline: 0;
+  border-top: 0;
+}
+
+.mobile-inbox-private-panel .contact {
+  min-height: 66px;
+  padding: 10px 12px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.mobile-inbox-private-panel .contact + .contact {
+  border-top: 1px solid var(--line);
+}
+
+.mobile-inbox-private-panel .contact:hover,
+.mobile-inbox-private-panel .contact.is-active {
+  background: var(--surface-raised);
+  box-shadow: none;
+}
+
+/* 大注释：世界页原型落地层。
+   世界正文从“日常片段”直接开始，事件像聊天会话入口，不再显示工作台统计和场景说明卡。 */
+.world-event-lobby {
+  gap: 12px;
+}
+
+.world-event-lobby-heading {
+  display: flex;
   width: 100%;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2px;
+}
+
+.world-event-lobby-heading small {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.world-event-entry-list {
+  gap: 10px;
+  border-top: 0;
+}
+
+.world-event-entry-card {
+  width: 100%;
+  min-height: 114px;
+  padding: 13px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.world-event-entry-card:hover {
+  background: color-mix(in srgb, var(--accent-soft) 32%, var(--surface-raised));
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--line));
+}
+
+.world-event-entry-card + .world-event-entry-card {
+  margin-top: 0;
+}
+
+.world-event-entry-meta {
+  gap: 6px;
+}
+
+.world-event-entry-status {
+  margin-left: 0;
+  padding: 3px 8px;
+  background: var(--accent-soft);
+  border-radius: 999px;
+}
+
+.world-event-entry-status.is-resolved {
+  color: var(--text-soft);
+  background: var(--surface-soft);
+}
+
+/* 大注释：UI 重叠自查修复层。
+   这层专门处理全局重置后最容易互相挤压的地方：外层私信对象选择、移动端列表工具、顶栏标题、弹窗高度和输入区。
+   具体聊天窗口不再放角色选择，私信对象只在消息/通讯录外层切换。 */
+.private-chat-identity-select {
+  position: relative;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 14px;
+  align-items: center;
+  width: min(100%, 280px);
   min-width: 0;
-  min-height: 42px;
-  padding: 0 11px;
+  min-height: 54px;
+  gap: 10px;
+  padding: 5px 30px 5px 5px;
   color: var(--text);
   background: var(--surface-raised);
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
-  outline: none;
 }
 
-.private-chat-target-switch select:focus {
+.private-chat-identity-select:focus-within {
   border-color: color-mix(in srgb, var(--accent) 46%, var(--line));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
-.mobile-inbox-panel .private-chat-target-switch {
-  margin: 10px 0 12px;
+.private-chat-identity-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
 }
 
-.mobile-list-tools .private-chat-target-switch {
+.private-chat-identity-copy {
+  min-width: 0;
+  pointer-events: none;
+}
+
+.private-chat-identity-copy strong,
+.private-chat-identity-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.private-chat-identity-copy strong {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 820;
+  line-height: 1.15;
+}
+
+.private-chat-identity-copy small {
+  margin-top: 4px;
+  color: var(--text-soft);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.private-chat-identity-select select {
+  position: absolute;
+  inset: 0;
   width: 100%;
+  height: 100%;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.private-chat-identity-chevron {
+  position: absolute;
+  top: 50%;
+  right: 11px;
+  color: var(--text-soft);
+  font-size: 13px;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.sidebar .private-chat-identity-select,
+.mobile-list-tools .private-chat-identity-select {
+  width: 100%;
+  max-width: none;
+}
+
+.mobile-inbox-header .private-chat-identity-select {
+  width: 100%;
+  max-width: 280px;
 }
 
 .chat,
@@ -12417,34 +12587,6 @@ body,
   padding: 22px clamp(16px, 5vw, 64px) 34px;
 }
 
-.world-lobby-scene {
-  display: grid;
-  gap: 6px;
-  padding: 8px 2px 14px;
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
-}
-
-.world-lobby-scene span {
-  color: var(--accent-strong);
-  font-size: 11px;
-  font-weight: 820;
-}
-
-.world-lobby-scene h2 {
-  margin: 0;
-  font-size: clamp(22px, 4vw, 31px);
-  letter-spacing: 0;
-  line-height: 1.16;
-}
-
-.world-lobby-scene p {
-  max-width: 68ch;
-  margin: 0;
-  color: var(--text-soft);
-  font-size: 13px;
-  line-height: 1.55;
-}
-
 .world-event-lobby {
   gap: 16px;
 }
@@ -12466,21 +12608,6 @@ body,
 
 .world-event-lobby-heading strong {
   font-size: 17px;
-}
-
-.world-lobby-counts {
-  display: flex;
-  flex: 0 0 auto;
-  gap: 6px;
-  color: var(--text-soft);
-  font-size: 11px;
-}
-
-.world-lobby-counts span {
-  padding: 5px 8px;
-  background: color-mix(in srgb, var(--surface-solid) 78%, transparent);
-  border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
-  border-radius: 999px;
 }
 
 .world-event-entry-list {
@@ -12754,10 +12881,6 @@ body,
   .world-event-lobby-heading {
     display: grid;
     align-items: start;
-  }
-
-  .world-lobby-counts {
-    flex-wrap: wrap;
   }
 
   .world-event-entry-card {
@@ -13330,10 +13453,6 @@ summary:focus-visible {
     var(--page);
 }
 
-.world-lobby-scene {
-  padding: 10px 0 16px;
-}
-
 .world-event-entry-card,
 .event-settings-list .world-event-entry-card {
   background: transparent;
@@ -13502,4 +13621,48 @@ summary:focus-visible {
   .bottom-nav button.is-active .nav-icon {
     background: color-mix(in srgb, var(--accent) 14%, var(--surface-solid));
   }
+}
+
+/* 大注释：消息首屏最终保险层。
+   这段必须留在真正文件末尾，压过所有窄屏和全局面板规则，让私信列表保持轻量会话入口。 */
+.mobile-inbox-private-panel {
+  width: 100%;
+  max-width: none;
+  padding: 0 18px 14px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.mobile-inbox-private-panel .mobile-section-label {
+  padding: 0 0 8px;
+}
+
+.mobile-inbox-private-panel .mobile-conversation-list {
+  gap: 10px;
+  padding: 0;
+  background: transparent;
+  border-top: 0;
+}
+
+.mobile-inbox-private-panel .contact {
+  min-height: 66px;
+  padding: 10px 12px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.mobile-inbox-private-panel .contact + .contact {
+  margin-top: 0;
+  border-top: 1px solid var(--line);
+}
+
+.mobile-inbox-private-panel .contact:hover,
+.mobile-inbox-private-panel .contact.is-active {
+  background: var(--surface-raised);
+  border-color: var(--line);
+  box-shadow: none;
 }

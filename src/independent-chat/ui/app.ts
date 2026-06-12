@@ -1857,6 +1857,22 @@ function renderInboxConversations(): string {
   return `${groupRows}${characterRows}`;
 }
 
+function renderMobileCharacterStoryStrip(): string {
+  // 小注释：移动端消息页的头像横条是轻入口，点击后沿用联系人列表的私聊打开逻辑。
+  const characters = currentWorldCharacters().slice(0, 8);
+  if (characters.length === 0) return '';
+  return `
+    <section class="mobile-character-story-strip" aria-label="角色快捷入口">
+      ${characters.map(character => `
+        <button class="mobile-character-story" data-character-id="${escapeHtml(character.id)}" type="button">
+          <span class="avatar">${renderAvatar(character)}</span>
+          <small>${escapeHtml(character.name)}</small>
+        </button>
+      `).join('')}
+    </section>
+  `;
+}
+
 function openPrivateChatByCharacterId(characterId: string, options: { pushHistory?: boolean } = {}): void {
   const character = state.characters.find(item => item.id === characterId && item.worldId === activeWorld().id);
   if (!character) return;
@@ -1944,16 +1960,22 @@ function privateChatSpeakerAvatar(message: ChatMessage): string {
 }
 
 function renderPrivateChatTargetSelector(): string {
-  // 小注释：私聊外层选择器不跟随通讯录搜索过滤，避免搜索后切不到其他角色。
+  // 小注释：这个选择器就是左上角的角色入口；保留同一个 select，避免切换私信目标的逻辑分叉。
   const characters = state.characters.filter(character => character.worldId === activeWorld().id);
   const selectedId = activeCharacter()?.id ?? characters[0]?.id ?? '';
+  const selectedCharacter = characters.find(character => character.id === selectedId) ?? characters[0];
   if (characters.length === 0) return '';
   return `
-    <label class="private-chat-target-switch">
-      <span>私信角色</span>
+    <label class="private-chat-identity-select">
+      <span class="avatar private-chat-identity-avatar">${selectedCharacter ? renderAvatar(selectedCharacter) : renderUserAvatar()}</span>
+      <span class="private-chat-identity-copy">
+        <strong>${escapeHtml(selectedCharacter?.name ?? '选择角色')}</strong>
+        <small>选择私信角色</small>
+      </span>
       <select id="private-chat-target-select" aria-label="选择私信角色">
         ${characters.map(character => `<option value="${escapeHtml(character.id)}" ${selectedId === character.id ? 'selected' : ''}>${escapeHtml(character.name)}</option>`).join('')}
       </select>
+      <span class="private-chat-identity-chevron">⌄</span>
     </label>
   `;
 }
@@ -3784,24 +3806,14 @@ function buildWorldEventAutoCloseSummary(event: WorldEvent): string {
 }
 
 function renderWorldEventLobby(events: WorldEvent[], character?: CharacterProfile): string {
-  const world = activeWorld();
-  const location = world.currentLocation.trim() || '日常生活场景';
-  const atmosphere = world.sceneAtmosphere.trim() || '轻松、自然';
-  const activeCount = events.filter(event => event.status === 'active').length;
-  const resolvedCount = events.length - activeCount;
   if (events.length === 0) {
     return `
       <div class="world-event-lobby">
-        <section class="world-lobby-scene">
-          <span>今天的世界</span>
-          <h2>${escapeHtml(world.name)}</h2>
-          <p>${escapeHtml(location)} · ${escapeHtml(atmosphere)}</p>
-        </section>
         <div class="world-event-empty">
-          <strong>还没有日常片段</strong>
-          <span>先生成一段生活里的小变化，再点进去接着写旁白、行动和对话。</span>
+          <strong>没有更多片段</strong>
+          <span>生成一段日常后，角色对话和旁白都会围绕这个片段展开。</span>
           <div class="world-event-empty-actions">
-            <button class="primary" data-open-event-composer type="button">${icon('add')}<span>生成一段日常</span></button>
+            <button class="primary" data-open-event-composer type="button">${icon('add')}<span>生成片段</span></button>
           </div>
         </div>
       </div>
@@ -3809,19 +3821,10 @@ function renderWorldEventLobby(events: WorldEvent[], character?: CharacterProfil
   }
   return `
     <section class="world-event-lobby" aria-label="日常片段列表">
-      <div class="world-lobby-scene">
-        <span>今天的世界</span>
-        <h2>${escapeHtml(world.name)}</h2>
-        <p>${escapeHtml(location)} · ${escapeHtml(atmosphere)}</p>
-      </div>
       <div class="world-event-lobby-heading">
         <div>
           <strong>日常片段</strong>
-          <small>像聊天会话一样点进去，进入后再继续沉浸 RP。</small>
-        </div>
-        <div class="world-lobby-counts">
-          <span>${activeCount} 进行中</span>
-          <span>${resolvedCount} 已归档</span>
+          <small>点击进入 RP</small>
         </div>
       </div>
       <div class="world-event-entry-list">
@@ -5112,25 +5115,18 @@ function renderMobile(character?: CharacterProfile): string {
     content = `
       <main class="mobile-page mobile-list-page">
         <header class="mobile-page-header mobile-inbox-header">
-          <div><span class="eyebrow">${escapeHtml(activeWorld().name)}</span><h1>消息</h1><p>那些想说的话，都在这里。</p></div>
+          ${renderPrivateChatTargetSelector() || `<div><span class="eyebrow">${escapeHtml(activeWorld().name)}</span><h1>消息</h1><p>那些想说的话，都在这里。</p></div>`}
           <div class="mobile-inbox-header-tools">
+            <button class="icon-button" data-mobile-section="contacts" type="button" aria-label="搜索角色">${icon('search')}</button>
             <button class="icon-button inbox-create-group" data-open-groups type="button" aria-label="打开群聊">${icon('add')}</button>
-            <div class="inbox-orbit">${icon('message')}</div>
           </div>
         </header>
-        <section class="mobile-inbox-panel mobile-inbox-summary">
+        ${renderMobileCharacterStoryStrip()}
+        <section class="mobile-inbox-panel mobile-inbox-private-panel">
           <div class="mobile-section-label">
-            <strong>今日变化</strong>
-            <span>点开查看世界时间线</span>
+            <strong>私信</strong>
+            <span>今天</span>
           </div>
-          ${renderDailyBriefBanner()}
-        </section>
-        <section class="mobile-inbox-panel">
-          <div class="mobile-section-label">
-            <strong>最近联系</strong>
-            <span>私聊和群聊都在这里</span>
-          </div>
-          ${renderPrivateChatTargetSelector()}
           <div class="mobile-conversation-list">${renderInboxConversations()}</div>
         </section>
         ${state.characters.length === 0 ? `

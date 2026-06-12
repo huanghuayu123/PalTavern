@@ -231,6 +231,7 @@ const androidMainActivitySource = fs.readFileSync(path.join(
 const worldDialogueBody = functionBody(appSource, 'renderWorldDialogueStream');
 const worldComposerBindingBody = functionBody(appSource, 'bindUi');
 const chatPaneRenderBlock = functionBody(appSource, 'renderChatPane');
+const mobileRenderBlock = functionBody(appSource, 'renderMobile');
 const privateTargetSelectorBlock = functionBody(appSource, 'renderPrivateChatTargetSelector');
 if (worldDialogueBody.includes('messagesFor(')) {
   throw new Error('World RP stream must not render private-chat messages.');
@@ -262,10 +263,27 @@ if (
   || chatPaneRenderBlock.includes('private-chat-target-select')
   || privateTargetSelectorBlock.includes('currentWorldCharacters()')
   || !privateTargetSelectorBlock.includes('state.characters.filter')
-  || !stylesSource.includes('.private-chat-target-switch')
+  || !privateTargetSelectorBlock.includes('private-chat-identity-select')
+  || !stylesSource.includes('.private-chat-identity-select')
+  || stylesSource.includes('.private-chat-target-switch')
   || stylesSource.includes('.private-speaker-switch')
 ) {
   throw new Error('Private chat target switching should live in the outer message/contact surface, not inside the chat window.');
+}
+if (
+  mobileRenderBlock.includes('<section class="mobile-inbox-panel">\n          <div class="mobile-section-label">')
+  && mobileRenderBlock.includes('${renderPrivateChatTargetSelector()}\n          <div class="mobile-conversation-list">${renderInboxConversations()}</div>')
+) {
+  throw new Error('Mobile inbox should fold private identity switching into the top-left selector instead of a separate section control.');
+}
+if (
+  !appSource.includes('function renderMobileCharacterStoryStrip')
+  || !appSource.includes('${renderMobileCharacterStoryStrip()}')
+  || appSource.includes('mobile-inbox-summary')
+  || stylesSource.includes('.mobile-inbox-summary')
+  || stylesSource.includes('.inbox-orbit')
+) {
+  throw new Error('Mobile inbox should match the lightweight prototype: top identity selector, character story strip, and private messages without the old daily-brief panel.');
 }
 if (
   !appSource.includes('activeWorldPromptPresetId')
@@ -1777,14 +1795,16 @@ if (
   || !worldWorkbenchBlock.includes('renderWorldEventLobby')
   || !worldWorkbenchBlock.includes('renderWorldEventRpDetail')
   || !worldWorkbenchBlock.includes('renderWorldSettingsPanel')
-  || !worldEventLobbyBlock.includes('world-lobby-scene')
+  || !worldEventLobbyBlock.includes('日常片段')
+  || !worldEventLobbyBlock.includes('点击进入 RP')
   || !worldDialogueBody.includes('world-scene-note')
   || !styleSource.includes('.world-workbench')
   || !styleSource.includes('世界页 UI 重置层')
-  || !styleSource.includes('.world-lobby-scene')
   || !styleSource.includes('.world-scene-note')
   || !styleSource.includes('.narrative-card')
   || !styleSource.includes('.dialogue-turn')
+  || styleSource.includes('.world-lobby-scene')
+  || styleSource.includes('.world-lobby-counts')
 ) {
   throw new Error('World workbench should render daily RP narration, dialogue, event, and world-setting surfaces.');
 }
@@ -1811,6 +1831,8 @@ if (
   || !worldEventLobbyBlock.includes('world-event-entry-main')
   || !worldEventLobbyBlock.includes('world-event-entry-meta')
   || !worldEventLobbyBlock.includes('world-event-entry-status')
+  || worldEventLobbyBlock.includes('world-lobby-scene')
+  || worldEventLobbyBlock.includes('world-lobby-counts')
   || worldEventLobbyBlock.includes('settings-kicker')
   || worldEventLobbyBlock.includes('手写记录')
 ) {
