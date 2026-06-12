@@ -223,6 +223,12 @@ import {
   parseRpRenderSegments,
   type RpRenderSegment,
 } from './rp-rendering';
+import {
+  desktopViewTransition,
+  mainSectionTransition,
+  renderWithUiTransition as runUiTransition,
+  type UiTransitionKind,
+} from './transitions';
 
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) {
@@ -233,7 +239,6 @@ const appRoot = app;
 type SettingsSection = 'world' | 'drafts' | 'stickers' | 'model' | 'prompts' | 'relationship' | 'interactions' | 'proactive' | 'chat' | 'notifications' | 'data';
 type MobileSection = 'messages' | 'contacts' | 'groups' | 'world' | 'moments' | 'settings';
 type MobileHistoryLayer = 'section' | 'chat' | 'settings-detail' | 'modal';
-type UiTransitionKind = 'main-forward' | 'main-back' | 'detail-in' | 'detail-out' | 'overlay-in' | 'overlay-out' | 'quiet';
 type StickerLibraryScope = 'character' | 'common' | 'user';
 type CharacterPanelPage = 'worldbook' | 'worldbook-editor' | 'status';
 type GroupSettingsMode = 'create' | 'edit';
@@ -302,8 +307,6 @@ type UiSessionSnapshot = {
 const CARD_IMPORT_ACCEPT = '.json,.png,application/json,image/png,application/octet-stream,*/*';
 const UI_SESSION_KEY = 'tavern-social-ui-session-v1';
 const UI_SESSION_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
-const UI_TRANSITION_MS = 180;
-const UI_MAIN_NAV_ORDER: MobileSection[] = ['messages', 'contacts', 'world', 'moments', 'settings'];
 
 let globalStatusText = '';
 let globalStatusHideTimer: number | undefined;
@@ -383,7 +386,6 @@ let modelConnectionTesting = false;
 let modelListError = false;
 let worldWeatherLoading = false;
 let worldWeatherStatus = '';
-let fallbackTransitionTimer: number | undefined;
 let serviceRestartLoading = false;
 let worldLocationSearchWorldId = '';
 let worldLocationCandidates: WorldWeatherLocation[] = [];
@@ -5572,69 +5574,9 @@ function renderMobile(character?: CharacterProfile): string {
   `;
 }
 
-function mainSectionTransition(from: MobileSection, to: MobileSection): UiTransitionKind {
-  if (from === to) return 'quiet';
-  const fromIndex = UI_MAIN_NAV_ORDER.indexOf(from);
-  const toIndex = UI_MAIN_NAV_ORDER.indexOf(to);
-  if (fromIndex < 0 || toIndex < 0) return 'main-forward';
-  return toIndex > fromIndex ? 'main-forward' : 'main-back';
-}
-
-function desktopViewTransition(
-  from: 'chat' | 'groups' | 'world' | 'moments',
-  to: 'chat' | 'groups' | 'world' | 'moments',
-): UiTransitionKind {
-  if (from === to) return 'quiet';
-  const order: Array<'chat' | 'groups' | 'world' | 'moments'> = ['chat', 'groups', 'world', 'moments'];
-  return order.indexOf(to) > order.indexOf(from) ? 'main-forward' : 'main-back';
-}
-
-function clearUiTransitionMarker(kind: UiTransitionKind): void {
-  const root = document.documentElement;
-  if (root.getAttribute('data-ui-transition') === kind) {
-    root.removeAttribute('data-ui-transition');
-  }
-  root.classList.remove('ui-fallback-transition');
-}
-
-function reducedMotionRequested(): boolean {
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-}
-
-function startFallbackUiTransition(kind: UiTransitionKind): void {
-  const root = document.documentElement;
-  window.clearTimeout(fallbackTransitionTimer);
-  root.classList.add('ui-fallback-transition');
-  root.setAttribute('data-ui-transition', kind);
-  fallbackTransitionTimer = window.setTimeout(() => clearUiTransitionMarker(kind), UI_TRANSITION_MS + 90);
-}
-
-function startViewTransitionRender(kind: UiTransitionKind): boolean {
-  const transitionDocument = document as Document & {
-    startViewTransition?: (callback: () => void) => { finished: Promise<void> };
-  };
-  if (!transitionDocument.startViewTransition) return false;
-  const root = document.documentElement;
-  root.setAttribute('data-ui-transition', kind);
-  const transition = transitionDocument.startViewTransition(() => {
-    render();
-  });
-  void transition.finished.finally(() => clearUiTransitionMarker(kind));
-  return true;
-}
-
 function renderWithUiTransition(kind: UiTransitionKind): void {
-  if (kind === 'quiet' || reducedMotionRequested()) {
-    render();
-    return;
-  }
-  // 大注释：页面切换动效只包住用户主动触发的导航更新，不参与后台调度和输入框 idle 刷新。
-  // 这样可以继续复用 render() 里现有的草稿、焦点和滚动恢复流程，避免动效把手机键盘顶掉。
-  if (startViewTransitionRender(kind)) {
-    return;
-  }
-  startFallbackUiTransition(kind);
-  render();
+  // Small comment: app.ts keeps the old one-argument call shape while transitions.ts owns the browser mechanics.
+  runUiTransition(kind, render);
 }
 
 function modelIsReady(): boolean {

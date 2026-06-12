@@ -44,6 +44,13 @@ This is currently the main code knot. It contains:
 
 Do not treat this as a pure view file. It is view plus UI controller plus transient state. The first safe refactor is to extract helpers, not to rewrite behavior.
 
+`src/independent-chat/ui/transitions.ts`
+
+- Owns browser-level View Transition API support and CSS fallback markers.
+- Exports transition direction helpers for main mobile sections and desktop view switches.
+- Exports `renderWithUiTransition(kind, renderPage)` so the module can run transitions without importing the whole UI shell.
+- Do not call this module for background scheduler refreshes or input-idle renders.
+
 `src/independent-chat/ui/rp-rendering.ts`
 
 - Parses RP text into narration, dialogue, and thought segments.

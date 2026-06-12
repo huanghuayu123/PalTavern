@@ -1288,6 +1288,10 @@ if (
 
 const uiSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/ui/app.ts'), 'utf8');
 const authoringUiSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/ui/authoring-ui.ts'), 'utf8');
+const transitionsPath = path.join(process.cwd(), 'src/independent-chat/ui/transitions.ts');
+const transitionsSource = fs.existsSync(transitionsPath)
+  ? fs.readFileSync(transitionsPath, 'utf8')
+  : '';
 const chatSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/chat/private-chat.ts'), 'utf8');
 const schedulerSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/automation/scheduler.ts'), 'utf8');
 const groupChatSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/chat/group-chat.ts'), 'utf8');
@@ -1455,7 +1459,7 @@ const keepMomentComposerVisibleBlock = uiSource
 const desktopViewControlsBlock = uiSource
   .split('function renderDesktopViewControls')[1]
   ?.split('function renderCharacterPanelTabs')[0] ?? '';
-const renderWithUiTransitionBlock = uiSource
+const renderWithUiTransitionBlock = transitionsSource
   .split('function renderWithUiTransition')[1]
   ?.split('function modelIsReady')[0] ?? '';
 const renderWhenChatInputIdleBlock = uiSource
@@ -2133,10 +2137,13 @@ if (
   throw new Error('Mobile bottom navigation should lock five equal slots and centered icon/label alignment.');
 }
 if (
-  !uiSource.includes("type UiTransitionKind = 'main-forward' | 'main-back' | 'detail-in' | 'detail-out' | 'overlay-in' | 'overlay-out' | 'quiet'")
-  || !uiSource.includes('startViewTransition')
-  || !uiSource.includes("setAttribute('data-ui-transition'")
-  || !renderWithUiTransitionBlock.includes('render();')
+  !transitionsSource.includes("export type UiTransitionKind = 'main-forward' | 'main-back' | 'detail-in' | 'detail-out' | 'overlay-in' | 'overlay-out' | 'quiet'")
+  || !transitionsSource.includes('startViewTransition')
+  || !transitionsSource.includes("setAttribute('data-ui-transition'")
+  || uiSource.includes('function startViewTransitionRender')
+  || uiSource.includes("setAttribute('data-ui-transition'")
+  || !uiSource.includes("from './transitions'")
+  || !renderWithUiTransitionBlock.includes('renderPage();')
   || !mobileSectionHandlerBlock.includes('renderWithUiTransition')
   || !desktopViewHandlerBlock.includes('renderWithUiTransition')
   || !openEventComposerBlock.includes("renderWithUiTransition('overlay-in'")

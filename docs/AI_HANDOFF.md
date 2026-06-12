@@ -22,6 +22,7 @@ The project already has feature modules, but the UI shell is still too concentra
 
 - `src/independent-chat/index.ts` starts the app.
 - `src/independent-chat/ui/app.ts` renders almost every page, stores transient UI state, restores focus/scroll, binds DOM events, and coordinates page transitions.
+- `src/independent-chat/ui/transitions.ts` owns the browser-level page transition mechanics. `app.ts` keeps the old one-argument call wrapper so existing navigation code stays stable.
 - `src/independent-chat/styles.css` contains multiple historical UI refresh layers. Later rules often override earlier rules.
 - `src/independent-chat/core/state.ts` owns persistence, default state, migrations, active selectors, world selectors, communication identity selectors, and conversation selectors.
 - `src/independent-chat/core/types.ts` is the shared schema for all persisted app data.
