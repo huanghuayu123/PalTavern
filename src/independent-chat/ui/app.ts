@@ -230,6 +230,14 @@ import {
   type UiTransitionKind,
 } from './transitions';
 import { icon, type IconName } from './icons';
+import {
+  avatarToneAttribute,
+  chatSurfaceStyle,
+  readImageInputAsDataUrl,
+  renderAvatar,
+  renderChatBackgroundControl,
+  renderUserAvatar,
+} from './chat-surface';
 
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) {
@@ -1284,59 +1292,12 @@ function fontScaleLabel(scale: number): string {
   return '标准';
 }
 
-function chatSurfaceStyle(backgroundImage?: string): string {
-  const styleParts = [`--chat-font-scale:${normalizeChatFontScale(state.chatFontScale)}`];
-  if (backgroundImage) {
-    styleParts.push(`--chat-background-image:url(&quot;${escapeHtml(backgroundImage)}&quot;)`);
-  }
-  return styleParts.join(';');
-}
-
 function privateChatBackgroundImage(character?: CharacterProfile): string | undefined {
   return character ? conversationFor(character.id, privateConversationActorId(character))?.backgroundImage : undefined;
 }
 
 function groupChatBackgroundImage(chat?: GroupChatProfile): string | undefined {
   return chat?.backgroundImage;
-}
-
-function renderChatBackgroundControl(config: {
-  title: string;
-  description: string;
-  importId: string;
-  clearId: string;
-  backgroundImage?: string;
-}): string {
-  return `
-    <section class="chat-background-control">
-      <div class="mobile-section-label">
-        <strong>${escapeHtml(config.title)}</strong>
-        <span>${escapeHtml(config.description)}</span>
-      </div>
-      <div class="chat-background-preview ${config.backgroundImage ? 'has-image' : ''}" ${config.backgroundImage ? `style="background-image: url(&quot;${escapeHtml(config.backgroundImage)}&quot;)"` : ''}>
-        <span>${config.backgroundImage ? '已设置背景' : '默认背景'}</span>
-      </div>
-      <div class="inline-actions chat-background-actions">
-        <label class="file-button secondary-file">
-          更换背景
-          <input id="${escapeHtml(config.importId)}" type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" />
-        </label>
-        <button id="${escapeHtml(config.clearId)}" class="secondary" type="button" ${config.backgroundImage ? '' : 'disabled'}>恢复默认</button>
-      </div>
-    </section>
-  `;
-}
-
-function readImageInputAsDataUrl(input: HTMLInputElement): Promise<string> {
-  const file = input.files?.[0];
-  input.value = '';
-  if (!file) return Promise.resolve('');
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('读取图片失败。'));
-    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
-    reader.readAsDataURL(file);
-  });
 }
 
 function isSubmittedComposerEcho(character: CharacterProfile | undefined, value: string): boolean {
@@ -1376,10 +1337,6 @@ function clearMessageComposerAfterSubmit(
   stickerPickerOpen = false;
   saveUiSessionSnapshot();
   return replyToId;
-}
-
-function renderUserAvatar(): string {
-  return escapeHtml((state.userName.trim() || '我').slice(0, 1));
 }
 
 function captureMessageInputFocus(): MessageInputFocusSnapshot {
@@ -1538,31 +1495,6 @@ function applyCharacterAccent(_character?: CharacterProfile): void {
   root.removeProperty('--accent-strong');
   root.removeProperty('--accent-soft');
   root.removeProperty('--accent-rgb');
-}
-
-function renderAvatar(character: CharacterProfile): string {
-  return character.avatar && /^(https?:|data:image\/)/i.test(character.avatar)
-    ? `<img src="${escapeHtml(character.avatar)}" alt="" />`
-    : escapeHtml(character.name.slice(0, 1));
-}
-
-type AvatarTone = 'teal' | 'sky' | 'lavender' | 'peach' | 'amber';
-
-const AVATAR_TONES: AvatarTone[] = ['teal', 'sky', 'lavender', 'peach', 'amber'];
-
-function avatarToneForId(id: string): AvatarTone {
-  // 小注释：用角色 ID 做稳定哈希，避免每次渲染后头像色调跳变。
-  const seed = id.trim() || 'character';
-  let hash = 0;
-  for (let index = 0; index < seed.length; index += 1) {
-    hash = ((hash * 31) + seed.charCodeAt(index)) >>> 0;
-  }
-  return AVATAR_TONES[hash % AVATAR_TONES.length];
-}
-
-function avatarToneAttribute(character?: CharacterProfile): string {
-  const tone: AvatarTone | 'user' = character ? avatarToneForId(character.id) : 'user';
-  return ` data-avatar-tone="${escapeHtml(tone)}"`;
 }
 
 function currentWorldCharacters(): CharacterProfile[] {
@@ -2172,7 +2104,7 @@ function privateChatSpeakerAvatar(message: ChatMessage): string {
     const character = state.characters.find(item => item.id === message.speakerCharacterId);
     return character ? renderAvatar(character) : escapeHtml(privateChatSpeakerName(message).slice(0, 1));
   }
-  return renderUserAvatar();
+  return renderUserAvatar(state.userName);
 }
 
 function renderPrivateChatTargetSelector(): string {
@@ -2185,7 +2117,7 @@ function renderPrivateChatTargetSelector(): string {
   const selectedName = selectedCharacter?.name ?? (state.userName.trim() || '我');
   return `
     <label class="private-chat-identity-select">
-      <span class="avatar private-chat-identity-avatar"${avatarToneAttribute(selectedCharacter)}>${selectedCharacter ? renderAvatar(selectedCharacter) : renderUserAvatar()}</span>
+      <span class="avatar private-chat-identity-avatar"${avatarToneAttribute(selectedCharacter)}>${selectedCharacter ? renderAvatar(selectedCharacter) : renderUserAvatar(state.userName)}</span>
       <span class="private-chat-identity-copy">
         <strong>${escapeHtml(selectedName)}</strong>
         <small>选择通讯身份</small>
@@ -2669,7 +2601,7 @@ function renderGroupMessageAvatar(message: GroupChatMessage): string {
     const character = state.characters.find(item => item.id === message.speakerCharacterId);
     return character ? renderAvatar(character) : escapeHtml(groupSpeakerName(message).slice(0, 1));
   }
-  return renderUserAvatar();
+  return renderUserAvatar(state.userName);
 }
 
 function userSelfLabel(): string {
@@ -2880,7 +2812,7 @@ function renderGroupChatPage(mobile = false): string {
   const manualReplyMode = state.chatReplyMode === 'manual';
   const generateLabel = isGroupGenerating() ? '生成中' : manualReplyMode ? '生成' : '继续';
   return `
-    <main class="chat group-chat ${mobile ? 'mobile-group-chat mobile-chat-detail' : ''}" style="${chatSurfaceStyle(groupChatBackgroundImage(chat))}">
+    <main class="chat group-chat ${mobile ? 'mobile-group-chat mobile-chat-detail' : ''}" style="${chatSurfaceStyle(state.chatFontScale, groupChatBackgroundImage(chat))}">
       <header class="chat-header group-chat-header">
         ${renderGroupHeader(chat, mobile)}
         ${mobile
@@ -2907,7 +2839,7 @@ function renderChatPane(character?: CharacterProfile, mobile = false): string {
   const quoted = quotedMessageId ? state.messages.find(message => message.id === quotedMessageId && !message.recalledAt) : undefined;
   const manualReplyMode = state.chatReplyMode === 'manual';
   return `
-    <main class="chat ${character ? 'has-status-shelf' : ''} ${mobile ? 'mobile-chat-detail' : ''}" style="${chatSurfaceStyle(privateChatBackgroundImage(character))}">
+    <main class="chat ${character ? 'has-status-shelf' : ''} ${mobile ? 'mobile-chat-detail' : ''}" style="${chatSurfaceStyle(state.chatFontScale, privateChatBackgroundImage(character))}">
       <header class="chat-header">
         ${renderCharacterHeader(character, mobile)}
         ${mobile ? '' : renderDesktopViewControls(character)}
@@ -3198,7 +3130,7 @@ function renderEventComposerLeadActor(): string {
   const character = leadActor.characterId
     ? state.characters.find(item => item.id === leadActor.characterId && item.worldId === activeWorld().id)
     : undefined;
-  const avatar = character ? renderAvatar(character) : renderUserAvatar();
+  const avatar = character ? renderAvatar(character) : renderUserAvatar(state.userName);
   return `
     <div class="event-lead-actor" data-event-lead-actor="${escapeHtml(leadActor.id)}">
       <span class="avatar mini-avatar"${avatarToneAttribute(character)}>${avatar}</span>
@@ -3717,7 +3649,7 @@ function renderWorldRpActorOptions(): string {
 function renderWorldPersonaSelector(): string {
   const actor = worldRpActor();
   const personaName = actor.name;
-  const avatar = actor.character ? renderAvatar(actor.character) : renderUserAvatar();
+  const avatar = actor.character ? renderAvatar(actor.character) : renderUserAvatar(state.userName);
   return `
     <details class="world-persona-select world-persona-avatar-only">
       <summary aria-label="当前身份：${escapeHtml(personaName)}" title="${escapeHtml(personaName)}">

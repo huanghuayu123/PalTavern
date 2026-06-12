@@ -1296,6 +1296,10 @@ const iconsPath = path.join(process.cwd(), 'src/independent-chat/ui/icons.ts');
 const iconsSource = fs.existsSync(iconsPath)
   ? fs.readFileSync(iconsPath, 'utf8')
   : '';
+const chatSurfacePath = path.join(process.cwd(), 'src/independent-chat/ui/chat-surface.ts');
+const chatSurfaceSource = fs.existsSync(chatSurfacePath)
+  ? fs.readFileSync(chatSurfacePath, 'utf8')
+  : '';
 const chatSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/chat/private-chat.ts'), 'utf8');
 const schedulerSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/automation/scheduler.ts'), 'utf8');
 const groupChatSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/chat/group-chat.ts'), 'utf8');
@@ -2166,6 +2170,17 @@ if (
   throw new Error('Shared UI icons should live in ui/icons.ts instead of the main app renderer.');
 }
 if (
+  !chatSurfaceSource.includes('export function chatSurfaceStyle')
+  || !chatSurfaceSource.includes('export function renderAvatar')
+  || !chatSurfaceSource.includes('export function renderChatBackgroundControl')
+  || !uiSource.includes("from './chat-surface'")
+  || uiSource.includes('function chatSurfaceStyle(')
+  || uiSource.includes('function renderAvatar(')
+  || uiSource.includes('function renderChatBackgroundControl(')
+) {
+  throw new Error('Chat surface helpers should live in ui/chat-surface.ts instead of the main app renderer.');
+}
+if (
   !styleSource.includes('/* 大注释：页面切换动效层')
   || !styleSource.includes('::view-transition-old(root)')
   || !styleSource.includes('::view-transition-new(root)')
@@ -2218,7 +2233,7 @@ if (
   throw new Error('World generate-event should keep an accessible label while rendering as a lighter topbar action.');
 }
 if (
-  !worldPersonaSelectorBlock.includes('renderUserAvatar()')
+  !worldPersonaSelectorBlock.includes('renderUserAvatar(state.userName)')
   || !worldPersonaSelectorBlock.includes('personaName')
   || !worldPersonaSelectorBlock.includes('world-persona-avatar-only')
   || !worldPersonaSummaryBlock.includes('⌄')
@@ -2451,8 +2466,8 @@ if (
   throw new Error('World RP user actions should be editable from inside the event dialogue.');
 }
 if (
-  !appSource.includes('function avatarToneForId')
-  || !appSource.includes('function avatarToneAttribute')
+  !chatSurfaceSource.includes('function avatarToneForId')
+  || !chatSurfaceSource.includes('function avatarToneAttribute')
   || !privateTargetSelectorBlock.includes('avatarToneAttribute(selectedCharacter)')
   || !worldPersonaSelectorBlock.includes('avatarToneAttribute(actor.character)')
   || !appSource.includes('renderEventAvatars')

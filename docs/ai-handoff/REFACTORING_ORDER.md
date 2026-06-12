@@ -26,7 +26,7 @@ Candidate files:
 - `src/independent-chat/ui/session.ts`: scroll, focus, draft, and UI session snapshot helpers.
 - `src/independent-chat/ui/transitions.ts`: `UiTransitionKind`, `renderWithUiTransition`, and fallback transition helpers. First slice completed: transition mechanics now live here, while `app.ts` keeps a thin wrapper for existing call sites.
 - `src/independent-chat/ui/icons.ts`: icon names and icon rendering. Completed: shared icon paths now live here.
-- `src/independent-chat/ui/chat-surface.ts`: avatar rendering, chat background helpers, composer sizing and focus helpers.
+- `src/independent-chat/ui/chat-surface.ts`: avatar rendering and chat background helpers. Completed first slice: shared avatar tones, user initials, chat background controls, image reading, and chat surface style now live here.
 
 Keep exported function names close to current names so tests and future diffs are easy to review.
 

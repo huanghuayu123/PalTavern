@@ -36,7 +36,7 @@ This is currently the main code knot. It contains:
 
 - Transient UI state: selected settings section, active mobile section, active panels, drafts, popovers, modals, action menus.
 - Session persistence for scroll position, focus, draft text, current mobile layer, and active detail page.
-- Render helpers for avatars, icons, headers, lists, chat bubbles, world RP segments, settings folds, prompt rows, and dialogs.
+- Render helpers for headers, lists, chat bubbles, world RP segments, settings folds, prompt rows, and dialogs.
 - Page renderers for messages, contacts, groups, character panel, moments, world workbench, settings, onboarding, import dialogs, and sticker dialogs.
 - UI transition helpers: `renderWithUiTransition` for user-triggered page changes, while background refresh stays on plain `render`.
 - Input stability helpers: capture and restore focus/drafts for private chat, group chat, moment comments, and world event composer.
@@ -55,6 +55,11 @@ Do not treat this as a pure view file. It is view plus UI controller plus transi
 
 - Owns shared icon names and SVG rendering.
 - Keeps repeated navigation/action icon paths out of the main app renderer.
+
+`src/independent-chat/ui/chat-surface.ts`
+
+- Owns shared chat-surface display helpers: avatar markup, stable avatar tone attributes, user avatar initials, chat background controls, image import reading, and chat surface inline style.
+- Keeps visual chat chrome separate from page renderers so private chat, group chat, moments, and world RP can share the same display rules.
 
 `src/independent-chat/ui/rp-rendering.ts`
 
