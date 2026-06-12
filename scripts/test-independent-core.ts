@@ -223,12 +223,15 @@ if (
 }
 
 const appSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/ui/app.ts'), 'utf8');
+const stylesSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/styles.css'), 'utf8');
 const androidMainActivitySource = fs.readFileSync(path.join(
   process.cwd(),
   'android/app/src/main/java/com/tavernsocial/app/MainActivity.java',
 ), 'utf8');
 const worldDialogueBody = functionBody(appSource, 'renderWorldDialogueStream');
 const worldComposerBindingBody = functionBody(appSource, 'bindUi');
+const chatPaneRenderBlock = functionBody(appSource, 'renderChatPane');
+const privateTargetSelectorBlock = functionBody(appSource, 'renderPrivateChatTargetSelector');
 if (worldDialogueBody.includes('messagesFor(')) {
   throw new Error('World RP stream must not render private-chat messages.');
 }
@@ -249,11 +252,20 @@ if (
   throw new Error('World RP detail should expose an end-event button that archives through the event timeline flow.');
 }
 if (
-  !appSource.includes('renderPrivateChatSpeakerPicker')
-  || !appSource.includes('id="private-chat-speaker-select"')
-  || !appSource.includes('privateChatSpeakerId')
+  !appSource.includes('renderPrivateChatTargetSelector')
+  || !appSource.includes('id="private-chat-target-select"')
+  || !appSource.includes('openPrivateChatByCharacterId')
+  || !appSource.includes("document.querySelector<HTMLSelectElement>('#private-chat-target-select')")
+  || appSource.includes('renderPrivateChatSpeakerPicker')
+  || appSource.includes('id="private-chat-speaker-select"')
+  || chatPaneRenderBlock.includes('renderPrivateChatTargetSelector')
+  || chatPaneRenderBlock.includes('private-chat-target-select')
+  || privateTargetSelectorBlock.includes('currentWorldCharacters()')
+  || !privateTargetSelectorBlock.includes('state.characters.filter')
+  || !stylesSource.includes('.private-chat-target-switch')
+  || stylesSource.includes('.private-speaker-switch')
 ) {
-  throw new Error('Private chat should expose a stable user/character speaker switch.');
+  throw new Error('Private chat target switching should live in the outer message/contact surface, not inside the chat window.');
 }
 if (
   !appSource.includes('activeWorldPromptPresetId')
@@ -1204,6 +1216,9 @@ const momentVisibilityContactControlsBlock = uiSource
 const momentVisibilityPickerBlock = uiSource
   .split('function renderMomentVisibilityContactPicker')[1]
   ?.split('function renderMomentVisibilityControls')[0] ?? '';
+const momentCommentFormMarkupBlock = uiSource
+  .split('<form class="moment-comment-form')[1]
+  ?.split('</form>')[0] ?? '';
 const mobileMomentComposerOpenBlock = (styleSource.split('.moment-compose-fab {')[1] ?? '')
   .split('.keyboard-open .moments-publisher.is-open')[0]
   .split('.moments-publisher.is-open {')[1]
@@ -1219,6 +1234,8 @@ const mobileBottomNavBlock = uiSource
   ?.split('</nav>')[0] ?? '';
 const bottomNavFinalBlock = styleSource
   .split('/* Bottom nav final alignment guard */')[1] ?? '';
+const globalUiResetBlock = styleSource
+  .split('/* 大注释：全局 UI 重置层。')[1] ?? '';
 const worldWorkbenchBlock = uiSource
   .split('function renderWorldWorkbenchPage')[1]
   ?.split('function renderDesktop')[0] ?? '';
@@ -1228,9 +1245,13 @@ const worldEventLobbyBlock = uiSource
 const worldEventDetailBlock = uiSource
   .split('function renderWorldEventRpDetail')[1]
   ?.split('function renderWorldStageComposer')[0] ?? '';
+const worldStageComposerBlock = functionBody(uiSource, 'renderWorldStageComposer');
 const worldSettingsPanelBlock = uiSource
   .split('function renderWorldSettingsPanel')[1]
   ?.split('function renderWorldStageHeader')[0] ?? '';
+const eventsPageBlock = functionBody(uiSource, 'renderEventsPage');
+const eventComposerDialogBlock = functionBody(uiSource, 'renderEventComposerDialog');
+const worldEventSettingsPanelBlock = functionBody(uiSource, 'renderWorldEventSettingsPanel');
 const worldPersonaSelectorBlock = functionBody(uiSource, 'renderWorldPersonaSelector');
 const worldPersonaSummaryBlock = worldPersonaSelectorBlock
   .split('<summary>')[1]
@@ -1390,6 +1411,15 @@ if (
   throw new Error('Proactive settings should use a role dropdown instead of the active chat character.');
 }
 if (
+  !autoMessageSaveBlock.includes("const hasAutoMessageSettings = Boolean(document.querySelector<HTMLInputElement>('#auto-enabled'));")
+  || !autoMessageSaveBlock.includes("const hasAutoMomentSettings = Boolean(document.querySelector<HTMLInputElement>('#auto-moment-enabled'));")
+  || !autoMessageSaveBlock.includes("const hasAutoEventSettings = Boolean(document.querySelector<HTMLInputElement>('#auto-event-enabled'));")
+  || !autoMessageSaveBlock.includes('if (hasAutoEventSettings)')
+  || !autoMessageSaveBlock.includes('preserveScrollForNextRender();')
+) {
+  throw new Error('Shared event settings should save only visible auto-setting fields and preserve scroll.');
+}
+if (
   !momentDraftGenerationBlock.includes('momentComposerTextDraft = content;')
   || !momentDraftGenerationBlock.includes('saveUiSessionSnapshot({ captureDom: false });')
   || momentDraftGenerationBlock.includes('saveUiSessionSnapshot({ captureDom: true });')
@@ -1530,6 +1560,15 @@ if (
   || uiSource.includes('moment-comment-actions')
   || uiSource.includes('class="moment-comment-reply"')
   || !styleSource.includes('.moment-comment-menu')
+  || !momentCommentFormMarkupBlock.includes('class="secondary moment-comment-submit"')
+  || !momentCommentFormMarkupBlock.includes('moment-comment-inline-form')
+  || !momentCommentFormMarkupBlock.includes('aria-label="发送评论"')
+  || !momentCommentFormMarkupBlock.includes("${icon('send')}")
+  || momentCommentFormMarkupBlock.includes('>发送</button>')
+  || !styleSource.includes('grid-template-columns: minmax(96px, 0.28fr) minmax(0, 1fr) 44px')
+  || !styleSource.includes('Moment comment inline layout guard')
+  || !styleSource.includes('grid-template-columns: clamp(86px, 26%, 132px) minmax(0, 1fr) 44px')
+  || styleSource.includes('.moment-comment-form select {\n    grid-column: 1 / -1;')
 ) {
   throw new Error('Moment comments should use tap-to-reply plus long-press action menus instead of always-visible action buttons.');
 }
@@ -1579,6 +1618,19 @@ if (
   || !bottomNavFinalBlock.includes('height: 28px')
 ) {
   throw new Error('Mobile bottom navigation should lock five equal slots and centered icon/label alignment.');
+}
+if (
+  !globalUiResetBlock.includes('--warm-accent')
+  || !globalUiResetBlock.includes('.desktop-shell')
+  || !globalUiResetBlock.includes('.chat,')
+  || !globalUiResetBlock.includes('.settings-window')
+  || !globalUiResetBlock.includes('.moment-card')
+  || !globalUiResetBlock.includes('.world-workbench')
+  || !globalUiResetBlock.includes('.bottom-nav')
+  || !globalUiResetBlock.includes('统一 PalTavern 的基础视觉语言')
+  || !globalUiResetBlock.includes('手机端最终重置')
+) {
+  throw new Error('Global UI reset layer should keep the shared product styling for all major surfaces.');
 }
 const worldTopbarFinalBlock = styleSource.split('/* World topbar final mobile arrangement guard */')[1] ?? '';
 if (
@@ -1656,13 +1708,17 @@ if (
   uiSource.includes('data-event-composer-mode')
   || uiSource.includes('data-open-event-composer-mode="manual"')
   || uiSource.includes("openEventComposer('manual')")
-  || uiSource.includes('手写记录')
-  || uiSource.includes('手写小事')
-  || uiSource.includes('记录一件事')
+  || eventComposerDialogBlock.includes('手写记录')
+  || eventComposerDialogBlock.includes('手写小事')
+  || eventComposerDialogBlock.includes('记录一件事')
+  || worldEventLobbyBlock.includes('手写记录')
+  || worldStageComposerBlock.includes('data-world-rp-reply-mode')
+  || worldStageComposerBlock.includes('手动记录')
+  || uiSource.includes("document.querySelectorAll<HTMLButtonElement>('[data-world-rp-reply-mode]')")
+  || uiSource.includes("if (worldRpReplyMode === 'manual')")
 ) {
   throw new Error('World event UI should remove the manual record feature and only expose generated events.');
 }
-const eventComposerDialogBlock = functionBody(uiSource, 'renderEventComposerDialog');
 if (
   !eventComposerDialogBlock.includes('renderEventComposerLeadActor')
   || !eventComposerDialogBlock.includes('renderEventParticipantSelect')
@@ -1683,13 +1739,50 @@ if (
   throw new Error('World event submit should only generate, carry lead actor/participants, open RP detail, and preserve scroll.');
 }
 if (
+  !eventsPageBlock.includes('renderWorldEventSettingsPanel({')
+  || !worldSettingsPanelBlock.includes('renderWorldEventSettingsPanel({')
+  || !worldEventSettingsPanelBlock.includes('event-settings-summary')
+  || !worldEventSettingsPanelBlock.includes('event-settings-advanced')
+  || !worldEventSettingsPanelBlock.includes('event-settings-recent')
+  || !worldEventSettingsPanelBlock.includes('event-settings-generate')
+  || !worldEventSettingsPanelBlock.includes('event-settings-action-row')
+  || !worldEventSettingsPanelBlock.includes('renderEventSettingsSurfaceName')
+  || !worldEventSettingsPanelBlock.includes('data-open-event-composer')
+  || !worldEventSettingsPanelBlock.includes('auto-event-enabled')
+  || !worldEventSettingsPanelBlock.includes('auto-event-min-hours')
+  || !worldEventSettingsPanelBlock.includes('auto-event-max-hours')
+  || !worldEventSettingsPanelBlock.includes('auto-event-daily-limit')
+  || !worldEventSettingsPanelBlock.includes('auto-event-quiet-start')
+  || !worldEventSettingsPanelBlock.includes('auto-event-quiet-end')
+  || !styleSource.includes('.event-settings-panel')
+  || !styleSource.includes('.event-settings-action-row')
+) {
+  throw new Error('World drawer and legacy event page should share one lightweight event settings panel.');
+}
+if (
+  eventsPageBlock.includes('event-broadcast-card')
+  || eventsPageBlock.includes('events-section-title')
+  || worldSettingsPanelBlock.includes('renderWorldDrawerEvents')
+  || worldSettingsPanelBlock.includes('renderWorldDrawerEventSchedule')
+  || worldEventSettingsPanelBlock.includes('event-broadcast-card')
+  || worldEventSettingsPanelBlock.includes('events-section-title')
+  || worldEventSettingsPanelBlock.includes('renderEvents(events)')
+) {
+  throw new Error('Event settings surfaces should not keep the old broadcast-card or duplicated drawer event layouts.');
+}
+if (
   !worldWorkbenchBlock.includes('旁白 + 对话')
   || !worldWorkbenchBlock.includes('当前氛围')
   || worldWorkbenchBlock.includes('当前目标')
   || !worldWorkbenchBlock.includes('renderWorldEventLobby')
   || !worldWorkbenchBlock.includes('renderWorldEventRpDetail')
   || !worldWorkbenchBlock.includes('renderWorldSettingsPanel')
+  || !worldEventLobbyBlock.includes('world-lobby-scene')
+  || !worldDialogueBody.includes('world-scene-note')
   || !styleSource.includes('.world-workbench')
+  || !styleSource.includes('世界页 UI 重置层')
+  || !styleSource.includes('.world-lobby-scene')
+  || !styleSource.includes('.world-scene-note')
   || !styleSource.includes('.narrative-card')
   || !styleSource.includes('.dialogue-turn')
 ) {
@@ -1744,7 +1837,7 @@ if (
   || worldWorkbenchBlock.includes('renderWorldEventSummary')
   || worldWorkbenchBlock.includes('world-timeline-panel')
   || !worldSettingsPanelBlock.includes('world-drawer-section')
-  || !worldSettingsPanelBlock.includes('renderWorldDrawerEvents')
+  || !worldSettingsPanelBlock.includes('renderWorldEventSettingsPanel')
   || !worldSettingsPanelBlock.includes('renderWorldDrawerTimeline')
   || !uiSource.includes('activeWorldRpEventId')
   || !styleSource.includes('.world-stage-composer')

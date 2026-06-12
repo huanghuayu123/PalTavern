@@ -528,8 +528,6 @@ function captureVisibleDraftsFromDom(): void {
   if (timelineNote) timelineNoteDraft = timelineNote.value;
   const worldRpInput = document.querySelector<HTMLTextAreaElement>('#world-rp-input');
   if (worldRpInput) worldRpInputDraft = worldRpInput.value;
-  const privateChatSpeaker = document.querySelector<HTMLSelectElement>('#private-chat-speaker-select');
-  if (privateChatSpeaker) privateChatSpeakerId = privateChatSpeaker.value || 'user';
   document.querySelectorAll<HTMLInputElement>('[data-comment-input]').forEach(input => {
     const momentId = input.dataset.commentInput;
     if (momentId) {
@@ -714,7 +712,8 @@ function restoreUiSessionSnapshot(): void {
     worldRpInputDraft = typeof parsed.worldRpInputDraft === 'string' ? parsed.worldRpInputDraft : '';
     activeWorldRpEventId = '';
     worldRpRenderMode = parsed.worldRpRenderMode === 'bubble' ? 'bubble' : 'narration';
-    worldRpReplyMode = parsed.worldRpReplyMode === 'manual' ? 'manual' : 'auto';
+    // 小注释：世界 RP 的旧手动模式不再恢复，避免隐藏会话状态让“继续”只记录不生成。
+    worldRpReplyMode = 'auto';
     worldRpActorId = typeof parsed.worldRpActorId === 'string'
       && (
         parsed.worldRpActorId === 'user'
@@ -722,13 +721,7 @@ function restoreUiSessionSnapshot(): void {
       )
       ? parsed.worldRpActorId
       : 'user';
-    privateChatSpeakerId = typeof parsed.privateChatSpeakerId === 'string'
-      && (
-        parsed.privateChatSpeakerId === 'user'
-        || state.characters.some(character => character.id === parsed.privateChatSpeakerId && character.worldId === activeWorld().id)
-      )
-      ? parsed.privateChatSpeakerId
-      : 'user';
+    privateChatSpeakerId = 'user';
     eventComposerOpen = Boolean(parsed.eventComposerOpen);
     eventComposerDraft = normalizeEventDraft(parsed.eventComposerDraft);
     messageDrafts.clear();
@@ -1864,6 +1857,29 @@ function renderInboxConversations(): string {
   return `${groupRows}${characterRows}`;
 }
 
+function openPrivateChatByCharacterId(characterId: string, options: { pushHistory?: boolean } = {}): void {
+  const character = state.characters.find(item => item.id === characterId && item.worldId === activeWorld().id);
+  if (!character) return;
+  captureVisibleDraftsFromDom();
+  state.activeCharacterId = character.id;
+  privateChatSpeakerId = 'user';
+  setActiveView('chat');
+  markConversationRead(character.id);
+  characterPanelOpen = false;
+  stickerPickerOpen = false;
+  quotedMessageId = '';
+  messageActionId = '';
+  if (compactMedia.matches) {
+    mobileChatOpen = true;
+    mobileGroupChatOpen = false;
+    groupSettingsOpen = false;
+    if (options.pushHistory !== false) pushMobileHistory('chat');
+  }
+  saveState();
+  render();
+  void generateOpeningMessage(character, render);
+}
+
 function renderChatStatusShelf(character?: CharacterProfile): string {
   if (!character) return '';
   const status = characterStatusFor(character);
@@ -1927,16 +1943,16 @@ function privateChatSpeakerAvatar(message: ChatMessage): string {
   return renderUserAvatar();
 }
 
-function renderPrivateChatSpeakerPicker(character?: CharacterProfile): string {
-  if (!character) return '';
-  const characters = state.characters.filter(item => item.worldId === activeWorld().id);
-  const selected = privateChatSpeaker().speakerType === 'character' ? privateChatSpeakerId : 'user';
+function renderPrivateChatTargetSelector(): string {
+  // 小注释：私聊外层选择器不跟随通讯录搜索过滤，避免搜索后切不到其他角色。
+  const characters = state.characters.filter(character => character.worldId === activeWorld().id);
+  const selectedId = activeCharacter()?.id ?? characters[0]?.id ?? '';
+  if (characters.length === 0) return '';
   return `
-    <label class="private-speaker-switch">
-      <span>发言身份</span>
-      <select id="private-chat-speaker-select" aria-label="选择私聊发言身份">
-        <option value="user" ${selected === 'user' ? 'selected' : ''}>${escapeHtml(userSelfLabel())}</option>
-        ${characters.map(item => `<option value="${escapeHtml(item.id)}" ${selected === item.id ? 'selected' : ''}>${escapeHtml(item.name)}</option>`).join('')}
+    <label class="private-chat-target-switch">
+      <span>私信角色</span>
+      <select id="private-chat-target-select" aria-label="选择私信角色">
+        ${characters.map(character => `<option value="${escapeHtml(character.id)}" ${selectedId === character.id ? 'selected' : ''}>${escapeHtml(character.name)}</option>`).join('')}
       </select>
     </label>
   `;
@@ -2619,7 +2635,6 @@ function renderChatPane(character?: CharacterProfile, mobile = false): string {
       <section class="messages">${renderMessages(character)}</section>
       <div class="chat-composer-area">
         ${renderStickerPicker(character)}
-        ${renderPrivateChatSpeakerPicker(character)}
         ${quoted ? `
           <div class="composer-quote">
             <div><strong>引用消息</strong><span>${escapeHtml(compactText(quoted.content, 120))}</span></div>
@@ -2843,51 +2858,19 @@ function renderMomentsTutorial(): string {
 }
 
 function renderEventsPage(mobile = false): string {
-  const events = eventsForActiveWorld();
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const todayCount = events.filter(event => event.createdAt >= todayStart.getTime()).length;
-  const activeCount = events.filter(event => event.status === 'active').length;
-  const characters = state.characters.filter(character => character.worldId === activeWorld().id);
-  const enabledAutoEvents = characters.filter(character => character.autoEvent?.enabled).length;
-  const nextEventAt = characters
-    .map(character => character.autoEvent?.nextAttemptAt)
-    .filter((value): value is number => typeof value === 'number');
-  const autoStatus = enabledAutoEvents > 0
-    ? `已为 ${enabledAutoEvents} 位角色开启自动事件`
-    : '自动事件未开启';
-  const nextText = nextEventAt.length > 0
-    ? new Date(Math.min(...nextEventAt)).toLocaleString()
-    : '未安排';
   return `
-    <main class="chat events-page ${mobile ? 'mobile-page' : ''}">
-      <header class="chat-header events-heading">
+    <main class="chat events-page event-settings-reset-page ${mobile ? 'mobile-page' : ''}">
+      <header class="chat-header events-heading event-settings-reset-heading">
         <div>
           <span class="eyebrow">${escapeHtml(activeWorld().name)}</span>
-          <h2>生活线索</h2>
-          <p>角色会自然留下近况、待办和小变化，你可以用手机方式记录、询问或暂时放着。</p>
+          <h2>事件设置</h2>
+          <p>这里只调整日常片段的生成节奏。真正的 RP 从世界页片段列表进入，不把设置页做成管理看板。</p>
         </div>
         ${mobile ? '' : renderDesktopViewControls(activeCharacter())}
-        <button class="primary" id="generate-event" type="button" ${eventGenerating ? 'disabled' : ''}>
-          ${eventGenerating ? '正在生成…' : '生成一条线索'}
-        </button>
       </header>
       <section class="events-scroll">
-        <div class="events-column">
-          <section class="event-broadcast-card">
-            <div>
-              <strong>今日居民近况</strong>
-              <p>${escapeHtml(autoStatus)} · 下次检查：${escapeHtml(nextText)}</p>
-            </div>
-            <div class="event-broadcast-side">
-              <div class="event-broadcast-stats">
-              <span><b>${todayCount}</b><small>今日线索</small></span>
-              <span><b>${activeCount}</b><small>待处理</small></span>
-              </div>
-            </div>
-          </section>
-          <div class="events-section-title"><strong>生活线索流</strong><span>${events.length} 条</span></div>
-          <section class="events-feed">${renderEvents(events)}</section>
+        <div class="events-column event-settings-page-column">
+          ${renderWorldEventSettingsPanel({ surface: 'page', character: activeCharacter() })}
         </div>
       </section>
       ${renderEventComposerDialog()}
@@ -3169,13 +3152,13 @@ function renderMoments(): string {
                 <button type="button" data-clear-comment-reply="${escapeHtml(moment.id)}" aria-label="取消回复目标">取消</button>
               </div>
             ` : ''}
-            <form class="moment-comment-form" data-comment-form="${escapeHtml(moment.id)}">
+            <form class="moment-comment-form moment-comment-inline-form" data-comment-form="${escapeHtml(moment.id)}">
               <select data-comment-author-select="${escapeHtml(moment.id)}" aria-label="选择评论身份">
                 <option value="user" ${selectedCommentAuthorValue === 'user' ? 'selected' : ''}>${escapeHtml(userSelfLabel())}</option>
                 ${commentAuthorCharacters.map(item => `<option value="${escapeHtml(item.id)}" ${selectedCommentAuthorValue === item.id ? 'selected' : ''}>${escapeHtml(item.name)}</option>`).join('')}
               </select>
               <input data-comment-input="${escapeHtml(moment.id)}" value="${escapeHtml(momentCommentDrafts.get(moment.id) ?? '')}" placeholder="${replyTarget ? `回复 ${escapeHtml(momentCommentAuthorName(replyTarget))}…` : '写评论…'}" aria-label="评论这条动态" />
-              <button class="secondary" type="submit">发送</button>
+              <button class="secondary moment-comment-submit" type="submit" aria-label="发送评论">${icon('send')}</button>
             </form>
             ${visibleCommentCharacters.length > 0 ? `
               <div class="moment-character-picker">
@@ -3215,92 +3198,6 @@ function renderEventParticipantNames(event: WorldEvent): string {
     ? event.leadActor.name
     : '';
   return [leadName, ...names].filter(Boolean).join('、') || '整个世界';
-}
-
-function eventImpactText(event: WorldEvent): string {
-  const delta = event.decision?.affinityDelta ?? event.affinityDelta;
-  if (delta > 0) return `好感度 +${delta}`;
-  if (delta < 0) return `好感度 ${delta}`;
-  return '好感度未变';
-}
-
-function eventSourceText(event: WorldEvent): string {
-  if (event.source === 'auto_model') return '自动生活检查';
-  if (event.source === 'model') return '手动生成线索';
-  return '手动记录';
-}
-
-function eventNextText(event: WorldEvent): string {
-  if (event.status === 'resolved') {
-    return event.decision ? compactText(event.decision.result, 56) : '已成为近期生活记录';
-  }
-  return event.choices.length > 0 ? `${event.choices.length} 个可处理后续` : '等待处理';
-}
-
-function renderEvents(events = eventsForActiveWorld()): string {
-  if (events.length === 0) {
-    return '<div class="moments-empty"><strong>暂时没有生活线索</strong><span>点“生成一条线索”，或先手动记录一个生活片段。</span></div>';
-  }
-  return events.map(event => {
-    const resolving = eventResolvingId === event.id;
-    return `
-      <article class="event-card ${event.status === 'resolved' ? 'is-resolved' : ''}">
-        <div class="event-card-main">
-          <div class="event-avatar-stack">${renderEventAvatars(event)}</div>
-          <div class="event-body">
-            <div class="event-card-header">
-              <div>
-                <span class="event-kicker">${escapeHtml(eventTypeLabel(event.type))} · ${escapeHtml(renderEventParticipantNames(event))}</span>
-                <strong>${escapeHtml(event.title)}</strong>
-              </div>
-              <span class="event-status">${event.status === 'active' ? '待处理' : '已结算'}</span>
-            </div>
-            <div class="event-content">${escapeHtml(event.description)}</div>
-            <div class="event-life-context">
-              <span>涉及：${escapeHtml(renderEventParticipantNames(event))}</span>
-              <span>出现：${escapeHtml(eventSourceText(event))}</span>
-              <span>后续：${escapeHtml(eventNextText(event))}</span>
-            </div>
-            <div class="event-meta">
-              <span>${formatConversationTime(event.createdAt)}</span>
-              <span>${escapeHtml(eventImpactText(event))}</span>
-              <span>${escapeHtml(eventSourceText(event))}</span>
-            </div>
-            ${event.modelError ? `<p class="event-error">后续生成失败：${escapeHtml(event.modelError)}。可以重试分支，或在下方手写结果。</p>` : ''}
-            ${event.status === 'active' ? `
-              <div class="event-choice-grid">
-                ${event.choices.map(choice => `
-                  <button class="secondary" type="button" data-event-choice="${escapeHtml(event.id)}" data-event-choice-id="${escapeHtml(choice.id)}" ${resolving ? 'disabled' : ''}>
-                    <strong>${escapeHtml(choice.label)}</strong>
-                    <span>${escapeHtml(compactText(choice.intent, 80))}</span>
-                  </button>
-                `).join('')}
-              </div>
-              <details class="event-manual-result" open>
-                <summary>手写结果</summary>
-                <label class="field event-manual-field">
-                  <span>这件事最后怎样收场</span>
-                  <textarea data-event-manual-input="${escapeHtml(event.id)}" aria-label="手写事件结果" placeholder="例如：她把伞收进店里，第二天留下了一张简短纸条。"></textarea>
-                </label>
-                <div class="event-actions">
-                  <button class="secondary" type="button" data-resolve-event="${escapeHtml(event.id)}" ${resolving ? 'disabled' : ''}>直接记为结束</button>
-                  <button class="primary" type="button" data-event-manual-finish="${escapeHtml(event.id)}">保存手写结果</button>
-                </div>
-              </details>
-            ` : event.decision ? `
-              <div class="event-result">
-                <span>你选择了：${escapeHtml(event.decision.label)}</span>
-                <p>${escapeHtml(event.decision.result)}</p>
-              </div>
-            ` : ''}
-            <div class="event-actions">
-              <button class="danger" data-delete-event="${escapeHtml(event.id)}">删除事件</button>
-            </div>
-          </div>
-        </div>
-      </article>
-    `;
-  }).join('');
 }
 
 function timelineTypeLabel(type: TimelineEntry['type']): string {
@@ -3553,7 +3450,7 @@ function renderWorldSettingsPanel(): string {
           <button class="small-button primary-small" data-save-world-workbench type="button">保存</button>
         </header>
         <div class="world-gear-body">
-          <section class="world-drawer-section">
+          <section class="world-drawer-section world-profile-section">
             <h3>世界资料</h3>
             <label class="field"><span>名称</span><input id="workbench-world-name" value="${escapeHtml(world.name)}" /></label>
             <label class="field"><span>说明</span><textarea id="workbench-world-description">${escapeHtml(world.description)}</textarea></label>
@@ -3563,8 +3460,7 @@ function renderWorldSettingsPanel(): string {
           </section>
           ${renderWorldRenderModeSetting()}
           ${renderWorldDrawerTimeline()}
-          ${renderWorldDrawerEvents()}
-          ${renderWorldDrawerEventSchedule()}
+          ${renderWorldEventSettingsPanel({ surface: 'drawer', character: activeCharacter() })}
         </div>
       </section>
     </details>
@@ -3600,7 +3496,7 @@ function renderWorldDrawerTimeline(): string {
   const entries = timelineForActiveWorld();
   const recentEntries = entries.slice(0, 3);
   return `
-    <section class="world-drawer-section">
+    <section class="world-drawer-section world-memory-section">
       <h3>最近记忆</h3>
       <div class="world-memory-mini">
         ${recentEntries.length > 0
@@ -3625,33 +3521,147 @@ function renderWorldDrawerTimeline(): string {
   `;
 }
 
-function renderWorldDrawerEvents(): string {
-  const events = eventsForActiveWorld();
+type WorldEventSettingsPanelContext = {
+  surface: 'drawer' | 'page';
+  character?: CharacterProfile;
+};
+
+function renderEventSettingsSurfaceName(surface: WorldEventSettingsPanelContext['surface']): string {
+  return surface === 'drawer' ? '世界抽屉' : '独立设置页';
+}
+
+function eventSettingsCharacter(preferred?: CharacterProfile): CharacterProfile | undefined {
+  const worldId = activeWorld().id;
+  const actor = worldRpActor();
+  const actorCharacter = actor.characterId
+    ? state.characters.find(character => character.id === actor.characterId && character.worldId === worldId)
+    : undefined;
+  const candidate = [preferred, actorCharacter, activeCharacter()]
+    .find((character): character is CharacterProfile => Boolean(character && character.worldId === worldId));
+  if (candidate) {
+    proactiveManagerCharacterId = candidate.id;
+    return candidate;
+  }
+  return proactiveManagerCharacter();
+}
+
+function renderWorldEventSettingsPreview(event: WorldEvent, character?: CharacterProfile): string {
+  const messageCount = worldEventRpMessages(event.id).length;
   return `
-    <section class="world-drawer-section">
-      <h3>小事件</h3>
-      <details class="world-drawer-details">
-        <summary>查看事件列表 · ${events.length} 条</summary>
-        <div class="events-feed world-drawer-events">${renderEvents(events)}</div>
-      </details>
-    </section>
+    <button class="event-settings-preview world-event-entry-card" data-open-world-event-rp="${escapeHtml(event.id)}" type="button">
+      <div class="event-avatar-stack">${renderEventAvatars(event)}</div>
+      <div class="world-event-entry-main">
+        <strong>${escapeHtml(event.title)}</strong>
+        <p>${escapeHtml(worldEventRpPreview(event, character))}</p>
+        <footer class="world-event-entry-meta">
+          <span>${escapeHtml(renderEventParticipantNames(event))}</span>
+          <span>${messageCount > 0 ? `${messageCount} 条` : escapeHtml(eventTypeLabel(event.type))}</span>
+          <span class="world-event-entry-status ${event.status === 'resolved' ? 'is-resolved' : ''}">${event.status === 'resolved' ? '已归档' : '进行中'}</span>
+        </footer>
+      </div>
+    </button>
   `;
 }
 
-function renderWorldDrawerEventSchedule(): string {
-  const character = activeCharacter();
-  const schedule = character?.autoEvent;
-  const enabled = schedule?.enabled ? '已启用' : '未启用';
-  const next = schedule?.enabled ? countdownText(schedule.nextAttemptAt) : '未安排';
-  return `
-    <section class="world-drawer-section">
-      <h3>定时事件</h3>
-      <details class="world-drawer-details">
-        <summary>${escapeHtml(enabled)} · 下次 ${escapeHtml(next)}</summary>
-        <p class="muted">自动小事件沿用角色主动事件节奏，完整设置仍在设置页维护。</p>
-        <div class="world-schedule-row">
-          <span><strong>${escapeHtml(character?.name ?? '未选择角色')}</strong><small>${escapeHtml(enabled)} · 下次 ${escapeHtml(next)}</small></span>
+/**
+ * 大注释：事件设置只做“节奏与入口”，不再把世界页变回管理面板。
+ * 这里继续沿用角色级 autoEvent 数据，避免破坏旧调度、备份和 Android 后台逻辑。
+ */
+function renderWorldEventSettingsPanel(context: WorldEventSettingsPanelContext): string {
+  const character = eventSettingsCharacter(context.character);
+  const isDrawer = context.surface === 'drawer';
+  if (!character) {
+    return `
+      <section class="world-drawer-section event-settings-panel is-${context.surface}">
+        <header class="event-settings-heading">
+          <div>
+            <span>${escapeHtml(renderEventSettingsSurfaceName(context.surface))}</span>
+            <h3>事件设置</h3>
+            <p>先创建或导入角色，再开启自动生成日常片段。</p>
+          </div>
+        </header>
+        <div class="event-settings-empty">
+          <strong>还没有可用角色</strong>
+          <span>小事件节奏仍沿用角色级设置，所以需要至少一个当前世界的角色。</span>
         </div>
+      </section>
+    `;
+  }
+  const events = eventsForActiveWorld();
+  const recentEvents = events.slice(0, 3);
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayCount = events.filter(event => event.createdAt >= todayStart.getTime()).length;
+  const activeCount = events.filter(event => event.status === 'active').length;
+  const schedule = character.autoEvent;
+  const nextText = schedule.enabled ? countdownText(schedule.nextAttemptAt) : '未安排';
+  const enabledText = schedule.enabled ? '已开启' : '未开启';
+  const actor = worldRpActor();
+  const identityText = actor.characterId ? actor.name : `${actor.name} · 视角`;
+  return `
+    <section class="world-drawer-section event-settings-panel is-${context.surface}">
+      <header class="event-settings-heading">
+        <div>
+          <span>${escapeHtml(renderEventSettingsSurfaceName(context.surface))}</span>
+          <h3>事件设置</h3>
+          <p>${isDrawer ? '调整自动片段的节奏，日常列表仍留在主屏。' : '旧入口现在只保留同一套轻量设置。'}</p>
+        </div>
+        <span class="event-settings-role"><strong>${escapeHtml(identityText)}</strong><small>当前身份</small></span>
+      </header>
+
+      <div class="event-settings-summary">
+        <label class="event-settings-toggle">
+          <span>
+            <strong>自动生成</strong>
+            <small>${escapeHtml(character.name)} · ${escapeHtml(enabledText)}</small>
+          </span>
+          <input id="auto-event-enabled" type="checkbox" ${schedule.enabled ? 'checked' : ''} />
+        </label>
+        <div class="event-settings-stats">
+          <span><small>下次触发</small><b>${escapeHtml(nextText)}</b></span>
+          <span><small>今日片段</small><b>${todayCount} / ${schedule.dailyLimit}</b></span>
+          <span><small>进行中</small><b>${activeCount}</b></span>
+        </div>
+      </div>
+
+      <div class="event-settings-action-row">
+        <button class="primary event-settings-generate" data-open-event-composer type="button" ${eventGenerating ? 'disabled' : ''}>
+          ${icon('add')}<span>${eventGenerating ? '正在生成…' : '生成一段日常'}</span>
+        </button>
+        <span>生成后会直接进入对应片段的 RP 对话舞台。</span>
+      </div>
+
+      <section class="event-settings-recent">
+        <div class="event-settings-section-title">
+          <strong>最近日常片段</strong>
+          <span>${events.length} 条</span>
+        </div>
+        <div class="event-settings-list">
+          ${recentEvents.length > 0
+            ? recentEvents.map(event => renderWorldEventSettingsPreview(event, character)).join('')
+            : '<div class="event-settings-empty"><strong>还没有日常片段</strong><span>点“生成事件”，选择参与角色后开始一段 RP。</span></div>'}
+        </div>
+        ${events.length > recentEvents.length ? `
+          <details class="world-drawer-details event-settings-details">
+            <summary>查看全部日常片段 · ${events.length} 条</summary>
+            <div class="event-settings-list world-drawer-events">${events.map(event => renderWorldEventSettingsPreview(event, character)).join('')}</div>
+          </details>
+        ` : ''}
+      </section>
+
+      <details class="world-drawer-details event-settings-advanced">
+        <summary>节奏细项</summary>
+        <div class="event-settings-grid">
+          <label class="field"><span>最小间隔（小时）</span><input id="auto-event-min-hours" type="number" min="0.25" step="0.25" value="${schedule.baseIntervalMin / 3600000}" /></label>
+          <label class="field"><span>最大间隔（小时）</span><input id="auto-event-max-hours" type="number" min="0.25" step="0.25" value="${schedule.baseIntervalMax / 3600000}" /></label>
+          <label class="field"><span>每日上限</span><input id="auto-event-daily-limit" type="number" min="1" value="${schedule.dailyLimit}" /></label>
+          <label class="field"><span>安静开始</span><input id="auto-event-quiet-start" value="${escapeHtml(schedule.quietHours.start)}" /></label>
+          <label class="field"><span>安静结束</span><input id="auto-event-quiet-end" value="${escapeHtml(schedule.quietHours.end)}" /></label>
+        </div>
+        <footer class="event-settings-actions">
+          <p class="muted">保存后只更新 ${escapeHtml(character.name)} 的小事件节奏，不影响其他角色。</p>
+          <button id="save-auto-message" class="secondary" type="button">保存小事件设置</button>
+        </footer>
       </details>
     </section>
   `;
@@ -3774,14 +3784,24 @@ function buildWorldEventAutoCloseSummary(event: WorldEvent): string {
 }
 
 function renderWorldEventLobby(events: WorldEvent[], character?: CharacterProfile): string {
+  const world = activeWorld();
+  const location = world.currentLocation.trim() || '日常生活场景';
+  const atmosphere = world.sceneAtmosphere.trim() || '轻松、自然';
+  const activeCount = events.filter(event => event.status === 'active').length;
+  const resolvedCount = events.length - activeCount;
   if (events.length === 0) {
     return `
       <div class="world-event-lobby">
+        <section class="world-lobby-scene">
+          <span>今天的世界</span>
+          <h2>${escapeHtml(world.name)}</h2>
+          <p>${escapeHtml(location)} · ${escapeHtml(atmosphere)}</p>
+        </section>
         <div class="world-event-empty">
           <strong>还没有日常片段</strong>
-          <span>生成一个小事件后，再进入里面继续旁白和对话。</span>
+          <span>先生成一段生活里的小变化，再点进去接着写旁白、行动和对话。</span>
           <div class="world-event-empty-actions">
-            <button class="primary" data-open-event-composer type="button">${icon('add')}<span>生成事件</span></button>
+            <button class="primary" data-open-event-composer type="button">${icon('add')}<span>生成一段日常</span></button>
           </div>
         </div>
       </div>
@@ -3789,9 +3809,20 @@ function renderWorldEventLobby(events: WorldEvent[], character?: CharacterProfil
   }
   return `
     <section class="world-event-lobby" aria-label="日常片段列表">
+      <div class="world-lobby-scene">
+        <span>今天的世界</span>
+        <h2>${escapeHtml(world.name)}</h2>
+        <p>${escapeHtml(location)} · ${escapeHtml(atmosphere)}</p>
+      </div>
       <div class="world-event-lobby-heading">
-        <strong>日常片段</strong>
-        <small>点进一个片段后，再继续旁白和对话。</small>
+        <div>
+          <strong>日常片段</strong>
+          <small>像聊天会话一样点进去，进入后再继续沉浸 RP。</small>
+        </div>
+        <div class="world-lobby-counts">
+          <span>${activeCount} 进行中</span>
+          <span>${resolvedCount} 已归档</span>
+        </div>
       </div>
       <div class="world-event-entry-list">
         ${events.map(event => {
@@ -3819,7 +3850,7 @@ function renderWorldEventLobby(events: WorldEvent[], character?: CharacterProfil
 function renderWorldDialogueStream(event: WorldEvent, character?: CharacterProfile): string {
   const world = activeWorld();
   const sceneSummary = world.sceneSummary.trim()
-    || '这个世界暂时没有固定目标。你可以从一个日常动作、一句闲聊，或一个很小的生活变化开始继续。';
+    || '从一个日常动作、一句闲聊，或一个很小的生活变化开始继续。';
   const messages = worldEventRpMessages(event.id);
   const activeEventItems = [{ kind: 'event' as const, createdAt: event.createdAt, event }];
   const messageItems = messages.map(message => ({ kind: 'message' as const, createdAt: message.createdAt, message }));
@@ -3850,8 +3881,8 @@ function renderWorldDialogueStream(event: WorldEvent, character?: CharacterProfi
       }).map(segment => renderRpSegment(segment, character)).join('');
     }).join('');
   return `
-    <article class="narrative-card">
-      <span class="render-label">旁白</span>
+    <article class="narrative-card world-scene-note">
+      <span class="render-label">场景</span>
       <p class="narrative-text">${escapeHtml(sceneSummary)}</p>
     </article>
     ${renderedItems || `
@@ -3887,10 +3918,6 @@ function renderWorldStageComposer(character?: CharacterProfile): string {
     : '先选择一个角色，再继续世界 RP';
   return `
     <form class="composer world-stage-composer" id="world-rp-composer">
-      <div class="world-rp-reply-mode" aria-label="世界 RP 续写方式">
-        <button class="${worldRpReplyMode === 'auto' ? 'is-active' : ''}" data-world-rp-reply-mode="auto" type="button">自动生成</button>
-        <button class="${worldRpReplyMode === 'manual' ? 'is-active' : ''}" data-world-rp-reply-mode="manual" type="button">手动记录</button>
-      </div>
       <textarea id="world-rp-input" rows="1" enterkeyhint="${state.enterToSend ? 'send' : 'enter'}" aria-label="世界 RP 输入框" placeholder="${escapeHtml(placeholder)}" ${disabled ? 'disabled' : ''}>${escapeHtml(worldRpInputDraft)}</textarea>
       <button class="primary send-button" type="submit" aria-label="继续 RP" ${disabled ? 'disabled' : ''}>${icon('send')}<span>继续</span></button>
     </form>
@@ -3901,6 +3928,7 @@ function renderWorldWorkbenchPage(mobile = false): string {
   const character = worldRpActiveCharacter();
   const selectedEvent = selectedWorldRpEvent();
   const worldEvents = eventsForActiveWorld();
+  worldRpReplyMode = 'auto';
   // 小注释：事件页和时间线页不再是主入口，但保留为世界内部详情能力的渲染来源。
   const internalDetailRenderers = [renderEventsPage, renderTimelinePage, renderWorldEventNarration]
     .map(renderer => renderer.name)
@@ -5014,6 +5042,7 @@ function renderDesktop(character?: CharacterProfile): string {
         </div>
         <label class="world-switcher"><span>当前世界</span><select id="world-select">${worldOptions}</select></label>
         <label class="contact-search">${icon('search')}<input id="contact-search" value="${escapeHtml(contactQuery)}" placeholder="搜索角色" /></label>
+        ${renderPrivateChatTargetSelector()}
         ${renderDailyBriefBanner()}
         <div class="sidebar-actions">
           <button class="primary compact-file-button" data-open-authoring>写角色卡</button>
@@ -5066,6 +5095,7 @@ function renderMobile(character?: CharacterProfile): string {
         <div class="mobile-list-tools">
           <label class="world-switcher"><span>当前世界</span><select id="world-select">${worldOptions}</select></label>
           <label class="contact-search">${icon('search')}<input id="contact-search" value="${escapeHtml(contactQuery)}" placeholder="搜索角色" /></label>
+          ${renderPrivateChatTargetSelector()}
           <button class="primary" data-open-authoring>写角色卡</button>
           <label class="file-button card-import-button">${icon('import')}<span>导入角色卡</span><input class="card-import" type="file" accept="${CARD_IMPORT_ACCEPT}" /></label>
         </div>
@@ -5100,6 +5130,7 @@ function renderMobile(character?: CharacterProfile): string {
             <strong>最近联系</strong>
             <span>私聊和群聊都在这里</span>
           </div>
+          ${renderPrivateChatTargetSelector()}
           <div class="mobile-conversation-list">${renderInboxConversations()}</div>
         </section>
         ${state.characters.length === 0 ? `
@@ -6963,21 +6994,7 @@ function bindUi(): void {
   });
   document.querySelectorAll<HTMLButtonElement>('[data-character-id]').forEach(button => {
     button.addEventListener('click', () => {
-      state.activeCharacterId = button.dataset.characterId ?? '';
-      setActiveView('chat');
-      markConversationRead(state.activeCharacterId);
-      characterPanelOpen = false;
-      if (compactMedia.matches) {
-        mobileChatOpen = true;
-        mobileGroupChatOpen = false;
-        groupSettingsOpen = false;
-        pushMobileHistory('chat');
-      }
-      stickerPickerOpen = false;
-      saveState();
-      render();
-      const character = activeCharacter();
-      if (character) void generateOpeningMessage(character, render);
+      openPrivateChatByCharacterId(button.dataset.characterId ?? '');
     });
   });
   document.querySelector<HTMLButtonElement>('#save-world')?.addEventListener('click', () => {
@@ -7666,60 +7683,76 @@ function bindUi(): void {
   document.querySelector<HTMLButtonElement>('#save-auto-message')?.addEventListener('click', () => {
     const character = proactiveManagerCharacter();
     if (!character) return;
-    state.worldInteractionHighSimulation = checked('#world-high-simulation');
-    const schedule = character.autoMessage;
-    schedule.baseIntervalMin = Math.max(0.05, Number(fieldValue('#auto-min-hours') || '2')) * 3600000;
-    schedule.baseIntervalMax = Math.max(0.05, Number(fieldValue('#auto-max-hours') || '6')) * 3600000;
-    schedule.dailyLimit = Math.max(1, Math.floor(Number(fieldValue('#auto-daily-limit') || '3')));
-    schedule.maxInterval = Math.max(1, Number(fieldValue('#auto-max-interval') || '48')) * 3600000;
-    schedule.quietHours = {
-      enabled: checked('#auto-quiet-enabled'),
-      start: fieldValue('#auto-quiet-start') || '23:00',
-      end: fieldValue('#auto-quiet-end') || '08:00',
-    };
-    schedule.backgroundNotificationsEnabled = checked('#auto-background-notify');
-    const privacy = fieldValue<HTMLSelectElement>('#auto-notification-privacy');
-    schedule.notificationPrivacy = (privacy === 'full' || privacy === 'hide_character' ? privacy : 'generic') as NotificationPrivacy;
-    schedule.pacingStrategy = fieldValue<HTMLTextAreaElement>('#auto-pacing-strategy')
-      || createAutoMessagePacingStrategy(character);
-    if (checked('#auto-enabled')) {
-      enableAutoMessage(character);
-      scheduleNextAttempt(character);
-    } else {
-      disableAutoMessage(character);
+    const hasAutoMessageSettings = Boolean(document.querySelector<HTMLInputElement>('#auto-enabled'));
+    const hasAutoMomentSettings = Boolean(document.querySelector<HTMLInputElement>('#auto-moment-enabled'));
+    const hasAutoEventSettings = Boolean(document.querySelector<HTMLInputElement>('#auto-event-enabled'));
+    const highSimulationInput = document.querySelector<HTMLInputElement>('#world-high-simulation');
+    const savedParts: string[] = [];
+    if (highSimulationInput) {
+      state.worldInteractionHighSimulation = highSimulationInput.checked;
+      savedParts.push('世界活跃度');
     }
-    const autoMoment = character.autoMoment;
-    autoMoment.baseIntervalMin = Math.max(0.25, Number(fieldValue('#auto-moment-min-hours') || '4')) * 3600000;
-    autoMoment.baseIntervalMax = Math.max(
-      autoMoment.baseIntervalMin,
-      Math.max(0.25, Number(fieldValue('#auto-moment-max-hours') || '10')) * 3600000,
-    );
-    autoMoment.dailyLimit = Math.max(1, Math.floor(Number(fieldValue('#auto-moment-daily-limit') || '2')));
-    autoMoment.quietHours = {
-      enabled: true,
-      start: fieldValue('#auto-moment-quiet-start') || '00:00',
-      end: fieldValue('#auto-moment-quiet-end') || '07:00',
-    };
-    setAutoMomentEnabled(character, checked('#auto-moment-enabled'));
-    if (autoMoment.enabled) scheduleNextMoment(character);
-    const autoEvent = character.autoEvent;
-    autoEvent.baseIntervalMin = Math.max(0.25, Number(fieldValue('#auto-event-min-hours') || '6')) * 3600000;
-    autoEvent.baseIntervalMax = Math.max(
-      autoEvent.baseIntervalMin,
-      Math.max(0.25, Number(fieldValue('#auto-event-max-hours') || '16')) * 3600000,
-    );
-    autoEvent.dailyLimit = Math.max(1, Math.floor(Number(fieldValue('#auto-event-daily-limit') || '1')));
-    autoEvent.quietHours = {
-      enabled: true,
-      start: fieldValue('#auto-event-quiet-start') || '00:00',
-      end: fieldValue('#auto-event-quiet-end') || '07:00',
-    };
-    setAutoEventEnabled(character, checked('#auto-event-enabled'));
-    if (autoEvent.enabled) scheduleNextEvent(character);
+    if (hasAutoMessageSettings) {
+      const schedule = character.autoMessage;
+      schedule.baseIntervalMin = Math.max(0.05, Number(fieldValue('#auto-min-hours') || '2')) * 3600000;
+      schedule.baseIntervalMax = Math.max(0.05, Number(fieldValue('#auto-max-hours') || '6')) * 3600000;
+      schedule.dailyLimit = Math.max(1, Math.floor(Number(fieldValue('#auto-daily-limit') || '3')));
+      schedule.maxInterval = Math.max(1, Number(fieldValue('#auto-max-interval') || '48')) * 3600000;
+      schedule.quietHours = {
+        enabled: checked('#auto-quiet-enabled'),
+        start: fieldValue('#auto-quiet-start') || '23:00',
+        end: fieldValue('#auto-quiet-end') || '08:00',
+      };
+      schedule.backgroundNotificationsEnabled = checked('#auto-background-notify');
+      const privacy = fieldValue<HTMLSelectElement>('#auto-notification-privacy');
+      schedule.notificationPrivacy = (privacy === 'full' || privacy === 'hide_character' ? privacy : 'generic') as NotificationPrivacy;
+      schedule.pacingStrategy = fieldValue<HTMLTextAreaElement>('#auto-pacing-strategy')
+        || createAutoMessagePacingStrategy(character);
+      if (checked('#auto-enabled')) {
+        enableAutoMessage(character);
+        scheduleNextAttempt(character);
+      } else {
+        disableAutoMessage(character);
+      }
+      savedParts.push('主动消息');
+    }
+    if (hasAutoMomentSettings) {
+      const autoMoment = character.autoMoment;
+      autoMoment.baseIntervalMin = Math.max(0.25, Number(fieldValue('#auto-moment-min-hours') || '4')) * 3600000;
+      autoMoment.baseIntervalMax = Math.max(
+        autoMoment.baseIntervalMin,
+        Math.max(0.25, Number(fieldValue('#auto-moment-max-hours') || '10')) * 3600000,
+      );
+      autoMoment.dailyLimit = Math.max(1, Math.floor(Number(fieldValue('#auto-moment-daily-limit') || '2')));
+      autoMoment.quietHours = {
+        enabled: true,
+        start: fieldValue('#auto-moment-quiet-start') || '00:00',
+        end: fieldValue('#auto-moment-quiet-end') || '07:00',
+      };
+      setAutoMomentEnabled(character, checked('#auto-moment-enabled'));
+      if (autoMoment.enabled) scheduleNextMoment(character);
+      savedParts.push('自动动态');
+    }
+    if (hasAutoEventSettings) {
+      const autoEvent = character.autoEvent;
+      autoEvent.baseIntervalMin = Math.max(0.25, Number(fieldValue('#auto-event-min-hours') || '6')) * 3600000;
+      autoEvent.baseIntervalMax = Math.max(
+        autoEvent.baseIntervalMin,
+        Math.max(0.25, Number(fieldValue('#auto-event-max-hours') || '16')) * 3600000,
+      );
+      autoEvent.dailyLimit = Math.max(1, Math.floor(Number(fieldValue('#auto-event-daily-limit') || '1')));
+      autoEvent.quietHours = {
+        enabled: true,
+        start: fieldValue('#auto-event-quiet-start') || '00:00',
+        end: fieldValue('#auto-event-quiet-end') || '07:00',
+      };
+      setAutoEventEnabled(character, checked('#auto-event-enabled'));
+      if (autoEvent.enabled) scheduleNextEvent(character);
+      savedParts.push('小事件');
+    }
     saveState();
-    setStatusText(state.worldInteractionHighSimulation
-      ? '主动消息、自动动态、岛上事件与高模拟世界互动已保存。'
-      : '主动消息、自动动态与岛上事件设置已保存。');
+    setStatusText(savedParts.length > 0 ? `${savedParts.join('、')}设置已保存。` : '设置已保存。');
+    preserveScrollForNextRender();
     render();
   });
   document.querySelector<HTMLButtonElement>('#regenerate-auto-pacing-strategy')?.addEventListener('click', () => {
@@ -7819,13 +7852,8 @@ function bindUi(): void {
     messageInput.addEventListener('keydown', event => requestTextareaFormSubmit(messageInput, event));
     messageInput.addEventListener('beforeinput', event => requestTextareaFormSubmitFromBeforeInput(messageInput, event));
   }
-  document.querySelector<HTMLSelectElement>('#private-chat-speaker-select')?.addEventListener('change', event => {
-    const selected = (event.currentTarget as HTMLSelectElement).value || 'user';
-    privateChatSpeakerId = selected === 'user'
-      || state.characters.some(character => character.id === selected && character.worldId === activeWorld().id)
-      ? selected
-      : 'user';
-    scheduleUiSessionSnapshotSave();
+  document.querySelector<HTMLSelectElement>('#private-chat-target-select')?.addEventListener('change', event => {
+    openPrivateChatByCharacterId((event.currentTarget as HTMLSelectElement).value || '', { pushHistory: true });
   });
   document.querySelector<HTMLFormElement>('#composer')?.addEventListener('submit', event => {
     event.preventDefault();
@@ -7878,19 +7906,14 @@ function bindUi(): void {
       render();
     });
   });
-  document.querySelectorAll<HTMLButtonElement>('[data-world-rp-reply-mode]').forEach(button => {
-    button.addEventListener('click', () => {
-      worldRpReplyMode = button.dataset.worldRpReplyMode === 'manual' ? 'manual' : 'auto';
-      setStatusText(worldRpReplyMode === 'manual' ? '世界 RP 会先手动记录，不自动续写。' : '世界 RP 会在发送后自动续写。');
-      saveUiSessionSnapshot();
-      render();
-    });
-  });
   document.querySelectorAll<HTMLButtonElement>('[data-open-world-event-rp]').forEach(button => {
     button.addEventListener('click', () => {
       const eventId = button.dataset.openWorldEventRp ?? '';
       const worldEvent = state.worldEvents.find(event => event.id === eventId && event.worldId === activeWorld().id);
       if (!worldEvent) return;
+      captureVisibleDraftsFromDom();
+      setActiveView('world');
+      mobileSection = 'world';
       activeWorldRpEventId = worldEvent.id;
       worldRpInputDraft = '';
       saveUiSessionSnapshot({ captureDom: false });
@@ -7985,11 +8008,8 @@ function bindUi(): void {
     }
     requestChatStickToBottom();
     saveUiSessionSnapshot({ captureDom: false });
-    if (worldRpReplyMode === 'manual') {
-      setStatusText('已写入当前事件记录。');
-      render();
-      return;
-    }
+    // 小注释：世界 RP 不再暴露手动记录模式，发送后始终尝试围绕当前事件自动续写。
+    worldRpReplyMode = 'auto';
     if (!modelIsReady()) {
       setStatusText('已写入当前事件记录；配置模型后可以自动续写。');
       render();
