@@ -65,6 +65,13 @@ import { firstString, isRecord, localDateKey, nowId, stableHash } from './utils'
 export const STORAGE_KEY = 'tavern-social-state-v1';
 export const DEFAULT_WORLD_ID = 'world_default';
 export const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1';
+export const DEFAULT_CHAT_FONT_SCALE = 1;
+export const MIN_CHAT_FONT_SCALE = 0.85;
+export const MAX_CHAT_FONT_SCALE = 1.25;
+
+export type CommunicationActor =
+  | { type: 'user'; id: 'user' }
+  | { type: 'character'; id: string; character: CharacterProfile };
 
 // 小注释：这些持久化常量不能因为目录整理而改名，否则旧用户的本地数据会读不到。
 function normalizeApiUrlBase(value: string): string {
@@ -75,6 +82,17 @@ function normalizeModelProvider(provider: unknown, apiUrl: string): ModelProvide
   if (provider === 'deepseek' || provider === 'custom') return provider;
   const normalized = normalizeApiUrlBase(apiUrl);
   return normalized && normalized !== normalizeApiUrlBase(DEEPSEEK_API_URL) ? 'custom' : 'deepseek';
+}
+
+export function normalizeChatFontScale(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_CHAT_FONT_SCALE;
+  return Math.max(MIN_CHAT_FONT_SCALE, Math.min(MAX_CHAT_FONT_SCALE, Number(value.toFixed(2))));
+}
+
+export function normalizeChatBackgroundImage(value: unknown): string | undefined {
+  return typeof value === 'string' && /^data:image\/(?:png|jpe?g|webp|gif);base64,/i.test(value)
+    ? value
+    : undefined;
 }
 
 export function createDefaultAutoMessageSchedule(): AutoMessageSchedule {
@@ -157,6 +175,7 @@ function createDefaultWorld(now: number): WorldProfile {
     id: DEFAULT_WORLD_ID,
     name: '现实世界',
     description: '以用户当前生活城市为锚点的现实世界。角色、关系、动态、群聊和主动消息都发生在这个手机生活场景里。',
+    worldLore: '',
     userPersona: '',
     currentLocation: '日常生活场景',
     sceneAtmosphere: '轻松、自然、适合日常 RP',
@@ -331,9 +350,13 @@ export function defaultState(): AppState {
     activeWorldId: DEFAULT_WORLD_ID,
     activeCharacterId: defaultCharacters[0]?.id ?? '',
     activeGroupChatId: '',
+    communicationIdentityByWorldId: {
+      [DEFAULT_WORLD_ID]: 'user',
+    },
     activeView: 'chat',
     chatReplyMode: 'auto',
     enterToSend: false,
+    chatFontScale: DEFAULT_CHAT_FONT_SCALE,
     worldInteractionHighSimulation: false,
     worldInteractionNextAttemptAt: null,
     worldInteractionStatusReason: '角色互动循环保持克制，等待下一次自然检查。',
@@ -504,6 +527,8 @@ function normalizeCharacters(value: unknown): CharacterProfile[] {
     avatar: typeof character.avatar === 'string' ? character.avatar : undefined,
     customAvatar: character.customAvatar === true,
     description: typeof character.description === 'string' ? character.description : undefined,
+    age: typeof character.age === 'string' ? character.age : undefined,
+    backgroundStory: typeof character.backgroundStory === 'string' ? character.backgroundStory : undefined,
     personality: typeof character.personality === 'string' ? character.personality : undefined,
     scenario: typeof character.scenario === 'string' ? character.scenario : undefined,
     firstMessage: typeof character.firstMessage === 'string' ? character.firstMessage : undefined,
@@ -515,6 +540,7 @@ function normalizeCharacters(value: unknown): CharacterProfile[] {
       : [],
     nickname: typeof character.nickname === 'string' ? character.nickname : undefined,
     profileNote: typeof character.profileNote === 'string' ? character.profileNote : '',
+    replyStrategy: typeof character.replyStrategy === 'string' ? character.replyStrategy : undefined,
     creator: typeof character.creator === 'string' ? character.creator : undefined,
     creatorNotes: typeof character.creatorNotes === 'string' ? character.creatorNotes : undefined,
     characterVersion: typeof character.characterVersion === 'string' ? character.characterVersion : undefined,
@@ -623,6 +649,9 @@ function normalizeDrafts(value: unknown): CharacterCardDraft[] {
       currentStep,
       name: typeof draft.name === 'string' ? draft.name : '',
       concept: typeof draft.concept === 'string' ? draft.concept : '',
+      age: typeof draft.age === 'string' ? draft.age : '',
+      backgroundStory: typeof draft.backgroundStory === 'string' ? draft.backgroundStory : '',
+      profileNote: typeof draft.profileNote === 'string' ? draft.profileNote : '',
       appearance: typeof draft.appearance === 'string' ? draft.appearance : '',
       personality: typeof draft.personality === 'string' ? draft.personality : '',
       hobbies: typeof draft.hobbies === 'string' ? draft.hobbies : '',
@@ -655,6 +684,7 @@ function normalizeGroupChats(value: unknown, fallbackWorldId: string): GroupChat
       selectedSpeakerId,
       replyAllOnUserMessage: chat.replyAllOnUserMessage === true,
       allowModelInitiatedMessages: chat.allowModelInitiatedMessages === true,
+      backgroundImage: normalizeChatBackgroundImage(chat.backgroundImage),
       createdAt,
       updatedAt: typeof chat.updatedAt === 'number' ? chat.updatedAt : createdAt,
     };
@@ -732,6 +762,30 @@ function normalizeCharacterNames(value: unknown): Record<string, string> {
       typeof entry[0] === 'string' && typeof entry[1] === 'string',
     ),
   );
+}
+
+function normalizeCommunicationIdentityByWorldId(
+  value: unknown,
+  worlds: WorldProfile[],
+  characters: CharacterProfile[],
+): Record<string, string> {
+  const raw: Record<string, unknown> = isRecord(value) ? value : {};
+  const charactersByWorld = new Map<string, Set<string>>();
+  for (const world of worlds) {
+    charactersByWorld.set(world.id, new Set());
+  }
+  for (const character of characters) {
+    if (!charactersByWorld.has(character.worldId)) continue;
+    charactersByWorld.get(character.worldId)?.add(character.id);
+  }
+  const result: Record<string, string> = {};
+  for (const world of worlds) {
+    const rawStored = raw[world.id];
+    const stored = typeof rawStored === 'string' ? rawStored : 'user';
+    const valid = stored === 'user' || Boolean(charactersByWorld.get(world.id)?.has(stored));
+    result[world.id] = valid ? stored : 'user';
+  }
+  return result;
 }
 
 function normalizeTimelineEntries(value: unknown, fallbackWorldId: string): TimelineEntry[] {
@@ -980,6 +1034,7 @@ export function normalizeState(input: unknown): AppState {
       id: typeof world.id === 'string' ? world.id : nowId('world'),
       name: typeof world.name === 'string' && world.name.trim() ? world.name : '未命名世界',
       description: typeof world.description === 'string' ? world.description : '',
+      worldLore: typeof world.worldLore === 'string' ? world.worldLore : '',
       userPersona: typeof world.userPersona === 'string' ? world.userPersona.trim() : '',
       currentLocation: typeof world.currentLocation === 'string' && world.currentLocation.trim()
         ? world.currentLocation.trim()
@@ -1006,6 +1061,7 @@ export function normalizeState(input: unknown): AppState {
   const modelUsage: Record<string, unknown> = isRecord(parsed.modelUsage) ? parsed.modelUsage : {};
   const chatReplyMode: ChatReplyMode = parsed.chatReplyMode === 'manual' ? 'manual' : 'auto';
   const enterToSend = parsed.enterToSend === true;
+  const chatFontScale = normalizeChatFontScale(parsed.chatFontScale);
   const worldInteractionHighSimulation = parsed.worldInteractionHighSimulation === true;
   const worldInteractionNextAttemptAt = typeof parsed.worldInteractionNextAttemptAt === 'number'
     ? parsed.worldInteractionNextAttemptAt
@@ -1063,6 +1119,11 @@ export function normalizeState(input: unknown): AppState {
     ? parsed.activeGroupChatId
     : groupChats.find(chat => chat.worldId === activeWorldId)?.id ?? '';
   const characters = normalizeCharacters(parsed.characters);
+  const communicationIdentityByWorldId = normalizeCommunicationIdentityByWorldId(
+    parsed.communicationIdentityByWorldId,
+    worlds,
+    characters,
+  );
   const characterRelationships = normalizeCharacterRelationships(parsed.characterRelationships, characters, worlds);
   const characterRelationshipSuggestions = normalizeCharacterRelationshipSuggestions(
     parsed.characterRelationshipSuggestions,
@@ -1083,10 +1144,22 @@ export function normalizeState(input: unknown): AppState {
     conversations: Array.isArray(parsed.conversations)
       ? parsed.conversations.filter(isRecord).map(conversation => {
         const updatedAt = typeof conversation.updatedAt === 'number' ? conversation.updatedAt : Date.now();
+        const worldId = typeof conversation.worldId === 'string' ? conversation.worldId : activeWorldId;
+        const characterId = typeof conversation.characterId === 'string' ? conversation.characterId : '';
+        const rawOwnerCharacterId = typeof conversation.ownerCharacterId === 'string'
+          ? conversation.ownerCharacterId
+          : undefined;
+        const ownerCharacterId = rawOwnerCharacterId
+          && rawOwnerCharacterId !== characterId
+          && characters.some(character => character.id === rawOwnerCharacterId && character.worldId === worldId)
+          ? rawOwnerCharacterId
+          : undefined;
         return {
           id: typeof conversation.id === 'string' ? conversation.id : nowId('conversation'),
-          worldId: typeof conversation.worldId === 'string' ? conversation.worldId : activeWorldId,
-          characterId: typeof conversation.characterId === 'string' ? conversation.characterId : '',
+          worldId,
+          characterId,
+          ownerCharacterId,
+          backgroundImage: normalizeChatBackgroundImage(conversation.backgroundImage),
           createdAt: typeof conversation.createdAt === 'number' ? conversation.createdAt : updatedAt,
           updatedAt,
           lastReadAt: typeof conversation.lastReadAt === 'number' ? conversation.lastReadAt : updatedAt,
@@ -1240,6 +1313,7 @@ export function normalizeState(input: unknown): AppState {
     activeWorldId,
     activeCharacterId: typeof parsed.activeCharacterId === 'string' ? parsed.activeCharacterId : '',
     activeGroupChatId,
+    communicationIdentityByWorldId,
     activeView: rawActiveView === 'events' || rawActiveView === 'timeline'
       ? 'world'
       : rawActiveView === 'groups'
@@ -1249,6 +1323,7 @@ export function normalizeState(input: unknown): AppState {
       : 'chat',
     chatReplyMode,
     enterToSend,
+    chatFontScale,
     worldInteractionHighSimulation,
     worldInteractionNextAttemptAt,
     worldInteractionStatusReason,
@@ -1327,6 +1402,39 @@ export function activeWorld(): WorldProfile {
   return state.worlds.find(world => world.id === state.activeWorldId) ?? state.worlds[0] ?? createDefaultWorld(Date.now());
 }
 
+export function communicationActorId(worldId = activeWorld().id): string {
+  const stored = state.communicationIdentityByWorldId[worldId] ?? 'user';
+  if (
+    stored !== 'user'
+    && !state.characters.some(character => character.id === stored && character.worldId === worldId)
+  ) {
+    state.communicationIdentityByWorldId[worldId] = 'user';
+    return 'user';
+  }
+  return stored;
+}
+
+export function communicationActor(worldId = activeWorld().id): CommunicationActor {
+  const actorId = communicationActorId(worldId);
+  if (actorId !== 'user') {
+    const character = state.characters.find(item => item.id === actorId && item.worldId === worldId);
+    if (character) return { type: 'character', id: character.id, character };
+  }
+  return { type: 'user', id: 'user' };
+}
+
+export function setCommunicationActor(worldId: string, actorId: string): string {
+  const world = state.worlds.find(item => item.id === worldId);
+  if (!world) return 'user';
+  const normalized = actorId !== 'user'
+    && state.characters.some(character => character.id === actorId && character.worldId === world.id)
+    ? actorId
+    : 'user';
+  state.communicationIdentityByWorldId[world.id] = normalized;
+  saveState();
+  return normalized;
+}
+
 export function activeCharacter(): CharacterProfile | undefined {
   const worldId = activeWorld().id;
   return state.characters.find(character => character.id === state.activeCharacterId && character.worldId === worldId)
@@ -1389,6 +1497,7 @@ export function ensureWorldExists(worldId: string): void {
     id: worldId,
     name: '未命名世界',
     description: '',
+    worldLore: '',
     userPersona: '',
     currentLocation: '日常生活场景',
     sceneAtmosphere: '轻松、自然、适合日常 RP',
@@ -1396,6 +1505,7 @@ export function ensureWorldExists(worldId: string): void {
     createdAt: now,
     updatedAt: now,
   });
+  state.communicationIdentityByWorldId[worldId] = 'user';
 }
 
 export function createWorld(name: string, description = ''): WorldProfile {
@@ -1404,6 +1514,7 @@ export function createWorld(name: string, description = ''): WorldProfile {
     id: nowId('world'),
     name: name.trim() || '新世界',
     description: description.trim(),
+    worldLore: '',
     userPersona: '',
     currentLocation: '日常生活场景',
     sceneAtmosphere: '轻松、自然、适合日常 RP',
@@ -1415,6 +1526,7 @@ export function createWorld(name: string, description = ''): WorldProfile {
   state.activeWorldId = world.id;
   state.activeCharacterId = '';
   state.activeGroupChatId = '';
+  state.communicationIdentityByWorldId[world.id] = 'user';
   saveState();
   return world;
 }
@@ -1426,6 +1538,7 @@ export function setActiveWorld(worldId: string): boolean {
   state.activeWorldId = worldId;
   state.activeCharacterId = state.characters.find(character => character.worldId === worldId)?.id ?? '';
   state.activeGroupChatId = state.groupChats.find(chat => chat.worldId === worldId)?.id ?? '';
+  communicationActorId(worldId);
   saveState();
   return true;
 }
@@ -1445,6 +1558,7 @@ export function deleteWorld(worldId: string): { ok: boolean; reason?: string } {
   const characterIds = new Set(state.characters.filter(character => character.worldId === worldId).map(character => character.id));
   const conversationIds = new Set(state.conversations.filter(item => item.worldId === worldId).map(item => item.id));
   state.worlds = state.worlds.filter(world => world.id !== worldId);
+  delete state.communicationIdentityByWorldId[worldId];
   state.characters = state.characters.filter(character => character.worldId !== worldId);
   state.characterRelationships = state.characterRelationships.filter(relationship => relationship.worldId !== worldId);
   state.characterRelationshipSuggestions = state.characterRelationshipSuggestions.filter(suggestion => suggestion.worldId !== worldId);
@@ -1466,23 +1580,44 @@ export function deleteWorld(worldId: string): { ok: boolean; reason?: string } {
     state.activeWorldId = state.worlds[0].id;
     state.activeCharacterId = state.characters.find(character => character.worldId === state.activeWorldId)?.id ?? '';
     state.activeGroupChatId = state.groupChats.find(chat => chat.worldId === state.activeWorldId)?.id ?? '';
+    communicationActorId(state.activeWorldId);
   }
   saveState();
   return { ok: true };
 }
 
-export function ensureConversation(character: CharacterProfile): ConversationProfile {
+export function privateConversationActorIdFor(character: CharacterProfile, actorId = 'user'): string {
+  // 大注释：私聊窗口按“通讯身份 -> 目标角色”隔离；角色本人不能拥有发给自己的私聊窗口。
+  if (
+    actorId !== 'user'
+    && actorId !== character.id
+    && state.characters.some(item => item.id === actorId && item.worldId === character.worldId)
+  ) {
+    return actorId;
+  }
+  return 'user';
+}
+
+function conversationOwnerKey(conversation: ConversationProfile): string {
+  return conversation.ownerCharacterId ?? 'user';
+}
+
+export function ensureConversation(character: CharacterProfile, actorId = 'user'): ConversationProfile {
+  const ownerId = privateConversationActorIdFor(character, actorId);
   const existing = state.conversations.find(item =>
-    item.characterId === character.id && item.worldId === character.worldId,
+    item.characterId === character.id
+    && item.worldId === character.worldId
+    && conversationOwnerKey(item) === ownerId,
   );
   if (existing) {
     return existing;
   }
   const now = Date.now();
   const conversation = {
-    id: `conversation_${stableHash(`${character.worldId}:${character.id}`)}`,
+    id: `conversation_${stableHash(`${character.worldId}:${ownerId}:${character.id}`)}`,
     worldId: character.worldId,
     characterId: character.id,
+    ownerCharacterId: ownerId === 'user' ? undefined : ownerId,
     createdAt: now,
     updatedAt: now,
     lastReadAt: now,
@@ -1491,8 +1626,21 @@ export function ensureConversation(character: CharacterProfile): ConversationPro
   return conversation;
 }
 
-export function messagesFor(characterId: string) {
-  const conversation = state.conversations.find(item => item.characterId === characterId);
+export function conversationFor(characterId: string, actorId = 'user'): ConversationProfile | undefined {
+  const character = state.characters.find(item => item.id === characterId);
+  if (!character) return undefined;
+  const ownerId = privateConversationActorIdFor(character, actorId);
+  return state.conversations.find(item =>
+    item.characterId === characterId
+    && item.worldId === character.worldId
+    && conversationOwnerKey(item) === ownerId,
+  );
+}
+
+export function messagesFor(characterId: string, actorId = 'user') {
+  const character = state.characters.find(item => item.id === characterId);
+  const conversation = character ? conversationFor(characterId, actorId) : undefined;
+  if (!conversation) return [];
   return state.messages.filter(message =>
     message.characterId === characterId
     && (!conversation || message.conversationId === conversation.id)
@@ -1500,14 +1648,8 @@ export function messagesFor(characterId: string) {
   );
 }
 
-export function conversationFor(characterId: string): ConversationProfile | undefined {
-  return state.conversations.find(item =>
-    item.characterId === characterId && item.worldId === activeWorld().id,
-  );
-}
-
-export function unreadCountFor(characterId: string): number {
-  const conversation = conversationFor(characterId);
+export function unreadCountFor(characterId: string, actorId = 'user'): number {
+  const conversation = conversationFor(characterId, actorId);
   if (!conversation) return 0;
   return state.messages.filter(message =>
     message.conversationId === conversation.id
@@ -1518,11 +1660,11 @@ export function unreadCountFor(characterId: string): number {
   ).length;
 }
 
-export function markConversationRead(characterId: string, readAt = Date.now()): void {
+export function markConversationRead(characterId: string, readAt = Date.now(), actorId = 'user'): void {
   const character = state.characters.find(item => item.id === characterId);
   if (!character) return;
-  const conversation = ensureConversation(character);
-  const latestMessageAt = messagesFor(characterId).reduce(
+  const conversation = ensureConversation(character, actorId);
+  const latestMessageAt = messagesFor(characterId, actorId).reduce(
     (latest, message) => Math.max(latest, message.createdAt),
     0,
   );

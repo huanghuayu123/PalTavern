@@ -38,6 +38,7 @@ const stateModule = require('../src/independent-chat/core/state');
 const scheduler = require('../src/independent-chat/automation/scheduler');
 const model = require('../src/independent-chat/model/client');
 const cards = require('../src/independent-chat/characters/cards');
+const authoring = require('../src/independent-chat/characters/authoring');
 const characterRelationships = require('../src/independent-chat/characters/relationships');
 const autoStrategy = require('../src/independent-chat/chat/auto-message-strategy');
 const characterSettings = require('../src/independent-chat/characters/settings');
@@ -63,12 +64,22 @@ function functionBody(source: string, name: string): string {
   throw new Error(`Could not read ${name} body.`);
 }
 
+function sourceSlice(source: string, startMarker: string, endMarker: string): string {
+  return source.split(startMarker)[1]?.split(endMarker)[0] ?? '';
+}
+
 const freshDefault = stateModule.defaultState();
 if (
   freshDefault.worlds[0].name !== '现实世界'
   || !freshDefault.worlds[0].description.includes('手机生活场景')
 ) {
   throw new Error('Default world should be grounded as the real world.');
+}
+if (freshDefault.chatFontScale !== 1) {
+  throw new Error('Default state should include the standard chat font scale.');
+}
+if (freshDefault.communicationIdentityByWorldId[freshDefault.worlds[0].id] !== 'user') {
+  throw new Error('Default state should store the communication identity per world.');
 }
 const defaultYeyun = freshDefault.characters.find((character: any) => character.name === '叶昀');
 if (!defaultYeyun) {
@@ -85,7 +96,10 @@ if (
 }
 
 const migrated = stateModule.normalizeState({
-  worlds: [{ id: 'legacy_world', name: 'Legacy', description: '', createdAt: 1, updatedAt: 1 }],
+  worlds: [
+    { id: 'legacy_world', name: 'Legacy', description: '', createdAt: 1, updatedAt: 1 },
+    { id: 'second_world', name: 'Second', description: '', createdAt: 1, updatedAt: 1 },
+  ],
   characters: [{
     id: 'legacy_character',
     worldId: 'legacy_world',
@@ -100,13 +114,46 @@ const migrated = stateModule.normalizeState({
     },
     autoMessage: stateModule.createDefaultAutoMessageSchedule(),
     importedAt: 1,
+  }, {
+    id: 'second_character',
+    worldId: 'second_world',
+    name: 'Second Character',
+    tags: [],
+    importInfo: {
+      sourceFormat: 'json',
+      spec: 'legacy',
+      specVersion: '',
+      worldBookEntryCount: 0,
+      importedFileName: '',
+    },
+    autoMessage: stateModule.createDefaultAutoMessageSchedule(),
+    importedAt: 1,
   }],
   activeWorldId: 'legacy_world',
   activeCharacterId: 'legacy_character',
+  communicationIdentityByWorldId: {
+    legacy_world: 'legacy_character',
+    second_world: 'second_character',
+    ghost_world: 'legacy_character',
+  },
+  chatFontScale: 2.5,
   conversations: [{
     id: 'legacy_conversation',
     worldId: 'legacy_world',
     characterId: 'legacy_character',
+    createdAt: 10,
+    updatedAt: 20,
+    backgroundImage: 'not-an-image',
+  }],
+  groupChats: [{
+    id: 'legacy_group',
+    worldId: 'legacy_world',
+    title: 'Legacy Group',
+    participantCharacterIds: ['legacy_character'],
+    selectedSpeakerId: 'legacy_character',
+    replyAllOnUserMessage: false,
+    allowModelInitiatedMessages: false,
+    backgroundImage: 'data:image/png;base64,GROUP_BG',
     createdAt: 10,
     updatedAt: 20,
   }],
@@ -131,6 +178,22 @@ const migrated = stateModule.normalizeState({
 });
 if (!migrated.characters[0].autoMessage.pacingStrategy.includes('主动消息')) {
   throw new Error('Legacy character did not receive a natural-language proactive pacing strategy.');
+}
+
+if (
+  migrated.chatFontScale !== 1.25
+  || migrated.conversations[0].backgroundImage
+  || migrated.groupChats[0].backgroundImage !== 'data:image/png;base64,GROUP_BG'
+) {
+  throw new Error('Chat appearance defaults, clamping, or background migration failed.');
+}
+
+if (
+  migrated.communicationIdentityByWorldId.legacy_world !== 'legacy_character'
+  || migrated.communicationIdentityByWorldId.second_world !== 'second_character'
+  || 'ghost_world' in migrated.communicationIdentityByWorldId
+) {
+  throw new Error('Communication identity should be normalized per world and ignore missing worlds.');
 }
 
 if (
@@ -224,6 +287,7 @@ if (
 
 const appSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/ui/app.ts'), 'utf8');
 const stylesSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/styles.css'), 'utf8');
+const stateSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/core/state.ts'), 'utf8');
 const androidMainActivitySource = fs.readFileSync(path.join(
   process.cwd(),
   'android/app/src/main/java/com/tavernsocial/app/MainActivity.java',
@@ -233,6 +297,8 @@ const worldComposerBindingBody = functionBody(appSource, 'bindUi');
 const chatPaneRenderBlock = functionBody(appSource, 'renderChatPane');
 const mobileRenderBlock = functionBody(appSource, 'renderMobile');
 const privateTargetSelectorBlock = functionBody(appSource, 'renderPrivateChatTargetSelector');
+const renderGroupSpeakerPickerBlock = functionBody(appSource, 'renderGroupSpeakerPicker');
+const renderMomentsBlock = functionBody(appSource, 'renderMoments');
 if (worldDialogueBody.includes('messagesFor(')) {
   throw new Error('World RP stream must not render private-chat messages.');
 }
@@ -257,6 +323,16 @@ if (
   || !appSource.includes('id="private-chat-target-select"')
   || !appSource.includes('openPrivateChatByCharacterId')
   || !appSource.includes("document.querySelector<HTMLSelectElement>('#private-chat-target-select')")
+  || !stateSource.includes('communicationIdentityByWorldId')
+  || !stateSource.includes('function normalizeCommunicationIdentityByWorldId')
+  || !stateSource.includes('export function communicationActorId')
+  || !stateSource.includes('export function communicationActor')
+  || !stateSource.includes('export function setCommunicationActor')
+  || !appSource.includes('setCommunicationActor(activeWorld().id, selectedId)')
+  || !appSource.includes('closeMessageDetailAfterCommunicationIdentityChange')
+  || !privateTargetSelectorBlock.includes('communicationActorId(')
+  || privateTargetSelectorBlock.includes('privateChatSpeakerId')
+  || appSource.includes('let privateChatSpeakerId')
   || appSource.includes('renderPrivateChatSpeakerPicker')
   || appSource.includes('id="private-chat-speaker-select"')
   || chatPaneRenderBlock.includes('renderPrivateChatTargetSelector')
@@ -268,7 +344,23 @@ if (
   || stylesSource.includes('.private-chat-target-switch')
   || stylesSource.includes('.private-speaker-switch')
 ) {
-  throw new Error('Private chat target switching should live in the outer message/contact surface, not inside the chat window.');
+  throw new Error('Private chat identity switching should use one per-world communication identity selector outside the chat window.');
+}
+if (
+  appSource.includes('id="group-speaker-select"')
+  || appSource.includes("document.querySelector<HTMLSelectElement>('#group-speaker-select')")
+  || renderGroupSpeakerPickerBlock.includes('<select')
+  || !appSource.includes('groupSpeakerFromCommunicationIdentity')
+) {
+  throw new Error('Group chat should follow the shared communication identity instead of exposing a second speaker selector.');
+}
+if (
+  renderMomentsBlock.includes('data-comment-author-select')
+  || appSource.includes('momentCommentAuthorDrafts')
+  || !appSource.includes('momentCommentCharacterFromCommunicationIdentity')
+  || !appSource.includes('addMomentComment(')
+) {
+  throw new Error('Moment inline comments should follow the shared communication identity and remove their per-comment author selector.');
 }
 if (
   mobileRenderBlock.includes('<section class="mobile-inbox-panel">\n          <div class="mobile-section-label">')
@@ -461,6 +553,7 @@ const highAffinityState = stateModule.normalizeState({
     worldId: 'affinity_world',
     name: 'Affinity Character',
     profileNote: 'Keep this note visible.',
+    replyStrategy: 'Keep this reply strategy visible.',
     tags: [],
     relationship: {
       stage: 'close',
@@ -484,8 +577,9 @@ const highAffinityState = stateModule.normalizeState({
 if (
   highAffinityState.characters[0].relationship.affinity !== 150
   || highAffinityState.characters[0].profileNote !== 'Keep this note visible.'
+  || highAffinityState.characters[0].replyStrategy !== 'Keep this reply strategy visible.'
 ) {
-  throw new Error('Character note or unbounded affinity was not preserved.');
+  throw new Error('Character note, reply strategy, or unbounded affinity was not preserved.');
 }
 
 stateModule.replaceState(migrated);
@@ -718,6 +812,7 @@ const relationshipPeer = {
   id: 'character_relationship_peer',
   worldId: character.worldId,
   name: 'Relationship Peer',
+  replyStrategy: 'RELATIONSHIP_PEER_REPLY_STRATEGY_ONLY',
   tags: [],
   importInfo: {
     sourceFormat: 'json',
@@ -733,6 +828,7 @@ const relationshipPeer = {
   importedAt: Date.now(),
 };
 stateModule.state.characters.push(relationshipPeer);
+character.replyStrategy = 'CHARACTER_A_REPLY_STRATEGY_ONLY';
 const pair = characterRelationships.ensureCharacterRelationship(character, relationshipPeer);
 characterRelationships.updateCharacterRelationshipSide(pair, character.id, {
   stage: 'close',
@@ -759,22 +855,45 @@ chat.sendUserMessageOnly('Relationship Peer borrows this private chat slot.', ()
   speakerType: 'character',
   speakerCharacterId: relationshipPeer.id,
 });
-const authoredPrivateMessage = stateModule.messagesFor(character.id).at(-1);
+const authoredPrivateMessage = stateModule.messagesFor(character.id, relationshipPeer.id).at(-1);
 if (
   !authoredPrivateMessage
   || authoredPrivateMessage.characterId !== character.id
   || authoredPrivateMessage.speakerType !== 'character'
   || authoredPrivateMessage.speakerCharacterId !== relationshipPeer.id
 ) {
-  throw new Error('Private chat character-speaker messages should stay in the active conversation and keep speaker metadata.');
+  throw new Error('Private chat character-speaker messages should stay in that identity-to-target conversation and keep speaker metadata.');
 }
-const authoredPromptMessages = model.buildModelMessages(character);
+if (stateModule.messagesFor(character.id, 'user').some((message: any) => message.id === authoredPrivateMessage.id)) {
+  throw new Error('Character-authored private chat messages must not leak into the user-to-target conversation.');
+}
+const authoredPromptMessages = model.buildModelMessages(
+  character,
+  '',
+  false,
+  true,
+  stateModule.messagesFor(character.id, relationshipPeer.id),
+);
 if (
   !authoredPromptMessages.some((message: { content: string }) =>
     message.content.includes('Relationship Peer')
     && message.content.includes('Relationship Peer borrows this private chat slot.'))
 ) {
   throw new Error('Private chat model context should label character-authored user turns with the selected speaker.');
+}
+const beforeCharacterSpeakerUserAffinity = character.relationship.affinity;
+const beforeCharacterSpeakerSideSummary = characterRelationships.relationshipSideFor(pair, relationshipPeer.id).summary;
+for (let index = 0; index < 4; index += 1) {
+  chat.sendUserMessageOnly(`Character speaker continuity ${index}`, () => {}, undefined, {
+    speakerType: 'character',
+    speakerCharacterId: relationshipPeer.id,
+  });
+}
+if (
+  character.relationship.affinity !== beforeCharacterSpeakerUserAffinity
+  || characterRelationships.relationshipSideFor(pair, relationshipPeer.id).summary === beforeCharacterSpeakerSideSummary
+) {
+  throw new Error('Character-authored private chat activity should update character-to-character relationship context instead of user affinity.');
 }
 character.firstMessage = 'FORBIDDEN_PROMPT_OPENING';
 character.stickers = [{
@@ -884,6 +1003,8 @@ if (
   || !systemPrompt.includes('气温 26°C')
   || !systemPrompt.includes('用户人设')
   || !systemPrompt.includes(stateModule.state.worlds[0].userPersona)
+  || !systemPrompt.includes('CHARACTER_A_REPLY_STRATEGY_ONLY')
+  || systemPrompt.includes('RELATIONSHIP_PEER_REPLY_STRATEGY_ONLY')
   || !systemPrompt.includes('TIMELINE_CONTEXT_SHOULD_APPEAR')
   || !systemPrompt.includes('A trusts B with quiet plans.')
   || !systemPrompt.includes('B is cautious around A after the last argument.')
@@ -892,6 +1013,13 @@ if (
   || !systemPrompt.includes('DAILY_BRIEF_CONTEXT_SHOULD_APPEAR')
 ) {
   throw new Error('Relationship, user persona, or timeline context was not included in the model prompt.');
+}
+const peerSystemPrompt = model.buildModelMessages(relationshipPeer)[0].content;
+if (
+  !peerSystemPrompt.includes('RELATIONSHIP_PEER_REPLY_STRATEGY_ONLY')
+  || peerSystemPrompt.includes('CHARACTER_A_REPLY_STRATEGY_ONLY')
+) {
+  throw new Error('Character reply strategies should be scoped to the selected speaking character.');
 }
 if (systemPrompt.includes('TIMELINE_REVOKED_SHOULD_NOT_APPEAR')) {
   throw new Error('Revoked timeline entries leaked into the model prompt.');
@@ -1108,7 +1236,58 @@ if (
   throw new Error('Deleting a character left related local data behind.');
 }
 
+const normalizedWorldLoreState = stateModule.normalizeState({
+  worlds: [{
+    id: 'world_lore_test',
+    name: 'Lore Test',
+    description: 'Base world description.',
+    worldLore: 'Shared moonlit rules for every character in this world.',
+    userPersona: '',
+    currentLocation: 'A quiet street',
+    sceneAtmosphere: 'Soft and ordinary',
+    sceneSummary: '',
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  }],
+  activeWorldId: 'world_lore_test',
+});
+if (normalizedWorldLoreState.worlds[0].worldLore !== 'Shared moonlit rules for every character in this world.') {
+  throw new Error('World-level lore should survive state normalization.');
+}
+stateModule.state.worlds = normalizedWorldLoreState.worlds;
+stateModule.state.activeWorldId = 'world_lore_test';
+const lorePromptCharacter = {
+  ...stateModule.defaultState().characters[0],
+  id: 'world_lore_prompt_character',
+  worldId: 'world_lore_test',
+  name: 'Lore Listener',
+};
+stateModule.state.characters = [lorePromptCharacter];
+const lorePromptText = model.buildModelMessages(lorePromptCharacter, false, undefined, []).map((message: any) => message.content).join('\n');
+if (!lorePromptText.includes('Shared moonlit rules for every character in this world.')) {
+  throw new Error('World-level lore should be included in private chat model context.');
+}
+
+const authoredDraft = authoring.createCharacterCardDraft();
+authoredDraft.name = 'Field Test';
+authoredDraft.concept = 'A character with structured creation metadata.';
+authoredDraft.age = '17';
+authoredDraft.backgroundStory = 'Grew up near the station and remembers small seasonal rituals.';
+authoredDraft.profileNote = 'Prefers short evening walks.';
+authoredDraft.appearance = 'Short hair and a navy jacket.';
+authoredDraft.personality = 'Quiet but attentive.';
+authoredDraft.hobbies = 'Collects train tickets.';
+const authoredCharacter = authoring.characterProfileFromDraft(authoredDraft);
+if (
+  authoredCharacter.age !== authoredDraft.age
+  || authoredCharacter.backgroundStory !== authoredDraft.backgroundStory
+  || authoredCharacter.profileNote !== authoredDraft.profileNote
+) {
+  throw new Error('Character authoring should persist age, background story, and notes.');
+}
+
 const uiSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/ui/app.ts'), 'utf8');
+const authoringUiSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/ui/authoring-ui.ts'), 'utf8');
 const chatSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/chat/private-chat.ts'), 'utf8');
 const schedulerSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/automation/scheduler.ts'), 'utf8');
 const groupChatSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/chat/group-chat.ts'), 'utf8');
@@ -1126,6 +1305,27 @@ if (
 ) {
   throw new Error('Custom switch decorations must not block taps on the real checkbox.');
 }
+if (
+  !uiSource.includes('id="workbench-world-lore"')
+  || !authoringUiSource.includes('id="draft-age"')
+  || !authoringUiSource.includes('id="draft-background-story"')
+  || !authoringUiSource.includes('id="draft-profile-note"')
+) {
+  throw new Error('World settings and character creation should expose shared world lore plus age/background/note fields.');
+}
+const worldHeaderTextBlock = styleSource
+  .split('.world-stage-header strong,')[1]
+  ?.split('.world-stage-header strong {')[0] ?? '';
+const mobileChatStatusBlock = styleSource
+  .split('.mobile-chat-detail .chat-status-expanded {')[1]
+  ?.split('}')[0] ?? '';
+if (
+  !worldHeaderTextBlock.includes('display: block;')
+  || !mobileChatStatusBlock.includes('max-height:')
+  || !mobileChatStatusBlock.includes('overflow-y: auto;')
+) {
+  throw new Error('Mobile world header and expanded chat status shelf should prevent text overflow and message coverage.');
+}
 const profileNoteGenerationBlock = uiSource
   .split('async function generateImportProfileNote')[1]
   ?.split('function cleanGeneratedPacingStrategy')[0] ?? '';
@@ -1135,6 +1335,12 @@ const autoMessageSaveBlock = uiSource
 const autoPacingRegenerateBlock = uiSource
   .split("document.querySelector<HTMLButtonElement>('#regenerate-auto-pacing-strategy')?.addEventListener('click'")[1]
   ?.split("document.querySelector<HTMLButtonElement>('#run-auto-check')")[0] ?? '';
+const replyStrategySettingsBlock = uiSource
+  .split('const replyStrategySettings = `')[1]
+  ?.split('const replyModeSettings = `')[0] ?? '';
+const replyStrategySaveBlock = uiSource
+  .split("document.querySelector<HTMLButtonElement>('#save-character-reply-strategy')?.addEventListener('click'")[1]
+  ?.split("document.querySelector<HTMLButtonElement>('#save-chat-reply-mode')")[0] ?? '';
 const restoreAutoPacingBlock = uiSource
   .split("document.querySelector<HTMLButtonElement>('#restore-auto-pacing')?.addEventListener('click'")[1]
   ?.split("document.querySelector<HTMLButtonElement>('#keep-auto-pacing')")[0] ?? '';
@@ -1192,6 +1398,8 @@ const regexSwitchHandlerBlock = uiSource
 const restoreScrollBlock = uiSource
   .split('function restoreScrollIfNeeded')[1]
   ?.split('function applyScrollSnapshot')[0] ?? '';
+const currentScrollContainerBlock = functionBody(uiSource, 'currentScrollContainer');
+const currentScrollKeyBlock = functionBody(uiSource, 'currentScrollKey');
 const openSettingsBlock = uiSource
   .split('const openSettings = () => {')[1]
   ?.split("document.querySelector<HTMLButtonElement>('#open-settings')")[0] ?? '';
@@ -1247,6 +1455,21 @@ const keepMomentComposerVisibleBlock = uiSource
 const desktopViewControlsBlock = uiSource
   .split('function renderDesktopViewControls')[1]
   ?.split('function renderCharacterPanelTabs')[0] ?? '';
+const renderWithUiTransitionBlock = uiSource
+  .split('function renderWithUiTransition')[1]
+  ?.split('function modelIsReady')[0] ?? '';
+const renderWhenChatInputIdleBlock = uiSource
+  .split('export function renderWhenChatInputIdle')[1]
+  ?.split('function bindUi')[0] ?? '';
+const desktopViewHandlerBlock = uiSource
+  .split("document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach")[1]
+  ?.split("document.querySelectorAll<HTMLButtonElement>('[data-open-groups]')")[0] ?? '';
+const openEventComposerBlock = uiSource
+  .split("function openEventComposer")[1]
+  ?.split("function renderSettingsItems")[0] ?? '';
+const closeEventComposerBlock = uiSource
+  .split('const closeEventComposer = () => {')[1]
+  ?.split("document.querySelector<HTMLButtonElement>('#close-event-composer')")[0] ?? '';
 const mobileBottomNavBlock = uiSource
   .split('<nav class="bottom-nav"')[1]
   ?.split('</nav>')[0] ?? '';
@@ -1267,12 +1490,130 @@ const worldStageComposerBlock = functionBody(uiSource, 'renderWorldStageComposer
 const worldSettingsPanelBlock = uiSource
   .split('function renderWorldSettingsPanel')[1]
   ?.split('function renderWorldStageHeader')[0] ?? '';
+const characterSettingsPageBlock = uiSource
+  .split('function renderCharacterSettingsPage')[1]
+  ?.split('function renderCharacterWorldBookPage')[0] ?? '';
+const characterWorldBookPageBlock = uiSource
+  .split('function renderCharacterWorldBookPage')[1]
+  ?.split('function renderCharacterPanel')[0] ?? '';
+const characterWorldBookEditorBlock = uiSource
+  .split('function renderCharacterWorldBookEntryEditor')[1]
+  ?.split('function readCharacterWorldBookEntryDraftsFromPanel')[0] ?? '';
+const characterWorldBookPageEditorStyleBlock = styleSource
+  .split('.character-worldbook-page .character-worldbook-editor')[1]
+  ?.split('.character-worldbook-page-note')[0] ?? '';
+const renderSettingsContentBlock = functionBody(uiSource, 'renderSettingsContent');
+const renderDesktopSettingsPageBlock = uiSource
+  .split('function renderDesktopSettingsPage')[1]
+  ?.split('function renderModelOnboarding')[0] ?? '';
+const renderAutoMessageBlock = functionBody(uiSource, 'renderAutoMessage');
+const renderPromptPresetRowsBlock = functionBody(uiSource, 'renderPromptPresetRows');
+const renderPromptPresetSettingsBlock = functionBody(uiSource, 'renderPromptPresetSettings');
+const renderChatPaneBlock = functionBody(uiSource, 'renderChatPane');
+const renderCharacterPanelBlock = uiSource
+  .split('function renderCharacterPanel(character?: CharacterProfile)')[1]
+  ?.split('function renderMessageEditDialog')[0] ?? '';
+const renderDesktopBlock = uiSource
+  .split('function renderDesktop(character?: CharacterProfile)')[1]
+  ?.split('function renderMobileSettings')[0] ?? '';
+const renderMobileBlock = uiSource
+  .split('function renderMobile(character?: CharacterProfile)')[1]
+  ?.split('function modelIsReady')[0] ?? '';
+const renderGroupChatPageBlock = functionBody(uiSource, 'renderGroupChatPage');
+const renderCharacterSettingsPageBlock = functionBody(uiSource, 'renderCharacterSettingsPage');
+const renderGroupSettingsPanelBlock = functionBody(uiSource, 'renderGroupSettingsPanel');
+const saveCharacterPanelBlock = uiSource
+  .split("document.querySelector<HTMLButtonElement>('#save-character-panel')?.addEventListener('click'")[1]
+  ?.split("document.querySelector<HTMLInputElement>('#character-panel-avatar-import')")[0] ?? '';
+const jumpCharacterWorldBookBlock = uiSource
+  .split("document.querySelector<HTMLButtonElement>('#jump-character-worldbook')?.addEventListener('click'")[1]
+  ?.split("document.querySelector<HTMLButtonElement>('#save-character-worldbook')")[0] ?? '';
+const saveCharacterWorldBookBlock = uiSource
+  .split("document.querySelector<HTMLButtonElement>('#save-character-worldbook')?.addEventListener('click'")[1]
+  ?.split("document.querySelector<HTMLButtonElement>('#regenerate-character-panel-reply-strategy')")[0] ?? '';
+const characterPanelTabHandlerBlock = sourceSlice(
+  uiSource,
+  "document.querySelectorAll<HTMLButtonElement>('[data-character-panel-page]').forEach",
+  "document.querySelector<HTMLButtonElement>('#jump-character-worldbook')",
+);
+const addCharacterWorldBookEntryBlock = sourceSlice(
+  uiSource,
+  "document.querySelector<HTMLButtonElement>('#add-character-worldbook-entry')?.addEventListener('click'",
+  "document.querySelectorAll<HTMLButtonElement>('[data-delete-character-worldbook-entry]').forEach",
+);
+const deleteCharacterWorldBookEntryBlock = sourceSlice(
+  uiSource,
+  "document.querySelectorAll<HTMLButtonElement>('[data-delete-character-worldbook-entry]').forEach",
+  "document.querySelector<HTMLButtonElement>('#refresh-character-status')",
+);
+const settingsSectionHandlerBlock = sourceSlice(
+  uiSource,
+  "document.querySelectorAll<HTMLButtonElement>('[data-settings-section]').forEach",
+  "document.querySelector<HTMLButtonElement>('[data-settings-back]')",
+);
+const worldSelectHandlerBlock = sourceSlice(
+  uiSource,
+  "document.querySelectorAll<HTMLSelectElement>('#world-select, [data-world-select]').forEach",
+  "document.querySelector<HTMLButtonElement>('#search-world-location')",
+);
+const contactSearchHandlerBlock = sourceSlice(
+  uiSource,
+  "document.querySelectorAll<HTMLInputElement>('#contact-search').forEach",
+  "document.querySelector<HTMLButtonElement>('#create-world')",
+);
+const worldRpRenderModeHandlerBlock = sourceSlice(
+  uiSource,
+  "document.querySelectorAll<HTMLButtonElement>('[data-world-rp-render-mode]').forEach",
+  "document.querySelectorAll<HTMLButtonElement>('[data-open-world-event-rp]').forEach",
+);
+const eventChoiceHandlerBlock = sourceSlice(
+  uiSource,
+  "document.querySelectorAll<HTMLButtonElement>('[data-event-choice]').forEach",
+  "document.querySelectorAll<HTMLButtonElement>('[data-event-manual-finish]').forEach",
+);
+const eventManualFinishHandlerBlock = sourceSlice(
+  uiSource,
+  "document.querySelectorAll<HTMLButtonElement>('[data-event-manual-finish]').forEach",
+  "document.querySelectorAll<HTMLButtonElement>('[data-resolve-event]').forEach",
+);
+const momentVisibilityModeHandlerBlock = sourceSlice(
+  uiSource,
+  "document.querySelector<HTMLSelectElement>('#moment-visibility-mode')?.addEventListener('change'",
+  "document.querySelectorAll<HTMLButtonElement>('[data-moment-visibility-picker]').forEach",
+);
+const momentVisibilityPickerHandlerBlock = sourceSlice(
+  uiSource,
+  "document.querySelectorAll<HTMLButtonElement>('[data-moment-visibility-picker]').forEach",
+  "document.querySelectorAll<HTMLInputElement>('[data-moment-visibility-character]').forEach",
+);
+const momentVisibilityCharacterHandlerBlock = sourceSlice(
+  uiSource,
+  "document.querySelectorAll<HTMLInputElement>('[data-moment-visibility-character]').forEach",
+  "document.querySelectorAll<HTMLInputElement>('[data-moment-visibility-blocked]').forEach",
+);
+const momentVisibilityBlockedHandlerBlock = sourceSlice(
+  uiSource,
+  "document.querySelectorAll<HTMLInputElement>('[data-moment-visibility-blocked]').forEach",
+  "document.querySelector<HTMLTextAreaElement>('#moment-input')",
+);
+const momentCommentTapHandlerBlock = sourceSlice(
+  uiSource,
+  "document.querySelectorAll<HTMLElement>('[data-moment-comment-tap]').forEach",
+  "document.querySelectorAll<HTMLButtonElement>('[data-clear-comment-reply]').forEach",
+);
+const authoringStepHandlerBlock = sourceSlice(
+  authoringUiSource,
+  "document.querySelectorAll<HTMLButtonElement>('[data-authoring-step]').forEach",
+  "document.querySelector<HTMLButtonElement>('#authoring-previous')",
+);
+const privateChatContactCharactersBlock = functionBody(uiSource, 'privateChatContactCharacters');
+const renderGroupConversationRowsBlock = functionBody(uiSource, 'renderGroupConversationRows');
 const eventsPageBlock = functionBody(uiSource, 'renderEventsPage');
 const eventComposerDialogBlock = functionBody(uiSource, 'renderEventComposerDialog');
 const worldEventSettingsPanelBlock = functionBody(uiSource, 'renderWorldEventSettingsPanel');
 const worldPersonaSelectorBlock = functionBody(uiSource, 'renderWorldPersonaSelector');
 const worldPersonaSummaryBlock = worldPersonaSelectorBlock
-  .split('<summary>')[1]
+  .split('<summary')[1]
   ?.split('</summary>')[0] ?? '';
 const focusAfterSubmitIndex = composerSubmitBlock.indexOf("requestMessageComposerFocusAfterSubmit(character?.id ?? '');");
 const replyModeBranchIndex = composerSubmitBlock.indexOf("if (state.chatReplyMode === 'manual')");
@@ -1328,6 +1669,35 @@ if (
   throw new Error('Composer focus should be kept alive across mobile re-renders after sending.');
 }
 if (
+  renderDesktopSettingsPageBlock.includes('settings-overlay')
+  || renderDesktopSettingsPageBlock.includes('settings-backdrop')
+  || renderDesktopSettingsPageBlock.includes('role="dialog"')
+  || renderDesktopSettingsPageBlock.includes('aria-modal')
+  || !renderDesktopSettingsPageBlock.includes('desktop-settings-page')
+  || !renderDesktopBlock.includes('settingsOpen ? renderDesktopSettingsPage(character)')
+) {
+  throw new Error('Desktop settings should render as a normal page instead of a modal overlay.');
+}
+if (
+  renderCharacterPanelBlock.includes('character-panel-overlay')
+  || renderCharacterPanelBlock.includes('character-panel-backdrop')
+  || renderCharacterPanelBlock.includes('role="dialog"')
+  || renderCharacterPanelBlock.includes('aria-modal')
+  || !renderCharacterPanelBlock.includes('character-page')
+  || renderChatPaneBlock.includes('renderCharacterPanel(character)')
+  || !renderDesktopBlock.includes('characterPanelOpen ? renderCharacterPanel(character)')
+  || !renderMobileBlock.includes('characterPanelOpen && character')
+) {
+  throw new Error('Private chat character settings should render as a page, not as a sheet overlay inside chat.');
+}
+if (
+  !characterWorldBookEditorBlock.includes('<details class="character-worldbook-entry"')
+  || characterWorldBookEditorBlock.includes('role="dialog"')
+  || characterWorldBookEditorBlock.includes('aria-modal')
+) {
+  throw new Error('Character worldbook entries should stay as inline interactive accordions without an edit popup.');
+}
+if (
   !idleRenderBlock.includes("input.closest('.sticker-import-dialog')")
   || !idleRenderBlock.includes('窗口失焦时不能让后台调度触发重渲染清空内容')
   || !idleRenderBlock.includes('return;')
@@ -1363,6 +1733,25 @@ if (
   throw new Error('Prompt preset switches should preserve the current scroll position when they re-render.');
 }
 if (
+  !characterPanelTabHandlerBlock.includes('preserveScrollForNextRender();')
+  || !addCharacterWorldBookEntryBlock.includes('preserveScrollForNextRender();')
+  || !deleteCharacterWorldBookEntryBlock.includes('preserveScrollForNextRender();')
+  || !settingsSectionHandlerBlock.includes('preserveScrollForNextRender();')
+  || !worldSelectHandlerBlock.includes('saveUiSessionSnapshot();')
+  || !contactSearchHandlerBlock.includes('preserveScrollForNextRender();')
+  || !worldRpRenderModeHandlerBlock.includes('preserveScrollForNextRender();')
+  || !eventChoiceHandlerBlock.includes('preserveScrollForNextRender();')
+  || !eventManualFinishHandlerBlock.includes('preserveScrollForNextRender();')
+  || !momentVisibilityModeHandlerBlock.includes('preserveScrollForNextRender();')
+  || !momentVisibilityPickerHandlerBlock.includes('preserveScrollForNextRender();')
+  || !momentVisibilityCharacterHandlerBlock.includes('preserveScrollForNextRender();')
+  || !momentVisibilityBlockedHandlerBlock.includes('preserveScrollForNextRender();')
+  || !momentCommentTapHandlerBlock.includes('preserveScrollForNextRender();')
+  || !authoringStepHandlerBlock.includes('preserveAuthoringScrollForNextRender();')
+) {
+  throw new Error('Same-page option changes should preserve scroll instead of jumping back to the top.');
+}
+if (
   !uiSource.includes("let actionMenuAnchor: { kind: 'message' | 'group'; id: string; top: number } | null = null")
   || !uiSource.includes('function captureActionMenuAnchor')
   || !uiSource.includes('function restoreActionMenuAnchorIfNeeded')
@@ -1386,6 +1775,16 @@ if (
   || !restoreScrollBlock.includes('动作菜单和图片可能在首轮布局后再改变高度')
 ) {
   throw new Error('Scroll restoration should run a second pass after message action layout settles.');
+}
+if (
+  currentScrollContainerBlock.indexOf('settingsOpen') < 0
+  || currentScrollContainerBlock.indexOf('characterPanelOpen') < 0
+  || currentScrollContainerBlock.indexOf('settingsOpen') > currentScrollContainerBlock.indexOf("state.activeView === 'world'")
+  || currentScrollContainerBlock.indexOf('characterPanelOpen') > currentScrollContainerBlock.indexOf("state.activeView === 'chat'")
+  || !currentScrollKeyBlock.includes('settings:')
+  || !currentScrollKeyBlock.includes('character-panel:')
+) {
+  throw new Error('Scroll snapshots should prioritize open settings and character panels over the page behind them.');
 }
 if (
   keepMomentComposerVisibleBlock.includes('scrollTop')
@@ -1427,6 +1826,102 @@ if (
   || !keepAutoPacingBlock.includes('const character = proactiveManagerCharacter();')
 ) {
   throw new Error('Proactive settings should use a role dropdown instead of the active chat character.');
+}
+if (
+  !uiSource.includes('let replyStrategyManagerCharacterId')
+  || !uiSource.includes('function replyStrategyManagerCharacter()')
+  || !uiSource.includes('function createCharacterReplyStrategy')
+  || !replyStrategySettingsBlock.includes('id="reply-strategy-character-select"')
+  || !replyStrategySettingsBlock.includes('id="character-reply-strategy"')
+  || !replyStrategySettingsBlock.includes('id="regenerate-character-reply-strategy"')
+  || !renderSettingsContentBlock.includes("renderSettingsFold('角色回复策略', managedReplyStrategyCharacter ? managedReplyStrategyCharacter.name : '按角色分别保存', replyStrategySettings, true)")
+  || !uiSource.includes("document.querySelector<HTMLSelectElement>('#reply-strategy-character-select')")
+  || !uiSource.includes("document.querySelector<HTMLButtonElement>('#regenerate-character-reply-strategy')")
+  || !characterSettingsPageBlock.includes('id="regenerate-character-panel-reply-strategy"')
+  || !uiSource.includes("document.querySelector<HTMLButtonElement>('#regenerate-character-panel-reply-strategy')")
+  || !replyStrategySaveBlock.includes('const character = replyStrategyManagerCharacter();')
+  || !replyStrategySaveBlock.includes("character.replyStrategy = fieldValue<HTMLTextAreaElement>('#character-reply-strategy');")
+  || replyStrategySaveBlock.includes('state.chatReplyMode')
+) {
+  throw new Error('Reply strategy settings should be scoped to a selected character instead of global chat settings.');
+}
+if (
+  characterSettingsPageBlock.includes('id="character-panel-worldbook"')
+  || characterSettingsPageBlock.includes('设定世界书正文')
+  || !characterSettingsPageBlock.includes('id="jump-character-worldbook"')
+  || characterSettingsPageBlock.includes('renderCharacterWorldBookEntryEditor(character)')
+  || !characterWorldBookPageBlock.includes('class="character-panel-page character-worldbook-page"')
+  || !characterWorldBookPageBlock.includes('renderCharacterWorldBookEntryEditor(character)')
+  || !characterWorldBookPageBlock.includes('id="save-character-worldbook"')
+  || !renderCharacterPanelBlock.includes("characterPanelPage === 'worldbook-editor'")
+  || !renderCharacterPanelBlock.includes('character-worldbook-shell')
+  || !renderCharacterPanelBlock.includes("worldbookEditorMode ? '' : renderCharacterPanelTabs()")
+  || !uiSource.includes("type CharacterPanelPage = 'worldbook' | 'worldbook-editor' | 'status'")
+  || !jumpCharacterWorldBookBlock.includes("characterPanelPage = 'worldbook-editor';")
+  || jumpCharacterWorldBookBlock.includes('scrollIntoView')
+  || saveCharacterPanelBlock.includes('setCharacterWorldBookEntryDrafts')
+  || !saveCharacterWorldBookBlock.includes('setCharacterWorldBookEntryDrafts(character, readCharacterWorldBookEntryDraftsFromPanel());')
+  || !characterWorldBookEditorBlock.includes('<details class="character-worldbook-entry"')
+  || !characterWorldBookEditorBlock.includes('<summary class="character-worldbook-entry-head">')
+  || !characterWorldBookEditorBlock.includes('class="character-worldbook-entry-count"')
+  || !styleSource.includes('.character-worldbook-jump')
+) {
+  throw new Error('Character private settings should open a dedicated worldbook page instead of embedding worldbook editing in the general settings page.');
+}
+if (
+  !characterWorldBookPageEditorStyleBlock.includes('flex: 0 0 auto')
+  || !characterWorldBookPageEditorStyleBlock.includes('overflow: visible')
+) {
+  throw new Error('Dedicated character worldbook page should let expanded entries grow the page so the page itself can scroll.');
+}
+if (
+  !uiSource.includes('function renderSettingsFold(')
+  || !uiSource.includes('class="settings-fold"')
+  || !uiSource.includes('class="settings-fold-list"')
+  || !styleSource.includes('.settings-fold > summary')
+  || !renderAutoMessageBlock.includes('renderSettingsFold(')
+  || !renderSettingsContentBlock.includes("renderSettingsFold('世界资料'")
+  || !renderSettingsContentBlock.includes("renderSettingsFold('连接信息'")
+  || !renderSettingsContentBlock.includes("renderSettingsFold('当前角色关系'")
+  || !renderSettingsContentBlock.includes("renderSettingsFold('我的人设'")
+  || !renderSettingsContentBlock.includes("renderSettingsFold('通知权限'")
+  || renderSettingsContentBlock.includes('id="character-settings-text"')
+  || !renderPromptPresetSettingsBlock.includes('renderSettingsFold(')
+  || !renderPromptPresetRowsBlock.includes('<details class="prompt-preset-row')
+  || renderPromptPresetRowsBlock.includes('<article class="prompt-preset-row')
+) {
+  throw new Error('Bulky settings panels should use compact collapsible sections and prompt rows should be details entries.');
+}
+if (
+  !uiSource.includes('id="chat-font-scale"')
+  || !uiSource.includes('fontScaleLabel(state.chatFontScale)')
+  || !uiSource.includes('style="${chatSurfaceStyle')
+  || !renderChatPaneBlock.includes('privateChatBackgroundImage(character)')
+  || !renderGroupChatPageBlock.includes('groupChatBackgroundImage(chat)')
+  || !renderCharacterSettingsPageBlock.includes("importId: 'private-chat-background-import'")
+  || !renderCharacterSettingsPageBlock.includes("clearId: 'clear-private-chat-background'")
+  || !renderGroupSettingsPanelBlock.includes("importId: 'group-chat-background-import'")
+  || !renderGroupSettingsPanelBlock.includes("clearId: 'clear-group-chat-background'")
+  || !styleSource.includes('--chat-font-scale')
+  || !styleSource.includes('.chat-background-preview')
+) {
+  throw new Error('Chat appearance settings should expose font-size controls and per-chat background image controls.');
+}
+if (
+  !styleSource.includes('Mobile density polish final guard')
+  || !styleSource.includes('--mobile-control-height')
+  || !styleSource.includes('.mobile-list-tools .world-switcher > span')
+  || !styleSource.includes('.mobile-settings-list .settings-menu-group')
+  || !styleSource.includes('.mobile-settings-list .settings-list-item.is-active')
+  || !styleSource.includes('.character-panel-page .field:first-of-type')
+  || !styleSource.includes('.character-worldbook-editor')
+  || !styleSource.includes('.character-settings-shell > .character-panel-page')
+  || !styleSource.includes('flex-direction: column')
+  || !styleSource.includes('scroll-padding-top: var(--mobile-sheet-top)')
+  || !uiSource.includes('let scrollCharacterPanelToTopAfterRender')
+  || !uiSource.includes("document.querySelector<HTMLElement>('.character-panel')?.scrollTo")
+) {
+  throw new Error('Mobile contact, settings, and character panels should use the compact safe-area polish layer without compressing the worldbook editor.');
 }
 if (
   !autoMessageSaveBlock.includes("const hasAutoMessageSettings = Boolean(document.querySelector<HTMLInputElement>('#auto-enabled'));")
@@ -1638,6 +2133,29 @@ if (
   throw new Error('Mobile bottom navigation should lock five equal slots and centered icon/label alignment.');
 }
 if (
+  !uiSource.includes("type UiTransitionKind = 'main-forward' | 'main-back' | 'detail-in' | 'detail-out' | 'overlay-in' | 'overlay-out' | 'quiet'")
+  || !uiSource.includes('startViewTransition')
+  || !uiSource.includes("setAttribute('data-ui-transition'")
+  || !renderWithUiTransitionBlock.includes('render();')
+  || !mobileSectionHandlerBlock.includes('renderWithUiTransition')
+  || !desktopViewHandlerBlock.includes('renderWithUiTransition')
+  || !openEventComposerBlock.includes("renderWithUiTransition('overlay-in'")
+  || !closeEventComposerBlock.includes("renderWithUiTransition('overlay-out'")
+  || renderWhenChatInputIdleBlock.includes('renderWithUiTransition')
+) {
+  throw new Error('Page changes should use one guarded UI transition entry while idle/background renders stay quiet.');
+}
+if (
+  !styleSource.includes('/* 大注释：页面切换动效层')
+  || !styleSource.includes('::view-transition-old(root)')
+  || !styleSource.includes('::view-transition-new(root)')
+  || !styleSource.includes('@keyframes paltavern-page-enter-forward')
+  || !styleSource.includes('.ui-fallback-transition[data-ui-transition')
+  || !styleSource.includes('@media (prefers-reduced-motion: reduce)')
+) {
+  throw new Error('Page transition styles should include View Transition, fallback, and reduced-motion support.');
+}
+if (
   !globalUiResetBlock.includes('--warm-accent')
   || !globalUiResetBlock.includes('.desktop-shell')
   || !globalUiResetBlock.includes('.chat,')
@@ -1660,10 +2178,18 @@ if (
   || !worldTopbarFinalBlock.includes('.world-stage-actions {')
   || !worldTopbarFinalBlock.includes('grid-area: actions')
   || !worldTopbarFinalBlock.includes('#generate-event')
-  || !worldTopbarFinalBlock.includes('width: 36px')
+  || !worldTopbarFinalBlock.includes('width: 44px')
   || !worldTopbarFinalBlock.includes('white-space: nowrap')
+  || !styleSource.includes('Mobile overlap repair guard')
+  || !styleSource.includes('.world-persona-select.world-persona-avatar-only')
+  || !styleSource.includes('.world-gear-panel[open] .world-gear-card')
+  || !styleSource.includes('height: 100dvh')
+  || !styleSource.includes('.moments-scroll,')
+  || !styleSource.includes('overflow-x: hidden')
+  || !uiSource.includes('function closeTransientOverlaysForPageChange')
+  || !uiSource.includes("'.world-gear-panel[open], .world-persona-select[open]'")
 ) {
-  throw new Error('Mobile world topbar should stay one-row, with a light generate-event icon and centered world title.');
+  throw new Error('Mobile world topbar should stay one-row, with an avatar identity, full-page world settings, and no horizontal overflow.');
 }
 if (
   !worldWorkbenchBlock.includes('aria-label="生成事件"')
@@ -1674,11 +2200,13 @@ if (
 if (
   !worldPersonaSelectorBlock.includes('renderUserAvatar()')
   || !worldPersonaSelectorBlock.includes('personaName')
+  || !worldPersonaSelectorBlock.includes('world-persona-avatar-only')
   || !worldPersonaSummaryBlock.includes('⌄')
+  || worldPersonaSummaryBlock.includes('world-persona-name')
   || worldPersonaSummaryBlock.includes('<small')
   || worldPersonaSummaryBlock.includes('personaSummary')
 ) {
-  throw new Error('World persona selector should only show avatar, user name, and dropdown arrow in the top bar.');
+  throw new Error('World persona selector should collapse to avatar plus dropdown arrow in the top bar.');
 }
 if (
   !uiSource.includes('worldRpActorId')
@@ -1707,13 +2235,19 @@ if (
   || !uiSource.includes('eventComposerLeadActor')
   || !uiSource.includes('eventComposerParticipantIds')
   || uiSource.includes("fieldValue<HTMLSelectElement>('#event-participant-select')")
-  || uiSource.includes("mode: 'auto' | 'manual'")
-  || uiSource.includes('eventComposerDraft.mode')
+  || !uiSource.includes("mode: 'auto' | 'manual'")
+  || !uiSource.includes('eventComposerDraft.mode')
 ) {
-  throw new Error('World event composer should keep auto generation, lead actor, and multiple participating characters.');
+  throw new Error('World event composer should keep auto/manual modes, lead actor, and multiple participating characters.');
 }
 const generateEventHandlerBlock = uiSource
   .split("document.querySelector<HTMLButtonElement>('#generate-event')")[1]
+  ?.split("document.querySelectorAll<HTMLButtonElement>('[data-event-choice]')")[0] ?? '';
+const eventComposerModeHandlerBlock = uiSource
+  .split("document.querySelectorAll<HTMLButtonElement>('[data-event-composer-mode]').forEach")[1]
+  ?.split("document.querySelector<HTMLFormElement>('#event-composer')")[0] ?? '';
+const openEventComposerModeHandlerBlock = uiSource
+  .split("document.querySelectorAll<HTMLButtonElement>('[data-open-event-composer-mode]').forEach")[1]
   ?.split("document.querySelectorAll<HTMLButtonElement>('[data-event-choice]')")[0] ?? '';
 if (
   !generateEventHandlerBlock.includes('openEventComposer')
@@ -1723,19 +2257,27 @@ if (
   throw new Error('World generate-event button should open the unified event composer instead of generating immediately.');
 }
 if (
-  uiSource.includes('data-event-composer-mode')
-  || uiSource.includes('data-open-event-composer-mode="manual"')
-  || uiSource.includes("openEventComposer('manual')")
-  || eventComposerDialogBlock.includes('手写记录')
-  || eventComposerDialogBlock.includes('手写小事')
-  || eventComposerDialogBlock.includes('记录一件事')
-  || worldEventLobbyBlock.includes('手写记录')
+  !eventComposerModeHandlerBlock.includes('event.preventDefault();')
+  || !eventComposerModeHandlerBlock.includes('event.stopPropagation();')
+  || !openEventComposerModeHandlerBlock.includes('event.preventDefault();')
+  || !openEventComposerModeHandlerBlock.includes('event.stopPropagation();')
+) {
+  throw new Error('Manual event buttons should guard against form/details default click handling on mobile.');
+}
+if (
+  !uiSource.includes('data-event-composer-mode')
+  || !uiSource.includes('data-open-event-composer-mode="manual"')
+  || !uiSource.includes("openEventComposer(button.dataset.openEventComposerMode === 'manual' ? 'manual' : 'auto')")
+  || !eventComposerDialogBlock.includes('手写事件')
+  || !eventComposerDialogBlock.includes('event-manual-title')
+  || !eventComposerDialogBlock.includes('event-manual-description')
+  || !eventComposerDialogBlock.includes('event-manual-affinity')
   || worldStageComposerBlock.includes('data-world-rp-reply-mode')
   || worldStageComposerBlock.includes('手动记录')
   || uiSource.includes("document.querySelectorAll<HTMLButtonElement>('[data-world-rp-reply-mode]')")
   || uiSource.includes("if (worldRpReplyMode === 'manual')")
 ) {
-  throw new Error('World event UI should remove the manual record feature and only expose generated events.');
+  throw new Error('World event UI should expose manual event creation inside the same event composer, without reviving the old RP reply-mode switch.');
 }
 if (
   !eventComposerDialogBlock.includes('renderEventComposerLeadActor')
@@ -1746,15 +2288,26 @@ if (
 }
 const eventComposerSubmitBlock = functionBody(uiSource, 'bindUi');
 if (
-  eventComposerSubmitBlock.includes('createWorldEvent(')
-  || eventComposerSubmitBlock.includes("eventComposerDraft.mode === 'auto'")
+  !eventComposerSubmitBlock.includes('createWorldEvent({')
+  || !eventComposerSubmitBlock.includes("eventComposerDraft.mode === 'manual'")
   || !eventComposerSubmitBlock.includes('eventComposerLeadActor()')
   || !eventComposerSubmitBlock.includes('eventComposerParticipantIds()')
   || !eventComposerSubmitBlock.includes('generateWorldEvent(')
   || !eventComposerSubmitBlock.includes('activeWorldRpEventId = worldEvent.id')
   || !eventComposerSubmitBlock.includes('preserveScrollForNextRender()')
 ) {
-  throw new Error('World event submit should only generate, carry lead actor/participants, open RP detail, and preserve scroll.');
+  throw new Error('World event submit should support manual creation or auto generation, carry lead actor/participants, open RP detail, and preserve scroll.');
+}
+if (
+  !privateChatContactCharactersBlock.includes('privateChatIdentityCharacter()')
+  || !privateChatContactCharactersBlock.includes('character.id !== speaker.id')
+  || !uiSource.includes('function groupChatVisibleForPrivateIdentity')
+  || !uiSource.includes('function groupChatsForPrivateIdentity')
+  || !renderGroupConversationRowsBlock.includes('groupChatsForPrivateIdentity()')
+  || !uiSource.includes('function ensureGroupChatForSpeaker')
+  || !uiSource.includes('ensureGroupChatForSpeaker();')
+) {
+  throw new Error('Character communication identity should hide its own private window while keeping shared group records visible.');
 }
 if (
   !eventsPageBlock.includes('renderWorldEventSettingsPanel({')

@@ -2,7 +2,7 @@
  * 大注释：Model client module.
  * Normalizes model endpoints, builds context, sends requests, and records model budget usage.
  */
-import type { CharacterProfile, ChatMessage, ModelMessage, PromptPreset } from '../core/types';
+import type { CharacterProfile, ChatMessage, ModelMessage, PromptPreset, WorldProfile } from '../core/types';
 import { chatStylePreset, stickerUsageContext } from '../chat/format';
 import { characterRelationshipContextFor } from '../characters/relationships';
 import { characterSettingsText } from '../characters/settings';
@@ -217,6 +217,13 @@ function embeddedWorldBookContext(character: CharacterProfile, includeAll = fals
   return selected.length > 0 ? `内嵌世界书：\n${selected.join('\n\n').slice(0, 6000)}` : '';
 }
 
+function worldLoreContext(world?: WorldProfile): string {
+  const lore = world?.worldLore?.trim();
+  if (!lore) return '';
+  // Big comment: Shared world lore is injected before per-character memory so all characters in one world inherit the same setting.
+  return `共享世界观说明：\n${lore.slice(0, 4000)}`;
+}
+
 function recentEventContext(character: CharacterProfile): string {
   const events = state.worldEvents
     .filter(event =>
@@ -380,6 +387,8 @@ function presetMarkerContent(
         `角色名称：${character.nickname || character.name}`,
         character.systemPrompt ? `角色卡系统提示：${character.systemPrompt}` : '',
         settingsText ? `角色设定：\n${settingsText}` : '',
+        character.age?.trim() ? `角色年龄：${character.age.trim()}` : '',
+        character.backgroundStory?.trim() ? `角色背景故事：${character.backgroundStory.trim()}` : '',
         `关系阶段：${relationship.stage}；好感度：${relationship.affinity}`,
         relationship.summary ? `关系摘要：${relationship.summary}` : '',
         characterRelationshipContextFor(character, 6),
@@ -400,10 +409,14 @@ function presetMarkerContent(
         world ? `当前世界：${world.name}` : '',
         world?.description ? `世界说明：${world.description}` : '',
         worldWeatherPromptContext(world),
+        worldLoreContext(world),
         character.scenario?.trim() ? `当前场景：${character.scenario.trim()}` : '',
       ].filter(Boolean).join('\n');
     case 'worldInfoBefore':
-      return embeddedWorldBookContext(character, includeAllWorldBook);
+      return [
+        worldLoreContext(world),
+        embeddedWorldBookContext(character, includeAllWorldBook),
+      ].filter(Boolean).join('\n\n');
     case 'worldInfoAfter':
       return enhancedWorldInfoAfterContext(character);
     case 'tavernSocialMemorySummary':
@@ -417,10 +430,18 @@ function presetMarkerContent(
   }
 }
 
+function characterReplyStrategyContext(character: CharacterProfile): string {
+  const strategy = character.replyStrategy?.trim();
+  if (!strategy) return '';
+  // Big comment: reply strategy is a character-owned rule, so it travels with the speaking character instead of the global prompt preset.
+  return `角色专属回复策略（只适用于当前角色）：\n${strategy}`;
+}
+
 function runtimeProtection(character: CharacterProfile, extraInstruction: string, dynamicChatContext: string): string {
   const world = state.worlds.find(item => item.id === character.worldId);
   return [
     extraInstruction ? `本次任务补充：\n${extraInstruction}` : '',
+    characterReplyStrategyContext(character),
     companionTimeContext(state),
     worldWeatherPromptContext(world),
     dynamicChatContext,
@@ -500,8 +521,11 @@ export function buildModelMessages(
         `用户名称：${state.userName}`,
         companionTimeContext(state),
         worldWeatherPromptContext(world),
+        worldLoreContext(world),
         userPersona ? `用户人设（只用于理解用户，不要替用户行动）：${userPersona}` : '',
         character.systemPrompt ? `角色卡系统提示：${character.systemPrompt}` : '',
+        character.age?.trim() ? `角色年龄：${character.age.trim()}` : '',
+        character.backgroundStory?.trim() ? `角色背景故事：${character.backgroundStory.trim()}` : '',
         `关系阶段：${relationship.stage}；好感度：${relationship.affinity}`,
         character.profileNote?.trim()
           ? `角色背景故事备注（只用于理解经历、关系和动机，不作为说话格式或语言风格）：${character.profileNote.trim()}`
@@ -511,6 +535,7 @@ export function buildModelMessages(
         embeddedWorldBookContext(character, includeAllWorldBook),
         recentEventContext(character),
         privateMemorySummaryContextFor(character),
+        characterReplyStrategyContext(character),
         extraInstruction,
         includeChatStyle ? chatStylePreset(character) : '',
         character.postHistoryInstructions ? `角色卡历史后指令：${character.postHistoryInstructions}` : '',

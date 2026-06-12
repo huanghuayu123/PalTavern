@@ -51,7 +51,10 @@ export function createSillyTavernCard(character: CharacterProfile): Record<strin
       summary: character.relationship.summary,
       updated_at: new Date(character.relationship.updatedAt).toISOString(),
     },
+    age: character.age ?? '',
+    background_story: character.backgroundStory ?? '',
     profile_note: character.profileNote ?? '',
+    reply_strategy: character.replyStrategy ?? '',
     exported_at: new Date().toISOString(),
   };
 

@@ -89,6 +89,7 @@ import {
   type PrivateChatSpeaker,
 } from '../chat/private-chat';
 import {
+  createWorldEvent,
   deleteWorldEvent,
   eventTypeLabel,
   eventsForActiveWorld,
@@ -174,16 +175,23 @@ import {
   activeCharacter,
   activeGroupChat,
   activeWorld,
+  communicationActor,
+  communicationActorId,
   createWorld,
   DEEPSEEK_API_URL,
   deleteWorld,
   conversationFor,
+  ensureConversation,
   groupChatsForActiveWorld,
   groupMessagesFor,
   markConversationRead,
   messagesFor,
+  normalizeChatBackgroundImage,
+  normalizeChatFontScale,
+  privateConversationActorIdFor,
   resetDailyModelUsage,
   saveState,
+  setCommunicationActor,
   setActiveView,
   setActiveWorld,
   state,
@@ -225,8 +233,9 @@ const appRoot = app;
 type SettingsSection = 'world' | 'drafts' | 'stickers' | 'model' | 'prompts' | 'relationship' | 'interactions' | 'proactive' | 'chat' | 'notifications' | 'data';
 type MobileSection = 'messages' | 'contacts' | 'groups' | 'world' | 'moments' | 'settings';
 type MobileHistoryLayer = 'section' | 'chat' | 'settings-detail' | 'modal';
+type UiTransitionKind = 'main-forward' | 'main-back' | 'detail-in' | 'detail-out' | 'overlay-in' | 'overlay-out' | 'quiet';
 type StickerLibraryScope = 'character' | 'common' | 'user';
-type CharacterPanelPage = 'worldbook' | 'status';
+type CharacterPanelPage = 'worldbook' | 'worldbook-editor' | 'status';
 type GroupSettingsMode = 'create' | 'edit';
 type PendingStickerImport = {
   scope: StickerLibraryScope;
@@ -234,6 +243,7 @@ type PendingStickerImport = {
   stickers: StickerAsset[];
 };
 type EventComposerDraft = {
+  mode: 'auto' | 'manual';
   title: string;
   description: string;
   participantIds: string[];
@@ -285,7 +295,6 @@ type UiSessionSnapshot = {
   messageDrafts?: Record<string, string>;
   groupMessageDrafts?: Record<string, string>;
   momentCommentDrafts?: Record<string, string>;
-  momentCommentAuthorDrafts?: Record<string, string>;
   momentCommentReplyTargetDrafts?: Record<string, string>;
   scroll?: UiScrollSnapshot;
 };
@@ -293,6 +302,8 @@ type UiSessionSnapshot = {
 const CARD_IMPORT_ACCEPT = '.json,.png,application/json,image/png,application/octet-stream,*/*';
 const UI_SESSION_KEY = 'tavern-social-ui-session-v1';
 const UI_SESSION_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
+const UI_TRANSITION_MS = 180;
+const UI_MAIN_NAV_ORDER: MobileSection[] = ['messages', 'contacts', 'world', 'moments', 'settings'];
 
 let globalStatusText = '';
 let globalStatusHideTimer: number | undefined;
@@ -314,6 +325,7 @@ let relationshipManagerCharacterId = '';
 let relationshipPairACharacterId = '';
 let relationshipPairBCharacterId = '';
 let proactiveManagerCharacterId = '';
+let replyStrategyManagerCharacterId = '';
 let momentGenerating = false;
 let momentGenerationStatus = '';
 let momentComposerOpen = false;
@@ -336,10 +348,8 @@ let worldRpRenderMode: 'narration' | 'bubble' = 'narration';
 let worldRpReplyMode: ChatReplyMode = 'auto';
 let worldRpMessageEditId = '';
 let worldRpActorId = 'user';
-let privateChatSpeakerId = 'user';
-let eventComposerDraft: EventComposerDraft = { title: '', description: '', participantIds: [], affinityDelta: '0' };
+let eventComposerDraft: EventComposerDraft = { mode: 'auto', title: '', description: '', participantIds: [], affinityDelta: '0' };
 const momentCommentDrafts = new Map<string, string>();
-const momentCommentAuthorDrafts = new Map<string, string>();
 const momentCommentReplyTargetDrafts = new Map<string, string>();
 let momentCommentActionMenu: { momentId: string; commentId: string; characterPickerOpen: boolean } | null = null;
 let momentCommentSuppressTapUntil = 0;
@@ -373,6 +383,7 @@ let modelConnectionTesting = false;
 let modelListError = false;
 let worldWeatherLoading = false;
 let worldWeatherStatus = '';
+let fallbackTransitionTimer: number | undefined;
 let serviceRestartLoading = false;
 let worldLocationSearchWorldId = '';
 let worldLocationCandidates: WorldWeatherLocation[] = [];
@@ -413,6 +424,7 @@ let pendingIdleRender = false;
 let pendingIdleInput: HTMLTextAreaElement | HTMLInputElement | null = null;
 let pendingIdleRenderFlush: (() => void) | null = null;
 let pendingScrollRestore: UiScrollSnapshot | null = null;
+let scrollCharacterPanelToTopAfterRender = false;
 
 const SETTINGS_SECTIONS: SettingsSection[] = ['world', 'drafts', 'stickers', 'model', 'prompts', 'relationship', 'interactions', 'proactive', 'chat', 'notifications', 'data'];
 const MOBILE_SECTIONS: MobileSection[] = ['messages', 'contacts', 'groups', 'world', 'moments', 'settings'];
@@ -448,6 +460,7 @@ function normalizeEventDraft(value: unknown): EventComposerDraft {
       ? [draft.participantId]
       : [];
   return {
+    mode: draft.mode === 'manual' ? 'manual' : 'auto',
     title: typeof draft.title === 'string' ? draft.title : '',
     description: typeof draft.description === 'string' ? draft.description : '',
     participantIds,
@@ -457,6 +470,12 @@ function normalizeEventDraft(value: unknown): EventComposerDraft {
 }
 
 function currentScrollContainer(): HTMLElement | null {
+  if (settingsOpen || mobileSection === 'settings') {
+    return document.querySelector<HTMLElement>('.settings-content, .mobile-settings-content, .mobile-page');
+  }
+  if (characterPanelOpen) return document.querySelector<HTMLElement>('.character-panel');
+  if (groupSettingsOpen) return document.querySelector<HTMLElement>('.group-settings-panel');
+  if (eventComposerOpen) return document.querySelector<HTMLElement>('.event-composer-dialog');
   if (mobileChatOpen || state.activeView === 'chat') return document.querySelector<HTMLElement>('.messages');
   if (mobileGroupChatOpen || state.activeView === 'groups') return document.querySelector<HTMLElement>('.group-messages');
   if (mobileSection === 'world' || state.activeView === 'world') return document.querySelector<HTMLElement>('.world-workbench-scroll');
@@ -465,6 +484,10 @@ function currentScrollContainer(): HTMLElement | null {
 }
 
 function currentScrollKey(): string {
+  if (settingsOpen || mobileSection === 'settings') return `settings:${mobileSettingsDetail ? 'detail' : 'list'}`;
+  if (characterPanelOpen) return `character-panel:${activeCharacter()?.id ?? ''}`;
+  if (groupSettingsOpen) return `group-settings:${activeGroupChat()?.id ?? groupSettingsMode}`;
+  if (eventComposerOpen) return 'event-composer';
   if (mobileChatOpen || state.activeView === 'chat') return 'messages';
   if (mobileGroupChatOpen || state.activeView === 'groups') return `groups:${activeGroupChat()?.id ?? ''}`;
   if (mobileSection === 'world' || state.activeView === 'world') return 'world';
@@ -473,6 +496,14 @@ function currentScrollKey(): string {
 }
 
 function captureEventComposerDraftFromDom(): void {
+  const mode = document.querySelector<HTMLButtonElement>('[data-event-composer-mode].is-active')?.dataset.eventComposerMode;
+  if (mode === 'manual' || mode === 'auto') eventComposerDraft.mode = mode;
+  const titleInput = document.querySelector<HTMLInputElement>('#event-manual-title');
+  if (titleInput) eventComposerDraft.title = titleInput.value;
+  const descriptionInput = document.querySelector<HTMLTextAreaElement>('#event-manual-description');
+  if (descriptionInput) eventComposerDraft.description = descriptionInput.value;
+  const affinityInput = document.querySelector<HTMLInputElement>('#event-manual-affinity');
+  if (affinityInput) eventComposerDraft.affinityDelta = affinityInput.value;
   const participantInputs = Array.from(document.querySelectorAll<HTMLInputElement>('[data-event-participant]'));
   if (participantInputs.length > 0) {
     eventComposerDraft.participantIds = participantInputs
@@ -483,7 +514,7 @@ function captureEventComposerDraftFromDom(): void {
 }
 
 function captureVisibleDraftsFromDom(): void {
-  const character = activeCharacter();
+  const character = activePrivateChatTarget();
   const messageInput = document.querySelector<HTMLTextAreaElement>('#message-input');
   if (messageInput) {
     if (isSubmittedComposerEcho(character, messageInput.value)) {
@@ -535,10 +566,6 @@ function captureVisibleDraftsFromDom(): void {
       else momentCommentDrafts.delete(momentId);
     }
   });
-  document.querySelectorAll<HTMLSelectElement>('[data-comment-author-select]').forEach(select => {
-    const momentId = select.dataset.commentAuthorSelect;
-    if (momentId) momentCommentAuthorDrafts.set(momentId, select.value || 'user');
-  });
   captureEventComposerDraftFromDom();
 }
 
@@ -588,13 +615,11 @@ function captureUiSessionSnapshot({ captureDom = true } = {}): UiSessionSnapshot
     worldRpRenderMode,
     worldRpReplyMode,
     worldRpActorId,
-    privateChatSpeakerId,
     eventComposerOpen,
     eventComposerDraft,
     messageDrafts: Object.fromEntries(messageDrafts),
     groupMessageDrafts: Object.fromEntries(groupMessageDrafts),
     momentCommentDrafts: Object.fromEntries(momentCommentDrafts),
-    momentCommentAuthorDrafts: Object.fromEntries(momentCommentAuthorDrafts),
     momentCommentReplyTargetDrafts: Object.fromEntries(momentCommentReplyTargetDrafts),
     scroll: captureScrollSnapshot(),
   };
@@ -685,7 +710,11 @@ function restoreUiSessionSnapshot(): void {
     groupSettingsMode = parsed.groupSettingsMode === 'edit' ? 'edit' : 'create';
     mobileSettingsDetail = Boolean(parsed.mobileSettingsDetail) && compactMedia.matches;
     characterPanelOpen = Boolean(parsed.characterPanelOpen);
-    characterPanelPage = parsed.characterPanelPage === 'status' ? 'status' : 'worldbook';
+    characterPanelPage = parsed.characterPanelPage === 'status'
+      ? 'status'
+      : parsed.characterPanelPage === 'worldbook-editor'
+        ? 'worldbook-editor'
+        : 'worldbook';
     stickerPickerOpen = Boolean(parsed.stickerPickerOpen);
     contactQuery = typeof parsed.contactQuery === 'string' ? parsed.contactQuery : '';
     quotedMessageId = typeof parsed.quotedMessageId === 'string'
@@ -721,7 +750,16 @@ function restoreUiSessionSnapshot(): void {
       )
       ? parsed.worldRpActorId
       : 'user';
-    privateChatSpeakerId = 'user';
+    if (
+      typeof parsed.privateChatSpeakerId === 'string'
+      && (
+        parsed.privateChatSpeakerId === 'user'
+        || state.characters.some(character => character.id === parsed.privateChatSpeakerId && character.worldId === activeWorld().id)
+      )
+    ) {
+      setCommunicationActor(activeWorld().id, parsed.privateChatSpeakerId);
+    }
+    ensureCommunicationIdentityViewState();
     eventComposerOpen = Boolean(parsed.eventComposerOpen);
     eventComposerDraft = normalizeEventDraft(parsed.eventComposerDraft);
     messageDrafts.clear();
@@ -730,10 +768,6 @@ function restoreUiSessionSnapshot(): void {
     Object.entries(nonEmptyStringMap(parsed.groupMessageDrafts)).forEach(([key, value]) => groupMessageDrafts.set(key, value));
     momentCommentDrafts.clear();
     Object.entries(nonEmptyStringMap(parsed.momentCommentDrafts)).forEach(([key, value]) => momentCommentDrafts.set(key, value));
-    momentCommentAuthorDrafts.clear();
-    Object.entries(nonEmptyStringMap(parsed.momentCommentAuthorDrafts)).forEach(([key, value]) => {
-      momentCommentAuthorDrafts.set(key, value || 'user');
-    });
     momentCommentReplyTargetDrafts.clear();
     Object.entries(nonEmptyStringMap(parsed.momentCommentReplyTargetDrafts)).forEach(([key, value]) => {
       if (value) momentCommentReplyTargetDrafts.set(key, value);
@@ -934,6 +968,16 @@ function closeMobileLayer(): boolean {
     return true;
   }
   if (characterPanelOpen) {
+    if (characterPanelPage === 'worldbook-editor') {
+      const character = activeCharacter();
+      if (character) {
+        setCharacterWorldBookEntryDrafts(character, readCharacterWorldBookEntryDraftsFromPanel());
+        saveState();
+      }
+      characterPanelPage = 'worldbook';
+      saveUiSessionSnapshot();
+      return true;
+    }
     characterPanelOpen = false;
     saveUiSessionSnapshot();
     return true;
@@ -1014,7 +1058,7 @@ function backMobileLayer(): void {
     window.history.back();
     return;
   }
-  if (closeMobileLayer()) render();
+  if (closeMobileLayer()) renderWithUiTransition('detail-out');
 }
 
 function forceRestartAllServices(): void {
@@ -1192,19 +1236,23 @@ function affinityProgress(value: number): number {
 }
 
 function characterDraftKey(character?: CharacterProfile): string {
-  return character?.id ?? '__no_character__';
+  return character ? `${privateConversationActorId(character)}:${character.id}` : '__no_character__';
 }
 
 function messageDraftFor(character?: CharacterProfile): string {
-  return messageDrafts.get(characterDraftKey(character)) ?? '';
+  return messageDrafts.get(characterDraftKey(character))
+    ?? (character ? messageDrafts.get(character.id) : undefined)
+    ?? '';
 }
 
 function setMessageDraft(character: CharacterProfile | undefined, value: string): void {
   const key = characterDraftKey(character);
   if (value) {
     messageDrafts.set(key, value);
+    if (character) messageDrafts.delete(character.id);
   } else {
     messageDrafts.delete(key);
+    if (character) messageDrafts.delete(character.id);
   }
 }
 
@@ -1223,6 +1271,69 @@ function setGroupMessageDraft(chat: GroupChatProfile | undefined, value: string)
   } else {
     groupMessageDrafts.delete(key);
   }
+}
+
+function fontScaleLabel(scale: number): string {
+  const normalized = normalizeChatFontScale(scale);
+  if (normalized < 0.96) return '小';
+  if (normalized > 1.14) return '大';
+  if (normalized > 1.04) return '稍大';
+  return '标准';
+}
+
+function chatSurfaceStyle(backgroundImage?: string): string {
+  const styleParts = [`--chat-font-scale:${normalizeChatFontScale(state.chatFontScale)}`];
+  if (backgroundImage) {
+    styleParts.push(`--chat-background-image:url(&quot;${escapeHtml(backgroundImage)}&quot;)`);
+  }
+  return styleParts.join(';');
+}
+
+function privateChatBackgroundImage(character?: CharacterProfile): string | undefined {
+  return character ? conversationFor(character.id, privateConversationActorId(character))?.backgroundImage : undefined;
+}
+
+function groupChatBackgroundImage(chat?: GroupChatProfile): string | undefined {
+  return chat?.backgroundImage;
+}
+
+function renderChatBackgroundControl(config: {
+  title: string;
+  description: string;
+  importId: string;
+  clearId: string;
+  backgroundImage?: string;
+}): string {
+  return `
+    <section class="chat-background-control">
+      <div class="mobile-section-label">
+        <strong>${escapeHtml(config.title)}</strong>
+        <span>${escapeHtml(config.description)}</span>
+      </div>
+      <div class="chat-background-preview ${config.backgroundImage ? 'has-image' : ''}" ${config.backgroundImage ? `style="background-image: url(&quot;${escapeHtml(config.backgroundImage)}&quot;)"` : ''}>
+        <span>${config.backgroundImage ? '已设置背景' : '默认背景'}</span>
+      </div>
+      <div class="inline-actions chat-background-actions">
+        <label class="file-button secondary-file">
+          更换背景
+          <input id="${escapeHtml(config.importId)}" type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" />
+        </label>
+        <button id="${escapeHtml(config.clearId)}" class="secondary" type="button" ${config.backgroundImage ? '' : 'disabled'}>恢复默认</button>
+      </div>
+    </section>
+  `;
+}
+
+function readImageInputAsDataUrl(input: HTMLInputElement): Promise<string> {
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file) return Promise.resolve('');
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('读取图片失败。'));
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+    reader.readAsDataURL(file);
+  });
 }
 
 function isSubmittedComposerEcho(character: CharacterProfile | undefined, value: string): boolean {
@@ -1481,6 +1592,54 @@ function currentWorldCharacters(): CharacterProfile[] {
   );
 }
 
+function privateChatIdentityCharacter(): CharacterProfile | undefined {
+  const actor = communicationActor(activeWorld().id);
+  return actor.type === 'character' ? actor.character : undefined;
+}
+
+function privateConversationActorId(character?: CharacterProfile): string {
+  if (!character) return 'user';
+  return privateConversationActorIdFor(character, communicationActorId(character.worldId));
+}
+
+function activePrivateChatTarget(): CharacterProfile | undefined {
+  const character = activeCharacter();
+  return character && privateChatIdentityCharacter()?.id !== character.id ? character : undefined;
+}
+
+function privateChatContactCharacters(mode: 'contacts' | 'recent' = 'contacts'): CharacterProfile[] {
+  const speaker = privateChatIdentityCharacter();
+  // 大注释：通讯录世界内共享，但当前通讯身份本人没有自己的私聊窗口；A 视角只能看到 B/C 等联系人和群聊。
+  return (mode === 'recent' ? recentCharacters() : currentWorldCharacters())
+    .filter(character => !speaker || character.id !== speaker.id);
+}
+
+function ensureCommunicationIdentityViewState(): void {
+  const speaker = privateChatIdentityCharacter();
+  if (!speaker || activeCharacter()?.id !== speaker.id) return;
+  // 大注释：切换成某个角色身份后，如果当前私聊对象就是这个角色本人，按产品语义退回消息列表，不自动跳到别的联系人。
+  mobileChatOpen = false;
+  messageComposerKeyboardHoldCharacterId = '';
+  quotedMessageId = '';
+  messageActionId = '';
+  clearVisibleStatus();
+}
+
+function closeMessageDetailAfterCommunicationIdentityChange(): void {
+  // 大注释：通讯身份是消息页外层状态；切换后统一回到列表，避免停留在“自己给自己发消息”或旧群发言人界面。
+  mobileSection = 'messages';
+  mobileChatOpen = false;
+  mobileGroupChatOpen = false;
+  desktopGroupChatOpen = false;
+  groupSettingsOpen = false;
+  groupSettingsMode = 'create';
+  messageComposerKeyboardHoldCharacterId = '';
+  quotedMessageId = '';
+  messageActionId = '';
+  groupMessageActionId = '';
+  clearVisibleStatus();
+}
+
 function stickerManagerCharacter(): CharacterProfile | undefined {
   const characters = state.characters.filter(character => character.worldId === activeWorld().id);
   const selected = characters.find(character => character.id === stickerManagerCharacterId);
@@ -1522,8 +1681,26 @@ function proactiveManagerCharacter(): CharacterProfile | undefined {
   return fallback;
 }
 
+function replyStrategyManagerCharacter(): CharacterProfile | undefined {
+  const characters = state.characters.filter(character => character.worldId === activeWorld().id);
+  const selected = characters.find(character => character.id === replyStrategyManagerCharacterId);
+  const fallback = selected ?? activeCharacter() ?? characters[0];
+  if (fallback) replyStrategyManagerCharacterId = fallback.id;
+  return fallback;
+}
+
+function createCharacterReplyStrategy(character: CharacterProfile): string {
+  const profile = compactText(characterSettingsText(character), 180);
+  return [
+    `${character.name} 的回复要优先像真实私信：短句、自然、允许停顿，不要把每次回复写成完整作文。`,
+    '只回应当前对话里真正发生的事，不替 user 做决定，不替 user 说话。',
+    '可以带一点动作或语气，但动作服务于聊天氛围，不要喧宾夺主。',
+    profile ? `参考人设核心：${profile}` : '',
+  ].filter(Boolean).join('\n');
+}
+
 function lastMessageFor(character: CharacterProfile) {
-  return messagesFor(character.id).reduce(
+  return messagesFor(character.id, privateConversationActorId(character)).reduce(
     (latest, message) => !latest || message.createdAt > latest.createdAt ? message : latest,
     undefined as ReturnType<typeof messagesFor>[number] | undefined,
   );
@@ -1531,8 +1708,12 @@ function lastMessageFor(character: CharacterProfile) {
 
 function recentCharacters(): CharacterProfile[] {
   return currentWorldCharacters().sort((left, right) => {
-    const leftTime = lastMessageFor(left)?.createdAt ?? conversationFor(left.id)?.updatedAt ?? left.importedAt;
-    const rightTime = lastMessageFor(right)?.createdAt ?? conversationFor(right.id)?.updatedAt ?? right.importedAt;
+    const leftTime = lastMessageFor(left)?.createdAt
+      ?? conversationFor(left.id, privateConversationActorId(left))?.updatedAt
+      ?? left.importedAt;
+    const rightTime = lastMessageFor(right)?.createdAt
+      ?? conversationFor(right.id, privateConversationActorId(right))?.updatedAt
+      ?? right.importedAt;
     return rightTime - leftTime;
   });
 }
@@ -1620,7 +1801,7 @@ function relationshipChangeSummary(before: RelationshipState, after: Relationshi
 }
 
 function visibleMessagesForCharacter(character: CharacterProfile): ChatMessage[] {
-  return messagesFor(character.id)
+  return messagesFor(character.id, privateConversationActorId(character))
     .filter(message => !message.recalledAt && !message.impactRevokedAt);
 }
 
@@ -1732,7 +1913,7 @@ function closeMessageProfilePopover(): void {
   messageProfileAnchor = null;
   document.querySelector('.message-profile-popover')?.remove();
   document.querySelector('.message-profile-backdrop')?.remove();
-  render();
+  renderWithUiTransition('overlay-out');
 }
 
 function installMessageProfileOutsideCloser(): void {
@@ -1755,13 +1936,13 @@ function installMessageProfileOutsideCloser(): void {
 }
 
 function renderContacts(mode: 'contacts' | 'recent' = 'contacts'): string {
-  const characters = mode === 'recent' ? recentCharacters() : currentWorldCharacters();
+  const characters = privateChatContactCharacters(mode);
   if (characters.length === 0) {
     return `<div class="list-empty">${contactQuery ? '没有找到匹配的角色。' : '还没有角色。导入一张角色卡，开始第一段对话。'}</div>`;
   }
   return characters.map(character => {
     const latest = lastMessageFor(character);
-    const unread = unreadCountFor(character.id);
+    const unread = unreadCountFor(character.id, privateConversationActorId(character));
     const statusLine = characterStatusLine(character);
     const subtitle = mode === 'recent'
       ? statusLine || (latest?.stickerId ? '[表情包]' : compactText(latest?.content, 48)) || '打开对话，和角色聊聊'
@@ -1793,6 +1974,39 @@ function groupChatSortTime(chat: GroupChatProfile): number {
   return lastGroupMessageFor(chat)?.createdAt ?? chat.updatedAt ?? chat.createdAt;
 }
 
+function groupChatVisibleForPrivateIdentity(_chat: GroupChatProfile): boolean {
+  // 大注释：群聊记录是世界内共享的，不按通讯身份拆分；当前身份只影响发言人和视角。
+  return true;
+}
+
+function groupChatsForPrivateIdentity(): GroupChatProfile[] {
+  return groupChatsForActiveWorld().filter(groupChatVisibleForPrivateIdentity);
+}
+
+function groupSpeakerFromCommunicationIdentity(chat: GroupChatProfile): string {
+  const actor = communicationActor(chat.worldId);
+  if (actor.type === 'character' && chat.participantCharacterIds.includes(actor.character.id)) return actor.character.id;
+  return 'user';
+}
+
+function preferredGroupSpeakerIdForPrivateIdentity(chat: GroupChatProfile): string {
+  return groupSpeakerFromCommunicationIdentity(chat);
+}
+
+function ensureGroupChatForSpeaker(): void {
+  const chats = groupChatsForPrivateIdentity();
+  if (chats.length === 0) {
+    state.activeGroupChatId = '';
+    return;
+  }
+  const active = chats.find(chat => chat.id === state.activeGroupChatId) ?? chats[0];
+  state.activeGroupChatId = active.id;
+  const preferredSpeakerId = preferredGroupSpeakerIdForPrivateIdentity(active);
+  if (active.selectedSpeakerId !== preferredSpeakerId) {
+    active.selectedSpeakerId = preferredSpeakerId;
+  }
+}
+
 function renderGroupAvatarStack(chat: GroupChatProfile): string {
   const participants = groupParticipants(chat).slice(0, 3);
   if (participants.length === 0) {
@@ -1807,7 +2021,7 @@ function renderGroupAvatarStack(chat: GroupChatProfile): string {
 
 function renderGroupConversationRows(): string {
   const query = contactQuery.trim().toLocaleLowerCase();
-  const chats = groupChatsForActiveWorld()
+  const chats = groupChatsForPrivateIdentity()
     .filter(chat => {
       if (!query) return true;
       const participantText = groupParticipants(chat).map(character => character.name).join(' ');
@@ -1840,7 +2054,7 @@ function renderGroupListPage(mobile = false): string {
     `<option value="${escapeHtml(world.id)}" ${world.id === activeWorld().id ? 'selected' : ''}>${escapeHtml(world.name)}</option>`,
   ).join('');
   const rows = renderGroupConversationRows();
-  const hasGroups = groupChatsForActiveWorld().length > 0;
+  const hasGroups = groupChatsForPrivateIdentity().length > 0;
   return `
     <main class="group-list-page ${mobile ? 'mobile-page mobile-group-list-page' : ''}">
       <header class="${mobile ? 'mobile-topbar group-list-topbar' : 'group-list-header'}">
@@ -1871,14 +2085,14 @@ function renderGroupListPage(mobile = false): string {
 
 function renderInboxConversations(): string {
   const groupRows = renderGroupConversationRows();
-  const characterRows = recentCharacters().length > 0 ? renderContacts('recent') : '';
+  const characterRows = privateChatContactCharacters('recent').length > 0 ? renderContacts('recent') : '';
   if (!groupRows && !characterRows) return renderContacts('recent');
   return `${groupRows}${characterRows}`;
 }
 
 function renderMobileCharacterStoryStrip(): string {
   // 小注释：移动端消息页的头像横条是轻入口，点击后沿用联系人列表的私聊打开逻辑。
-  const characters = currentWorldCharacters().slice(0, 8);
+  const characters = privateChatContactCharacters('contacts').slice(0, 8);
   if (characters.length === 0) return '';
   return `
     <section class="mobile-character-story-strip" aria-label="角色快捷入口">
@@ -1895,11 +2109,16 @@ function renderMobileCharacterStoryStrip(): string {
 function openPrivateChatByCharacterId(characterId: string, options: { pushHistory?: boolean } = {}): void {
   const character = state.characters.find(item => item.id === characterId && item.worldId === activeWorld().id);
   if (!character) return;
+  if (privateChatIdentityCharacter()?.id === character.id) {
+    closeMessageDetailAfterCommunicationIdentityChange();
+    saveUiSessionSnapshot({ captureDom: false });
+    renderWithUiTransition('detail-out');
+    return;
+  }
   captureVisibleDraftsFromDom();
   state.activeCharacterId = character.id;
-  privateChatSpeakerId = 'user';
   setActiveView('chat');
-  markConversationRead(character.id);
+  markConversationRead(character.id, Date.now(), privateConversationActorId(character));
   characterPanelOpen = false;
   stickerPickerOpen = false;
   quotedMessageId = '';
@@ -1911,8 +2130,8 @@ function openPrivateChatByCharacterId(characterId: string, options: { pushHistor
     if (options.pushHistory !== false) pushMobileHistory('chat');
   }
   saveState();
-  render();
-  void generateOpeningMessage(character, render);
+  renderWithUiTransition('detail-in');
+  void generateOpeningMessage(character, render, privateConversationActorId(character));
 }
 
 function renderChatStatusShelf(character?: CharacterProfile): string {
@@ -1953,13 +2172,10 @@ function renderChatStatusShelf(character?: CharacterProfile): string {
 }
 
 function privateChatSpeaker(): PrivateChatSpeaker {
-  const speakerCharacter = state.characters.find(character =>
-    character.id === privateChatSpeakerId && character.worldId === activeWorld().id,
-  );
-  if (speakerCharacter) {
-    return { speakerType: 'character', speakerCharacterId: speakerCharacter.id };
+  const actor = communicationActor(activeWorld().id);
+  if (actor.type === 'character') {
+    return { speakerType: 'character', speakerCharacterId: actor.character.id };
   }
-  privateChatSpeakerId = 'user';
   return { speakerType: 'user' };
 }
 
@@ -1979,19 +2195,22 @@ function privateChatSpeakerAvatar(message: ChatMessage): string {
 }
 
 function renderPrivateChatTargetSelector(): string {
-  // 小注释：这个选择器就是左上角的角色入口；保留同一个 select，避免切换私信目标的逻辑分叉。
   const characters = state.characters.filter(character => character.worldId === activeWorld().id);
-  const selectedId = activeCharacter()?.id ?? characters[0]?.id ?? '';
-  const selectedCharacter = characters.find(character => character.id === selectedId) ?? characters[0];
-  if (characters.length === 0) return '';
+  const selectedId = communicationActorId(activeWorld().id) === 'user'
+    || characters.some(character => character.id === communicationActorId(activeWorld().id))
+    ? communicationActorId(activeWorld().id)
+    : 'user';
+  const selectedCharacter = characters.find(character => character.id === selectedId);
+  const selectedName = selectedCharacter?.name ?? (state.userName.trim() || '我');
   return `
     <label class="private-chat-identity-select">
       <span class="avatar private-chat-identity-avatar"${avatarToneAttribute(selectedCharacter)}>${selectedCharacter ? renderAvatar(selectedCharacter) : renderUserAvatar()}</span>
       <span class="private-chat-identity-copy">
-        <strong>${escapeHtml(selectedCharacter?.name ?? '选择角色')}</strong>
-        <small>选择私信角色</small>
+        <strong>${escapeHtml(selectedName)}</strong>
+        <small>选择通讯身份</small>
       </span>
-      <select id="private-chat-target-select" aria-label="选择私信角色">
+      <select id="private-chat-target-select" aria-label="选择通讯身份">
+        <option value="user" ${selectedId === 'user' ? 'selected' : ''}>${escapeHtml(state.userName.trim() || '我')}</option>
         ${characters.map(character => `<option value="${escapeHtml(character.id)}" ${selectedId === character.id ? 'selected' : ''}>${escapeHtml(character.name)}</option>`).join('')}
       </select>
       <span class="private-chat-identity-chevron">⌄</span>
@@ -2013,7 +2232,7 @@ function renderMessages(character?: CharacterProfile): string {
       </div>
     `;
   }
-  const messages = messagesFor(character.id);
+  const messages = messagesFor(character.id, privateConversationActorId(character));
   const introCard = renderCharacterIntroCard(character);
   if (messages.length === 0) {
     return `
@@ -2275,19 +2494,25 @@ function renderCharacterWorldBookEntryEditor(character: CharacterProfile): strin
     <section class="character-worldbook-editor" aria-label="附加世界书条目">
       <header>
         <div>
-          <strong>附加世界书条目</strong>
-          <p class="muted">像酒馆世界书一样维护关键词、正文和启用方式；主设定正文仍保存在上面的角色设定条目里。</p>
+          <strong>世界书</strong>
+          <p class="muted">按条目收起管理，点开后再编辑关键词、正文和触发方式。</p>
         </div>
-        <button id="add-character-worldbook-entry" class="secondary" type="button">${icon('add')}<span>新增条目</span></button>
+        <div class="character-worldbook-actions">
+          <span class="character-worldbook-entry-count">${entries.length} 条</span>
+          <button id="add-character-worldbook-entry" class="secondary" type="button">${icon('add')}<span>新增</span></button>
+        </div>
       </header>
       ${entries.length > 0 ? `
         <div class="character-worldbook-list">
           ${entries.map((entry, index) => `
-            <article class="character-worldbook-entry" data-worldbook-entry-id="${escapeHtml(entry.id)}">
-              <div class="character-worldbook-entry-head">
-                <strong>条目 ${index + 1}</strong>
-                <button class="danger" data-delete-character-worldbook-entry="${escapeHtml(entry.id)}" type="button">删除</button>
-              </div>
+            <details class="character-worldbook-entry" data-worldbook-entry-id="${escapeHtml(entry.id)}">
+              <summary class="character-worldbook-entry-head">
+                <span>
+                  <strong>${escapeHtml(entry.comment || `条目 ${index + 1}`)}</strong>
+                  <small>${escapeHtml(entry.keys || '未设置关键词')}</small>
+                </span>
+                <em>${entry.enabled ? '启用' : '停用'}</em>
+              </summary>
               <div class="character-worldbook-grid">
                 <label class="field">
                   <span>标题 / 注释</span>
@@ -2315,7 +2540,8 @@ function renderCharacterWorldBookEntryEditor(character: CharacterProfile): strin
                 <label><input data-worldbook-entry-constant type="checkbox" ${entry.constant ? 'checked' : ''} />常驻</label>
                 <label><input data-worldbook-entry-selective type="checkbox" ${entry.selective ? 'checked' : ''} />选择性</label>
               </div>
-            </article>
+              <button class="danger character-worldbook-delete" data-delete-character-worldbook-entry="${escapeHtml(entry.id)}" type="button">删除这个条目</button>
+            </details>
           `).join('')}
         </div>
       ` : '<p class="muted character-worldbook-empty">还没有附加世界书条目。新增后可以像酒馆一样写关键词和正文。</p>'}
@@ -2338,7 +2564,8 @@ function readCharacterWorldBookEntryDraftsFromPanel(): CharacterWorldBookEntryDr
 }
 
 function renderCharacterSettingsPage(character: CharacterProfile): string {
-  const worldBookText = characterSettingsText(character);
+  const backgroundImage = privateChatBackgroundImage(character);
+  const worldBookEntryCount = characterWorldBookEntryDrafts(character).length;
   return `
     <section class="character-panel-page">
       <div class="character-panel-identity">
@@ -2361,16 +2588,42 @@ function renderCharacterSettingsPage(character: CharacterProfile): string {
         <textarea id="character-profile-note" placeholder="例如：她从哪里来，为什么留在这个世界里，过去和 user 发生过什么。">${escapeHtml(character.profileNote ?? '')}</textarea>
       </label>
       <label class="field">
+        <span>回复策略</span>
+        <textarea id="character-panel-reply-strategy" placeholder="例如：回复更短，偏口语；紧张时会停顿；不要替 user 做决定。">${escapeHtml(character.replyStrategy ?? '')}</textarea>
+      </label>
+      <button id="regenerate-character-panel-reply-strategy" class="secondary character-panel-reply-strategy-generate" type="button">按人设生成回复策略</button>
+      <label class="field">
         <span>好感度（没有上限）</span>
         <input id="character-affinity-free" type="number" min="0" step="1" value="${Math.max(0, Math.round(character.relationship.affinity))}" />
       </label>
       <p class="muted">进度条只显示 0 到 100；数值可以继续往上加。</p>
-      <label class="field">
-        <span>设定世界书正文</span>
-        <textarea id="character-panel-worldbook" placeholder="外貌、性格、爱好、背景、说话方式等都写在这里。">${escapeHtml(worldBookText)}</textarea>
-      </label>
-      ${renderCharacterWorldBookEntryEditor(character)}
+      <button id="jump-character-worldbook" class="secondary character-worldbook-jump" type="button">
+        ${icon('world')}
+        <span><strong>编辑角色世界书</strong><small>${worldBookEntryCount} 条，进入独立页面编辑关键词、正文和触发方式</small></span>
+      </button>
+      ${renderChatBackgroundControl({
+        title: '私聊背景',
+        description: '只影响这个角色的私信窗口。',
+        importId: 'private-chat-background-import',
+        clearId: 'clear-private-chat-background',
+        backgroundImage,
+      })}
       <button id="save-character-panel" class="primary" type="button">保存角色设置</button>
+    </section>
+  `;
+}
+
+function renderCharacterWorldBookPage(character: CharacterProfile): string {
+  return `
+    <section class="character-panel-page character-worldbook-page">
+      <div class="character-worldbook-page-note">
+        <strong>${escapeHtml(character.name)} 的角色世界书</strong>
+        <p class="muted">每个条目可以单独设置关键词、正文、常驻和选择性触发。这里保存的是这个角色自己的附加世界书，不会改其它角色。</p>
+      </div>
+      ${renderCharacterWorldBookEntryEditor(character)}
+      <footer class="character-worldbook-page-actions">
+        <button id="save-character-worldbook" class="primary" type="button">保存世界书</button>
+      </footer>
     </section>
   `;
 }
@@ -2378,21 +2631,20 @@ function renderCharacterSettingsPage(character: CharacterProfile): string {
 function renderCharacterPanel(character?: CharacterProfile): string {
   if (!characterPanelOpen || !character) return '';
   const statusMode = characterPanelPage === 'status';
+  const worldbookEditorMode = characterPanelPage === 'worldbook-editor';
+  const title = worldbookEditorMode ? '角色世界书' : statusMode ? '角色状态' : '角色设置';
   return `
-    <div class="character-panel-overlay" role="dialog" aria-modal="true" aria-label="${statusMode ? '角色状态' : '角色设置'}">
-      <button class="character-panel-backdrop" id="close-character-panel-backdrop" type="button" aria-label="关闭角色面板"></button>
-      <aside class="character-panel">
-        <header class="character-panel-header">
-          <div>
-            <span class="settings-kicker">${statusMode ? '角色状态' : '角色设置'}</span>
-            <h2>${escapeHtml(character.name)}</h2>
-          </div>
-          <button class="icon-button" id="close-character-panel" type="button" aria-label="关闭角色面板">×</button>
-        </header>
-        ${renderCharacterPanelTabs()}
-        ${statusMode ? renderCharacterStatusPage(character) : renderCharacterSettingsPage(character)}
-      </aside>
-    </div>
+    <main class="character-panel character-page ${worldbookEditorMode ? 'character-worldbook-shell' : statusMode ? 'character-status-shell' : 'character-settings-shell'}" aria-label="${escapeHtml(title)}">
+      <header class="character-panel-header">
+        <button class="header-back" id="${worldbookEditorMode ? 'back-character-settings' : 'close-character-panel'}" type="button" aria-label="${worldbookEditorMode ? '返回角色设置' : '返回私聊'}">‹</button>
+        <div>
+          <span class="settings-kicker">${escapeHtml(character.name)}</span>
+          <h2>${escapeHtml(title)}</h2>
+        </div>
+      </header>
+      ${worldbookEditorMode ? '' : renderCharacterPanelTabs()}
+      ${worldbookEditorMode ? renderCharacterWorldBookPage(character) : statusMode ? renderCharacterStatusPage(character) : renderCharacterSettingsPage(character)}
+    </main>
   `;
 }
 
@@ -2491,17 +2743,15 @@ function renderGroupMessages(chat?: GroupChatProfile): string {
 function renderGroupSpeakerPicker(chat?: GroupChatProfile): string {
   if (!chat) return '';
   const participants = groupParticipants(chat);
-  const selected = chat.selectedSpeakerId === 'user' || participants.some(character => character.id === chat.selectedSpeakerId)
-    ? chat.selectedSpeakerId
-    : 'user';
+  const selected = groupSpeakerFromCommunicationIdentity(chat);
+  const selectedCharacter = participants.find(character => character.id === selected);
+  const selectedLabel = selectedCharacter?.name ?? groupUserSpeakerLabel();
   return `
-    <label class="group-speaker-switch">
+    <div class="group-speaker-switch is-readonly">
       <span>发言身份</span>
-      <select id="group-speaker-select">
-        <option value="user" ${selected === 'user' ? 'selected' : ''}>${escapeHtml(groupUserSpeakerLabel())}</option>
-        ${participants.map(character => `<option value="${escapeHtml(character.id)}" ${selected === character.id ? 'selected' : ''}>${escapeHtml(character.name)}</option>`).join('')}
-      </select>
-    </label>
+      <strong>${escapeHtml(selectedLabel)}</strong>
+      <small>跟随消息页左上角通讯身份</small>
+    </div>
   `;
 }
 
@@ -2593,6 +2843,13 @@ function renderGroupSettingsPanel(chat?: GroupChatProfile): string {
           <input id="group-title-input" value="${escapeHtml(title)}" placeholder="例如：晚自习后的群聊" />
         </label>
         ${chat ? renderGroupSpeakerPicker(chat) : ''}
+        ${chat ? renderChatBackgroundControl({
+          title: '群聊背景',
+          description: '只影响这个群的聊天窗口。',
+          importId: 'group-chat-background-import',
+          clearId: 'clear-group-chat-background',
+          backgroundImage: groupChatBackgroundImage(chat),
+        }) : ''}
         <section class="group-settings-section">
           <div class="mobile-section-label">
             <strong>群成员</strong>
@@ -2642,7 +2899,7 @@ function renderGroupChatPage(mobile = false): string {
   const manualReplyMode = state.chatReplyMode === 'manual';
   const generateLabel = isGroupGenerating() ? '生成中' : manualReplyMode ? '生成' : '继续';
   return `
-    <main class="chat group-chat ${mobile ? 'mobile-group-chat mobile-chat-detail' : ''}">
+    <main class="chat group-chat ${mobile ? 'mobile-group-chat mobile-chat-detail' : ''}" style="${chatSurfaceStyle(groupChatBackgroundImage(chat))}">
       <header class="chat-header group-chat-header">
         ${renderGroupHeader(chat, mobile)}
         ${mobile
@@ -2663,10 +2920,13 @@ function renderGroupChatPage(mobile = false): string {
 }
 
 function renderChatPane(character?: CharacterProfile, mobile = false): string {
+  if (character && privateChatIdentityCharacter()?.id === character.id) {
+    character = undefined;
+  }
   const quoted = quotedMessageId ? state.messages.find(message => message.id === quotedMessageId && !message.recalledAt) : undefined;
   const manualReplyMode = state.chatReplyMode === 'manual';
   return `
-    <main class="chat ${character ? 'has-status-shelf' : ''} ${mobile ? 'mobile-chat-detail' : ''}">
+    <main class="chat ${character ? 'has-status-shelf' : ''} ${mobile ? 'mobile-chat-detail' : ''}" style="${chatSurfaceStyle(privateChatBackgroundImage(character))}">
       <header class="chat-header">
         ${renderCharacterHeader(character, mobile)}
         ${mobile ? '' : renderDesktopViewControls(character)}
@@ -2686,7 +2946,7 @@ function renderChatPane(character?: CharacterProfile, mobile = false): string {
           <button class="sticker-trigger ${stickerPickerOpen ? 'is-active' : ''}" id="toggle-stickers" type="button" aria-label="表情包">${icon('sticker')}</button>
           <textarea id="message-input" rows="1" enterkeyhint="${state.enterToSend ? 'send' : 'enter'}" aria-label="${character ? `发消息给 ${escapeHtml(character.name)}` : '消息输入框'}" placeholder="${character ? `发消息给 ${escapeHtml(character.name)}…` : '请先导入角色卡'}">${escapeHtml(messageDraftFor(character))}</textarea>
           ${manualReplyMode ? `<button class="secondary generate-reply-button" id="generate-reply" type="button" aria-label="生成回复" ${isReplying() || !character ? 'disabled' : ''}>${icon('refresh')}<span>生成</span></button>` : ''}
-          <button class="primary send-button" type="submit" aria-label="发送" ${isReplying() ? 'disabled' : ''}>${icon('send')}<span>发送</span></button>
+          <button class="primary send-button" type="submit" aria-label="发送" ${isReplying() || !character ? 'disabled' : ''}>${icon('send')}<span>发送</span></button>
         </form>
       </div>
       ${messageDeleteChoiceId ? `
@@ -2703,7 +2963,6 @@ function renderChatPane(character?: CharacterProfile, mobile = false): string {
       ` : ''}
       ${renderMessageEditDialog()}
       ${renderMessageProfilePopover(character)}
-      ${renderCharacterPanel(character)}
     </main>
   `;
 }
@@ -2995,6 +3254,7 @@ function renderEventParticipantSelect(): string {
 
 function renderEventComposerDialog(): string {
   if (!eventComposerOpen) return '';
+  const manualMode = eventComposerDraft.mode === 'manual';
   return `
     <div class="event-composer-overlay" role="dialog" aria-modal="true" aria-label="生成事件">
       <button class="event-composer-backdrop" id="close-event-composer-backdrop" type="button" aria-label="关闭生成窗口"></button>
@@ -3010,12 +3270,29 @@ function renderEventComposerDialog(): string {
         <form id="event-composer" class="event-composer event-composer-modal">
           <div class="event-form-fields">
             ${renderEventComposerLeadActor()}
+            <div class="event-composer-mode" aria-label="事件创建方式">
+              <button class="${manualMode ? '' : 'is-active'}" data-event-composer-mode="auto" type="button">自动生成</button>
+              <button class="${manualMode ? 'is-active' : ''}" data-event-composer-mode="manual" type="button">手写事件</button>
+            </div>
             ${renderEventParticipantSelect()}
-            <p class="event-auto-hint">会按当前身份和勾选角色生成一段日常生活事件，并直接插入世界 RP 流。</p>
+            ${manualMode ? `
+              <label class="field">
+                <span>事件标题</span>
+                <input id="event-manual-title" value="${escapeHtml(eventComposerDraft.title)}" placeholder="例如：午后的咖啡馆" />
+              </label>
+              <label class="field">
+                <span>事件内容</span>
+                <textarea id="event-manual-description" placeholder="写下这段日常发生了什么。">${escapeHtml(eventComposerDraft.description)}</textarea>
+              </label>
+              <label class="field">
+                <span>关系变化</span>
+                <input id="event-manual-affinity" type="number" step="1" value="${escapeHtml(eventComposerDraft.affinityDelta)}" />
+              </label>
+            ` : '<p class="event-auto-hint">会按当前身份和勾选角色生成一段日常生活事件，并直接插入世界 RP 流。</p>'}
           </div>
           <footer class="event-composer-actions">
             <button class="secondary" id="cancel-event-composer" type="button">取消</button>
-            <button class="primary" data-event-composer-submit type="submit" ${eventGenerating ? 'disabled' : ''}>${eventGenerating ? '生成中…' : '生成事件'}</button>
+            <button class="primary" data-event-composer-submit type="submit" ${eventGenerating ? 'disabled' : ''}>${eventGenerating ? '生成中…' : manualMode ? '创建事件' : '生成事件'}</button>
           </footer>
         </form>
       </section>
@@ -3023,18 +3300,19 @@ function renderEventComposerDialog(): string {
   `;
 }
 
-function openEventComposer(): void {
+function openEventComposer(mode: 'auto' | 'manual' = 'auto'): void {
   captureVisibleDraftsFromDom();
   const leadActor = currentWorldRpLeadActor();
   eventComposerDraft = {
     ...eventComposerDraft,
+    mode,
     leadActor,
     participantIds: eventComposerDraft.participantIds.filter(id => id !== leadActor.characterId),
   };
   eventComposerOpen = true;
   preserveScrollForNextRender();
   saveUiSessionSnapshot();
-  render();
+  renderWithUiTransition('overlay-in');
   window.requestAnimationFrame(() => {
     document.querySelector<HTMLButtonElement>('[data-event-composer-submit]')?.focus();
   });
@@ -3100,6 +3378,15 @@ function clearMomentCommentActionMenu(momentId?: string, commentId?: string): vo
   momentCommentActionMenu = null;
 }
 
+function momentCommentCharacterFromCommunicationIdentity(moment: MomentEntry): CharacterProfile | undefined {
+  const actor = communicationActor(moment.worldId);
+  if (actor.type !== 'character') return undefined;
+  if (!canCharacterViewMoment(moment, actor.character)) {
+    throw new Error(`${actor.character.name} 看不到这条动态。`);
+  }
+  return actor.character;
+}
+
 function renderMoments(): string {
   const moments = momentsForActiveWorld();
   const worldCharacters = state.characters.filter(character => character.worldId === activeWorld().id);
@@ -3110,14 +3397,9 @@ function renderMoments(): string {
     const character = state.characters.find(item => item.id === moment.characterId);
     const author = character?.name ?? (moment.source === 'system' ? '系统' : state.userName);
     const comments = moment.comments ?? [];
-    const commentAuthorCharacters = worldCharacters.filter(character =>
-      canCharacterViewMoment(moment, character),
-    );
-    const selectedCommentAuthor = momentCommentAuthorDrafts.get(moment.id) ?? 'user';
-    const selectedCommentAuthorValue = selectedCommentAuthor === 'user'
-      || commentAuthorCharacters.some(item => item.id === selectedCommentAuthor)
-      ? selectedCommentAuthor
-      : 'user';
+    const commentActor = communicationActor(moment.worldId);
+    const commentActorCanView = commentActor.type !== 'character' || canCharacterViewMoment(moment, commentActor.character);
+    const commentActorName = commentActor.type === 'character' ? commentActor.character.name : userSelfLabel();
     const replyTargetId = momentCommentReplyTargetDrafts.get(moment.id) ?? '';
     const replyTarget = comments.find(comment => comment.id === replyTargetId);
     const visibleCommentCharacters = worldCharacters.filter(character =>
@@ -3194,12 +3476,9 @@ function renderMoments(): string {
               </div>
             ` : ''}
             <form class="moment-comment-form moment-comment-inline-form" data-comment-form="${escapeHtml(moment.id)}">
-              <select data-comment-author-select="${escapeHtml(moment.id)}" aria-label="选择评论身份">
-                <option value="user" ${selectedCommentAuthorValue === 'user' ? 'selected' : ''}>${escapeHtml(userSelfLabel())}</option>
-                ${commentAuthorCharacters.map(item => `<option value="${escapeHtml(item.id)}" ${selectedCommentAuthorValue === item.id ? 'selected' : ''}>${escapeHtml(item.name)}</option>`).join('')}
-              </select>
+              <span class="moment-comment-author-chip">${escapeHtml(commentActorName)}</span>
               <input data-comment-input="${escapeHtml(moment.id)}" value="${escapeHtml(momentCommentDrafts.get(moment.id) ?? '')}" placeholder="${replyTarget ? `回复 ${escapeHtml(momentCommentAuthorName(replyTarget))}…` : '写评论…'}" aria-label="评论这条动态" />
-              <button class="secondary moment-comment-submit" type="submit" aria-label="发送评论">${icon('send')}</button>
+              <button class="secondary moment-comment-submit" type="submit" aria-label="发送评论" ${commentActorCanView ? '' : 'disabled'}>${icon('send')}</button>
             </form>
             ${visibleCommentCharacters.length > 0 ? `
               <div class="moment-character-picker">
@@ -3459,13 +3738,10 @@ function renderWorldPersonaSelector(): string {
   const personaName = actor.name;
   const avatar = actor.character ? renderAvatar(actor.character) : renderUserAvatar();
   return `
-    <details class="world-persona-select">
-      <summary>
+    <details class="world-persona-select world-persona-avatar-only">
+      <summary aria-label="当前身份：${escapeHtml(personaName)}" title="${escapeHtml(personaName)}">
         <span class="avatar header-avatar"${avatarToneAttribute(actor.character)}>${avatar}</span>
-        <span class="world-persona-name">
-          <strong>${escapeHtml(personaName)}</strong>
-        </span>
-        <span aria-hidden="true">⌄</span>
+        <span class="world-persona-chevron" aria-hidden="true">⌄</span>
       </summary>
       <div class="world-persona-menu">
         <label class="field">
@@ -3495,6 +3771,7 @@ function renderWorldSettingsPanel(): string {
             <h3>世界资料</h3>
             <label class="field"><span>名称</span><input id="workbench-world-name" value="${escapeHtml(world.name)}" /></label>
             <label class="field"><span>说明</span><textarea id="workbench-world-description">${escapeHtml(world.description)}</textarea></label>
+            <label class="field"><span>世界观说明</span><textarea id="workbench-world-lore" placeholder="写这个世界共同遵循的世界观、规则、地点常识和关系背景。">${escapeHtml(world.worldLore)}</textarea></label>
             <label class="field"><span>当前地点</span><input id="workbench-world-current-location" value="${escapeHtml(world.currentLocation)}" placeholder="例如：便利店靠窗座位" /></label>
             <label class="field"><span>当前氛围</span><input id="workbench-world-scene-atmosphere" value="${escapeHtml(world.sceneAtmosphere)}" placeholder="例如：雨天、放松、微妙亲近" /></label>
             <label class="field"><span>场景摘要</span><textarea id="workbench-world-scene-summary" placeholder="当前日常 RP 正在发生什么。">${escapeHtml(world.sceneSummary)}</textarea></label>
@@ -3669,7 +3946,8 @@ function renderWorldEventSettingsPanel(context: WorldEventSettingsPanelContext):
         <button class="primary event-settings-generate" data-open-event-composer type="button" ${eventGenerating ? 'disabled' : ''}>
           ${icon('add')}<span>${eventGenerating ? '正在生成…' : '生成一段日常'}</span>
         </button>
-        <span>生成后会直接进入对应片段的 RP 对话舞台。</span>
+        <button class="secondary event-settings-manual" data-open-event-composer-mode="manual" type="button">${icon('world')}<span>手写事件</span></button>
+        <span>创建后会直接进入对应片段的 RP 对话舞台。</span>
       </div>
 
       <section class="event-settings-recent">
@@ -4104,7 +4382,7 @@ function renderAutoMessage(character?: CharacterProfile): string {
   const nextAttempt = schedule.nextAttemptAt ? new Date(schedule.nextAttemptAt).toLocaleString() : '未安排';
   const nextMoment = momentSchedule.nextAttemptAt ? new Date(momentSchedule.nextAttemptAt).toLocaleString() : '未安排';
   const nextEvent = eventSchedule.nextAttemptAt ? new Date(eventSchedule.nextAttemptAt).toLocaleString() : '未安排';
-  return `
+  const autoMessageSettings = `
     <label class="field field-inline"><span>启用主动消息</span><input id="auto-enabled" type="checkbox" ${schedule.enabled ? 'checked' : ''} /></label>
     <div class="two-columns">
       <label class="field"><span>最小间隔（小时）</span><input id="auto-min-hours" type="number" min="0.05" step="0.05" value="${schedule.baseIntervalMin / 3600000}" /></label>
@@ -4147,12 +4425,14 @@ function renderAutoMessage(character?: CharacterProfile): string {
     <p class="muted">下次尝试：${escapeHtml(nextAttempt)}</p>
     <p class="muted">未回复次数：${schedule.unansweredCount}</p>
     <p class="muted">节奏说明：${escapeHtml(schedule.pacingReason)}</p>
-    <div class="settings-divider"></div>
+  `;
+  const worldActivitySettings = `
     <h2>世界活跃度</h2>
     <p class="muted">高模拟会让自动动态带动角色评论、楼主自由回复，并让生活线索更倾向多角色参与。会明显增加 token 消耗，默认关闭。</p>
     <label class="field field-inline"><span>高模拟世界互动</span><input id="world-high-simulation" type="checkbox" ${state.worldInteractionHighSimulation ? 'checked' : ''} /></label>
     <p class="muted">当前：${state.worldInteractionHighSimulation ? '高模拟已开启，世界会更主动运转。' : '轻量模式，自动互动保持克制。'}</p>
-    <div class="settings-divider"></div>
+  `;
+  const autoMomentSettings = `
     <h2>自动动态</h2>
     <p class="muted">角色会按自己的生活节奏在手机上发布动态。应用未运行期间错过的动态不会补发。</p>
     <label class="field field-inline"><span>启用自动动态</span><input id="auto-moment-enabled" type="checkbox" ${momentSchedule.enabled ? 'checked' : ''} /></label>
@@ -4167,7 +4447,8 @@ function renderAutoMessage(character?: CharacterProfile): string {
     </div>
     <p class="muted">下次自动动态：${escapeHtml(nextMoment)}</p>
     <p class="muted">状态：${escapeHtml(momentSchedule.statusReason)}</p>
-    <div class="settings-divider"></div>
+  `;
+  const autoEventSettings = `
     <h2>自动岛上事件</h2>
     <p class="muted">每个角色都会按自己的节奏冒出生活事件。事件需要你选择分支后才会结算关系。</p>
     <label class="field field-inline"><span>启用自动事件</span><input id="auto-event-enabled" type="checkbox" ${eventSchedule.enabled ? 'checked' : ''} /></label>
@@ -4182,6 +4463,14 @@ function renderAutoMessage(character?: CharacterProfile): string {
     </div>
     <p class="muted">下次自动事件：${escapeHtml(nextEvent)}</p>
     <p class="muted">状态：${escapeHtml(eventSchedule.statusReason)}</p>
+  `;
+  return `
+    <div class="settings-fold-list">
+      ${renderSettingsFold('主动私信', `${schedule.enabled ? '已启用' : '未启用'}，${pacingStateLabel(schedule.currentPacingState)}`, autoMessageSettings, true)}
+      ${renderSettingsFold('世界活跃度', state.worldInteractionHighSimulation ? '高模拟已开启' : '轻量模式', worldActivitySettings)}
+      ${renderSettingsFold('自动动态', `${momentSchedule.enabled ? '已启用' : '未启用'}，下次 ${nextMoment}`, autoMomentSettings)}
+      ${renderSettingsFold('自动事件', `${eventSchedule.enabled ? '已启用' : '未启用'}，下次 ${nextEvent}`, autoEventSettings)}
+    </div>
   `;
 }
 
@@ -4225,6 +4514,20 @@ function renderSwitchControl(attrs: string, checked: boolean, label: string): st
   `;
 }
 
+function renderSettingsFold(title: string, summary: string, content: string, open = false): string {
+  return `
+    <details class="settings-fold" ${open ? 'open' : ''}>
+      <summary>
+        <span>
+          <strong>${escapeHtml(title)}</strong>
+          <small>${escapeHtml(summary)}</small>
+        </span>
+      </summary>
+      <div class="settings-fold-body">${content}</div>
+    </details>
+  `;
+}
+
 function renderPromptRoleOptions(activeRole: string): string {
   return ['system', 'user', 'assistant']
     .map(role => `<option value="${role}" ${role === activeRole ? 'selected' : ''}>${role}</option>`)
@@ -4238,8 +4541,15 @@ function renderPromptPresetRows(preset: PromptPreset): string {
       ? '由本应用动态填充'
       : compactText(prompt.content || '空提示词', 120);
     return `
-      <article class="prompt-preset-row ${prompt.enabled ? 'is-enabled' : ''}">
-        ${renderSwitchControl(`data-preset-prompt="${identifier}"`, prompt.enabled, `启用 ${prompt.name}`)}
+      <details class="prompt-preset-row ${prompt.enabled ? 'is-enabled' : ''}">
+        <summary class="prompt-preset-row-summary">
+          ${renderSwitchControl(`data-preset-prompt="${identifier}"`, prompt.enabled, `启用 ${prompt.name}`)}
+          <span>
+            <strong>${escapeHtml(prompt.name)}</strong>
+            <small>${escapeHtml(preview)}</small>
+          </span>
+          <em>${escapeHtml(prompt.role)}</em>
+        </summary>
         <div class="prompt-preset-main">
           <div class="prompt-preset-line">
             <label class="prompt-preset-field prompt-title-field">
@@ -4264,7 +4574,7 @@ function renderPromptPresetRows(preset: PromptPreset): string {
           <em>${escapeHtml(prompt.role)}</em>
           ${prompt.marker ? '<b>动态槽位</b>' : ''}
         </span>
-      </article>
+      </details>
     `;
   }).join('');
 }
@@ -4323,16 +4633,18 @@ function renderPromptPresetSettings(): string {
         <div><h2>提示词预设</h2></div>
         <p>私聊、群聊和世界 RP 可以分别选择预设；下面编辑的是当前选中的那一套。</p>
       </div>
-      <div class="prompt-preset-actions">
-        <label class="file-button secondary-file">
-          导入 SillyTavern 预设 JSON
-          <input id="prompt-preset-import" type="file" accept=".json,application/json" />
-        </label>
-        <button id="restore-tavern-social-prompt-preset" class="secondary" type="button">写入默认回复策略预设</button>
-        <button id="restore-tavern-social-group-prompt-preset" class="secondary" type="button">写入默认群聊策略预设</button>
-        <button id="restore-tavern-social-world-prompt-preset" class="secondary" type="button">写入默认世界 RP 预设</button>
-      </div>
-      <p class="muted">会完整保存原始 JSON、扩展字段、正则脚本和 SPreset 数据；私聊、群聊、世界 RP 分别执行自己选中的 prompts、prompt_order 和输出正则。</p>
+      ${renderSettingsFold('导入与默认预设', '导入酒馆预设，或写入 PalTavern 默认策略。', `
+        <div class="prompt-preset-actions">
+          <label class="file-button secondary-file">
+            导入 SillyTavern 预设 JSON
+            <input id="prompt-preset-import" type="file" accept=".json,application/json" />
+          </label>
+          <button id="restore-tavern-social-prompt-preset" class="secondary" type="button">写入默认回复策略预设</button>
+          <button id="restore-tavern-social-group-prompt-preset" class="secondary" type="button">写入默认群聊策略预设</button>
+          <button id="restore-tavern-social-world-prompt-preset" class="secondary" type="button">写入默认世界 RP 预设</button>
+        </div>
+        <p class="muted">会完整保存原始 JSON、扩展字段、正则脚本和 SPreset 数据；私聊、群聊、世界 RP 分别执行自己选中的 prompts、prompt_order 和输出正则。</p>
+      `)}
       ${state.promptPresets.length > 0 ? `
         <div class="settings-divider"></div>
         <div class="prompt-preset-scope-grid">
@@ -4413,6 +4725,7 @@ function renderSettingsContent(character?: CharacterProfile): string {
   const managedRelationshipCharacter = relationshipManagerCharacter();
   const [relationshipPairA, relationshipPairB] = relationshipPairCharacters();
   const managedProactiveCharacter = proactiveManagerCharacter();
+  const managedReplyStrategyCharacter = replyStrategyManagerCharacter();
   const stickerCharacterOptions = state.characters
     .filter(item => item.worldId === world.id)
     .map(item => `<option value="${escapeHtml(item.id)}" ${item.id === managedStickerCharacter?.id ? 'selected' : ''}>${escapeHtml(item.name)}</option>`)
@@ -4424,6 +4737,10 @@ function renderSettingsContent(character?: CharacterProfile): string {
   const proactiveCharacterOptions = state.characters
     .filter(item => item.worldId === world.id)
     .map(item => `<option value="${escapeHtml(item.id)}" ${item.id === managedProactiveCharacter?.id ? 'selected' : ''}>${escapeHtml(item.name)}</option>`)
+    .join('');
+  const replyStrategyCharacterOptions = state.characters
+    .filter(item => item.worldId === world.id)
+    .map(item => `<option value="${escapeHtml(item.id)}" ${item.id === managedReplyStrategyCharacter?.id ? 'selected' : ''}>${escapeHtml(item.name)}</option>`)
     .join('');
   const cardCharacterOptions = state.characters
     .filter(item => item.worldId === world.id)
@@ -4449,15 +4766,10 @@ function renderSettingsContent(character?: CharacterProfile): string {
         `<option value="${index}">${escapeHtml(weatherLocationLabel(candidate))} · ${candidate.latitude.toFixed(2)}, ${candidate.longitude.toFixed(2)}</option>`,
       ).join('')
       : '';
-    return `
-    <section class="settings-card">
-      <div class="settings-heading">
-        <div><span class="settings-kicker">空间管理</span><h2>世界与角色</h2></div>
-        <p>管理当前世界、创建新世界，并导入或导出角色卡。</p>
-      </div>
-      <h2>世界</h2>
+    const worldProfileSettings = `
       <label class="field"><span>名称</span><input id="world-name" value="${escapeHtml(world.name)}" /></label>
       <label class="field"><span>说明</span><textarea id="world-description">${escapeHtml(world.description)}</textarea></label>
+      <label class="field"><span>世界观说明</span><textarea id="world-lore" placeholder="同世界角色共享的世界观、规则、地点常识和关系背景。">${escapeHtml(world.worldLore)}</textarea></label>
       <label class="field"><span>当前地点</span><input id="world-current-location" value="${escapeHtml(world.currentLocation)}" placeholder="例如：便利店靠窗座位、合租公寓客厅" /></label>
       <label class="field"><span>当前氛围</span><input id="world-scene-atmosphere" value="${escapeHtml(world.sceneAtmosphere)}" placeholder="例如：雨天、放松、微妙亲近" /></label>
       <label class="field"><span>场景摘要</span><textarea id="world-scene-summary" placeholder="记下这个日常 RP 当前正在发生什么。">${escapeHtml(world.sceneSummary)}</textarea></label>
@@ -4479,12 +4791,12 @@ function renderSettingsContent(character?: CharacterProfile): string {
       ${worldWeatherStatus ? `<p class="muted">${escapeHtml(worldWeatherStatus)}</p>` : ''}
       <button id="save-world" class="secondary">保存世界设置</button>
       ${state.worlds.length > 1 ? '<button id="delete-world" class="danger secondary-gap">删除当前世界</button>' : ''}
-      <div class="settings-divider"></div>
-      <h2>新建世界</h2>
+    `;
+    const newWorldSettings = `
       <label class="field"><span>名称</span><input id="new-world-name" placeholder="例如：海边小城" /></label>
       <button id="create-world" class="secondary">创建并进入新世界</button>
-      <div class="settings-divider"></div>
-      <h2>角色卡</h2>
+    `;
+    const characterCardSettings = `
       <div class="character-card-actions">
         <button class="primary" data-open-authoring>写角色卡</button>
         <label class="file-button"><span>导入 JSON / PNG</span><input class="card-import" type="file" accept="${CARD_IMPORT_ACCEPT}" /></label>
@@ -4505,21 +4817,28 @@ function renderSettingsContent(character?: CharacterProfile): string {
             </label>
           </div>
         </div>
-        <p class="muted">卡片：${escapeHtml(character.importInfo.sourceFormat.toUpperCase())} · ${escapeHtml(character.importInfo.spec)} · 世界书 ${character.importInfo.worldBookEntryCount} 条</p>
+        <p class="muted">卡片：${escapeHtml(character.importInfo.sourceFormat.toUpperCase())} · ${escapeHtml(character.importInfo.spec)} · 世界书 ${character.importInfo.worldBookEntryCount} 条。正文请到角色私信设置里的世界书折叠项编辑。</p>
         <div class="character-edit-form">
           <label class="field"><span>卡名</span><input id="character-name" value="${escapeHtml(character.name)}" /></label>
-          <label class="field">
-            <span>设定世界书正文</span>
-            <textarea id="character-settings-text" placeholder="外貌、性格、爱好、背景、说话方式等都写在这里。">${escapeHtml(activeCharacterSettings)}</textarea>
-          </label>
-          <p class="muted">保存后，设定会写入这张角色卡绑定的“${escapeHtml(character.name)} 设定”世界书条目，不再塞进角色简介。</p>
-          <button id="save-character-details" class="secondary">保存卡名与设定</button>
+          <button id="save-character-details" class="secondary">保存卡名</button>
         </div>
         <div class="character-manage-actions">
           <button id="export-tavern-card" class="secondary">导出酒馆角色卡 JSON</button>
           <button id="delete-character" class="danger">删除角色卡</button>
         </div>
       ` : '<p class="muted">选择或导入角色后，可以在这里查看并导出角色卡。</p>'}
+    `;
+    return `
+    <section class="settings-card">
+      <div class="settings-heading">
+        <div><span class="settings-kicker">空间管理</span><h2>世界与角色</h2></div>
+        <p>管理当前世界、创建新世界，并导入或导出角色卡。</p>
+      </div>
+      <div class="settings-fold-list">
+        ${renderSettingsFold('世界资料', world.currentLocation.trim() || locationLabel, worldProfileSettings, true)}
+        ${renderSettingsFold('新建世界', '创建一个独立日常空间。', newWorldSettings)}
+        ${renderSettingsFold('角色卡', character ? `${character.name} · ${character.importInfo.worldBookEntryCount} 条世界书` : '导入、写卡和导出。', characterCardSettings)}
+      </div>
     </section>`;
   }
   if (activeSettingsSection === 'stickers') {
@@ -4552,12 +4871,7 @@ function renderSettingsContent(character?: CharacterProfile): string {
     const config = modelFormDraft ?? state.modelConfig;
     const provider = modelProviderFor(config.apiUrl, config.provider);
     const apiUrl = provider === 'deepseek' ? DEEPSEEK_API_URL : config.apiUrl;
-    return `
-    <section class="settings-card">
-      <div class="settings-heading">
-        <div><span class="settings-kicker">AI 服务</span><h2>模型连接</h2></div>
-        <p>配置兼容 OpenAI 接口的模型服务。预算只限制自动输出，不限制手动聊天、写卡和手动生成。</p>
-      </div>
+    const modelConnectionSettings = `
       <label class="field"><span>模型厂商</span><select id="model-provider">${modelProviderOptions(provider)}</select></label>
       <label class="field"><span>API 地址</span><input id="api-url" value="${escapeHtml(apiUrl)}" placeholder="https://example.com/v1" /></label>
       <label class="field"><span>API Key</span><input id="api-key" type="password" value="${escapeHtml(config.apiKey)}" placeholder="输入服务商提供的密钥" autocomplete="off" spellcheck="false" /></label>
@@ -4576,11 +4890,24 @@ function renderSettingsContent(character?: CharacterProfile): string {
         </label>
       ` : ''}
       <p class="muted model-list-status" id="model-list-status">${escapeHtml(modelListStatus || '模型列表地址会根据 API 地址自动识别为 /v1/models。')}</p>
+    `;
+    const modelBudgetSettings = `
       <div class="two-columns">
         <label class="field"><span>温度</span><input id="temperature" type="number" min="0" max="2" step="0.05" value="${config.temperature}" /></label>
         <label class="field"><span>每日自动输出预算</span><input id="daily-request-limit" type="number" min="1" value="${config.dailyRequestLimit}" /></label>
       </div>
       <p class="muted">今日自动已使用：${state.modelUsage.requestCount} / ${state.modelConfig.dailyRequestLimit}</p>
+    `;
+    return `
+    <section class="settings-card">
+      <div class="settings-heading">
+        <div><span class="settings-kicker">AI 服务</span><h2>模型连接</h2></div>
+        <p>配置兼容 OpenAI 接口的模型服务。预算只限制自动输出，不限制手动聊天、写卡和手动生成。</p>
+      </div>
+      <div class="settings-fold-list">
+        ${renderSettingsFold('连接信息', `${provider} · ${config.model || '未选择模型'}`, modelConnectionSettings, true)}
+        ${renderSettingsFold('参数与预算', `今日 ${state.modelUsage.requestCount} / ${state.modelConfig.dailyRequestLimit}`, modelBudgetSettings)}
+      </div>
       <button id="save-model" class="secondary">保存模型设置</button>
     </section>`;
   }
@@ -4588,12 +4915,7 @@ function renderSettingsContent(character?: CharacterProfile): string {
     return renderPromptPresetSettings();
   }
   if (activeSettingsSection === 'relationship') {
-    return `
-    <section class="settings-card">
-      <div class="settings-heading">
-        <div><span class="settings-kicker">角色节奏</span><h2>关系状态</h2></div>
-        <p>${managedRelationshipCharacter ? '选择角色并单独调整关系阶段、好感度与关系摘要。' : '导入角色后可设置关系状态。'}</p>
-      </div>
+    const characterRelationshipSettings = `
       ${managedRelationshipCharacter ? `
         <div class="relationship-character-selector">
           <label class="field">
@@ -4607,12 +4929,24 @@ function renderSettingsContent(character?: CharacterProfile): string {
         </div>
       ` : ''}
       ${renderRelationship(managedRelationshipCharacter)}
-      <div class="settings-divider"></div>
+    `;
+    const relationshipNetworkSettings = `
       <div class="settings-heading compact-heading">
         <div><span class="settings-kicker">角色关系网</span><h2>角色之间的关系</h2></div>
         <p>每对角色有两个独立视角，阶段建议只会先进入待确认，不会自动生效。</p>
       </div>
       ${renderCharacterRelationshipEditor(relationshipPairA, relationshipPairB)}
+    `;
+    return `
+    <section class="settings-card">
+      <div class="settings-heading">
+        <div><span class="settings-kicker">角色节奏</span><h2>关系状态</h2></div>
+        <p>${managedRelationshipCharacter ? '选择角色并单独调整关系阶段、好感度与关系摘要。' : '导入角色后可设置关系状态。'}</p>
+      </div>
+      <div class="settings-fold-list">
+        ${renderSettingsFold('当前角色关系', managedRelationshipCharacter ? managedRelationshipCharacter.name : '暂无角色', characterRelationshipSettings, true)}
+        ${renderSettingsFold('角色关系网', '编辑角色之间的双向关系。', relationshipNetworkSettings)}
+      </div>
     </section>`;
   }
   if (activeSettingsSection === 'interactions') {
@@ -4620,24 +4954,28 @@ function renderSettingsContent(character?: CharacterProfile): string {
     const nextInteraction = state.worldInteractionNextAttemptAt
       ? new Date(state.worldInteractionNextAttemptAt).toLocaleString()
       : '尚未安排';
-    return `
-    <section class="settings-card">
-      <div class="settings-heading">
-        <div><span class="settings-kicker">世界生活循环</span><h2>角色互动</h2></div>
-        <p>让同一世界里的角色根据当前计划、关系网、动态和时间线自然产生低噪音互动。默认保持克制，热闹世界会更频繁。</p>
-      </div>
+    const worldInteractionSettings = `
       <label class="field field-inline">
         <span>热闹世界</span>
         <input id="world-interaction-high-simulation" type="checkbox" ${state.worldInteractionHighSimulation ? 'checked' : ''} />
       </label>
       <p class="muted">当前：${state.worldInteractionHighSimulation ? '热闹世界已开启，角色会更频繁评论、回应和产生小交集。' : '克制自然，角色间互动会少量发生，不抢注意力。'}</p>
-      <div class="settings-divider"></div>
       <div class="status-grid">
         <div><dt>今日互动</dt><dd>${stats.todayCount} / ${stats.worldDailyLimit}</dd></div>
         <div><dt>下次检查</dt><dd>${escapeHtml(nextInteraction)}</dd></div>
       </div>
       <p class="muted">最近原因：${escapeHtml(stats.recentReason)}</p>
       <button id="save-world-interactions" class="secondary" type="button">保存角色互动设置</button>
+    `;
+    return `
+    <section class="settings-card">
+      <div class="settings-heading">
+        <div><span class="settings-kicker">世界生活循环</span><h2>角色互动</h2></div>
+        <p>让同一世界里的角色根据当前计划、关系网、动态和时间线自然产生低噪音互动。默认保持克制，热闹世界会更频繁。</p>
+      </div>
+      <div class="settings-fold-list">
+        ${renderSettingsFold('互动频率', `${state.worldInteractionHighSimulation ? '热闹世界' : '克制自然'} · 今日 ${stats.todayCount} / ${stats.worldDailyLimit}`, worldInteractionSettings, true)}
+      </div>
     </section>`;
   }
   if (activeSettingsSection === 'proactive') {
@@ -4663,21 +5001,36 @@ function renderSettingsContent(character?: CharacterProfile): string {
     </section>`;
   }
   if (activeSettingsSection === 'chat') {
-    return `
-    <section class="settings-card">
-      <div class="settings-heading">
-        <div><span class="settings-kicker">发送习惯</span><h2>聊天与 user 人设</h2></div>
-        <p>设置你在聊天里是谁，以及角色什么时候开始回复。</p>
-      </div>
-      <h2>我的人设</h2>
+    const userPersonaSettings = `
       <label class="field"><span>用户名称</span><input id="user-name" value="${escapeHtml(state.userName)}" placeholder="我" /></label>
       <label class="field">
         <span>user 人设</span>
         <textarea id="user-persona" placeholder="例如：高二学生，住在学校附近，说话偏直白，但其实很容易心软。">${escapeHtml(world.userPersona)}</textarea>
       </label>
       <p class="muted">这段绑定当前世界，会写进模型提示词，帮助角色理解“你是谁”；不会替你发言，也不会写进角色卡导出。</p>
-      <div class="settings-divider"></div>
-      <h2>回复方式</h2>
+    `;
+    const replyStrategySettings = `
+      ${managedReplyStrategyCharacter ? `
+        <div class="relationship-character-selector">
+          <label class="field">
+            <span>编辑哪位角色的回复策略</span>
+            <select id="reply-strategy-character-select">${replyStrategyCharacterOptions}</select>
+          </label>
+          <div class="relationship-character-preview">
+            <span class="avatar">${renderAvatar(managedReplyStrategyCharacter)}</span>
+            <div><strong>${escapeHtml(managedReplyStrategyCharacter.name)}</strong><small>这里只保存这个角色自己的说话策略</small></div>
+          </div>
+        </div>
+        <label class="field">
+          <span>${escapeHtml(managedReplyStrategyCharacter.name)} 的回复策略</span>
+          <textarea id="character-reply-strategy" rows="6" placeholder="例如：回复更短，偏口语；开心时会连发两三条，紧张时会停顿；不要替 user 做决定。">${escapeHtml(managedReplyStrategyCharacter.replyStrategy ?? '')}</textarea>
+        </label>
+        <p class="muted">这段只跟随 ${escapeHtml(managedReplyStrategyCharacter.name)}，私聊和群聊轮到 TA 发言时才会使用，不会覆盖其他角色。</p>
+        <button id="regenerate-character-reply-strategy" class="secondary" type="button">按人设生成回复策略</button>
+        <button id="save-character-reply-strategy" class="secondary" type="button">保存 ${escapeHtml(managedReplyStrategyCharacter.name)} 的回复策略</button>
+      ` : '<p class="muted">导入角色后，可以给每个角色单独写回复策略。</p>'}
+    `;
+    const replyModeSettings = `
       <div class="reply-mode-settings" role="radiogroup" aria-label="聊天回复方式">
         <label class="reply-mode-option ${state.chatReplyMode === 'manual' ? 'is-active' : ''}">
           <input type="radio" name="chat-reply-mode" value="manual" ${state.chatReplyMode === 'manual' ? 'checked' : ''} />
@@ -4688,8 +5041,6 @@ function renderSettingsContent(character?: CharacterProfile): string {
           <span><strong>长消息模式</strong><small>发送一条较完整的消息后，角色自动开始回复，保持原来的聊天方式。</small></span>
         </label>
       </div>
-      <div class="settings-divider"></div>
-      <h2>发送键</h2>
       <label class="group-reply-toggle">
         <span>
           <strong>回车直接发送</strong>
@@ -4697,46 +5048,86 @@ function renderSettingsContent(character?: CharacterProfile): string {
         </span>
         ${renderSwitchControl('id="enter-to-send"', state.enterToSend, '回车直接发送')}
       </label>
-      <div class="settings-divider"></div>
-      <h2>陪伴时间</h2>
+    `;
+    const companionTimeSettings = `
       <p class="muted">当前显示：${escapeHtml(formatCompanionDateTime(state))}（${escapeHtml(companionTimeModeLabel(state.companionTimeMode))}）。</p>
       ${renderCompanionTimeFields('settings')}
+    `;
+    const displaySettings = `
+      <label class="field chat-font-scale-field">
+        <span>聊天字体大小</span>
+        <input id="chat-font-scale" type="range" min="0.85" max="1.25" step="0.05" value="${normalizeChatFontScale(state.chatFontScale)}" />
+      </label>
+      <div class="chat-font-preview" style="--chat-font-scale:${normalizeChatFontScale(state.chatFontScale)}">
+        <strong>${escapeHtml(fontScaleLabel(state.chatFontScale))}</strong>
+        <span>这是一段聊天预览，私聊和群聊会按这个大小显示。</span>
+      </div>
+      <p class="muted">只调整聊天阅读和输入区域，不改变设置中心自己的密度。</p>
+    `;
+    return `
+    <section class="settings-card">
+      <div class="settings-heading">
+        <div><span class="settings-kicker">发送习惯</span><h2>聊天与 user 人设</h2></div>
+        <p>设置你在聊天里是谁，以及角色什么时候开始回复。</p>
+      </div>
+      <div class="settings-fold-list">
+        ${renderSettingsFold('我的人设', state.userName || '我', userPersonaSettings, true)}
+        ${renderSettingsFold('角色回复策略', managedReplyStrategyCharacter ? managedReplyStrategyCharacter.name : '按角色分别保存', replyStrategySettings, true)}
+        ${renderSettingsFold('回复方式与发送键', state.chatReplyMode === 'manual' ? '短消息模式' : '长消息模式', replyModeSettings)}
+        ${renderSettingsFold('显示字号', fontScaleLabel(state.chatFontScale), displaySettings)}
+        ${renderSettingsFold('陪伴时间', companionTimeModeLabel(state.companionTimeMode), companionTimeSettings)}
+      </div>
       <button id="save-chat-reply-mode" class="secondary secondary-gap" type="button">保存聊天与 user 人设</button>
     </section>`;
   }
   if (activeSettingsSection === 'notifications') {
+    const notificationPermissionSettings = `
+      <p class="muted">${escapeHtml(notificationSupportText())}</p>
+      <button id="request-notification" class="secondary">申请通知权限</button>
+      <button id="test-notification" class="secondary secondary-gap">发送测试通知</button>
+    `;
+    const backgroundHostSettings = `
+      <p class="muted">${escapeHtml(backgroundRuntimeStatusText())}</p>
+    `;
     return `
     <section class="settings-card">
       <div class="settings-heading">
         <div><span class="settings-kicker">系统提醒</span><h2>通知</h2></div>
         <p>主动消息成功写入私聊后，按照角色的隐私等级发送系统通知。</p>
       </div>
-      <p class="muted">${escapeHtml(notificationSupportText())}</p>
-      <button id="request-notification" class="secondary">申请通知权限</button>
-      <button id="test-notification" class="secondary secondary-gap">发送测试通知</button>
-      <div class="settings-divider"></div>
-      <h2>后台宿主</h2>
-      <p class="muted">${escapeHtml(backgroundRuntimeStatusText())}</p>
+      <div class="settings-fold-list">
+        ${renderSettingsFold('通知权限', '系统提醒和测试通知。', notificationPermissionSettings, true)}
+        ${renderSettingsFold('后台宿主', '查看本机后台状态。', backgroundHostSettings)}
+      </div>
     </section>`;
   }
+  const runtimeActionSettings = `
+    <button id="force-restart-services" class="secondary" type="button" ${serviceRestartLoading ? 'disabled' : ''}>${serviceRestartLoading ? '正在重启…' : '强制重启所有服务'}</button>
+    <p class="muted">等同重新打开应用，只重新拉起运行服务，不刷新或生成已有内容。</p>
+  `;
+  const backupSettings = `
+    <button id="export-backup" class="secondary">导出备份 JSON</button>
+    <label class="file-button secondary-file">导入备份 JSON<input id="backup-import" type="file" accept=".json,application/json" /></label>
+  `;
+  const runtimeLogSettings = `
+    <div class="status status-panel">${escapeHtml(statusText)}</div>
+  `;
   return `
     <section class="settings-card">
       <div class="settings-heading">
         <div><span class="settings-kicker">本地管理</span><h2>数据与运行</h2></div>
         <p>备份完整本地状态，并查看最近一次操作结果。</p>
       </div>
-      <button id="force-restart-services" class="secondary" type="button" ${serviceRestartLoading ? 'disabled' : ''}>${serviceRestartLoading ? '正在重启…' : '强制重启所有服务'}</button>
-      <p class="muted">等同重新打开应用，只重新拉起运行服务，不刷新或生成已有内容。</p>
-      <button id="export-backup" class="secondary">导出备份 JSON</button>
-      <label class="file-button secondary-file">导入备份 JSON<input id="backup-import" type="file" accept=".json,application/json" /></label>
-      <div class="settings-divider"></div>
-      <h2>运行记录</h2>
-      <div class="status status-panel">${escapeHtml(statusText)}</div>
+      <div class="settings-fold-list">
+        ${renderSettingsFold('运行操作', serviceRestartLoading ? '正在重启服务。' : '重启后台服务。', runtimeActionSettings)}
+        ${renderSettingsFold('备份恢复', '导出或导入完整本地数据。', backupSettings, true)}
+        ${renderSettingsFold('运行记录', statusText ? compactText(statusText, 80) : '暂无新的操作记录。', runtimeLogSettings)}
+      </div>
     </section>
   `;
 }
 
-function renderSettingsCenter(character?: CharacterProfile): string {
+function renderDesktopSettingsPage(character?: CharacterProfile): string {
   if (!settingsOpen) return '';
   const groups: Array<[string, Array<[SettingsSection, string, string]>]> = [
     ['内容', [
@@ -4758,30 +5149,27 @@ function renderSettingsCenter(character?: CharacterProfile): string {
     ]],
   ];
   return `
-    <div class="settings-overlay" role="dialog" aria-modal="true" aria-label="设置中心">
-      <button class="settings-backdrop" id="close-settings-backdrop" tabindex="-1" aria-hidden="true"></button>
-      <section class="settings-window">
-        <header class="settings-topbar">
-          <div><span class="settings-kicker">PalTavern</span><h1>设置中心</h1></div>
-          <button class="icon-button" id="close-settings" aria-label="关闭设置">×</button>
-        </header>
-        <div class="settings-layout">
-          <nav class="settings-nav">
-            ${groups.map(([group, items]) => `
-              <div class="settings-nav-group">
-                <h2>${group}</h2>
-                ${items.map(([id, label, description]) => `
-                  <button class="${activeSettingsSection === id ? 'is-active' : ''}" data-settings-section="${id}">
-                    <strong>${label}</strong><span>${description}</span>
-                  </button>
-                `).join('')}
-              </div>
-            `).join('')}
-          </nav>
-          <main class="settings-content">${renderSettingsContent(character)}</main>
-        </div>
-      </section>
-    </div>
+    <main class="settings-window desktop-settings-page" aria-label="设置中心">
+      <header class="settings-topbar">
+        <div><span class="settings-kicker">PalTavern</span><h1>设置中心</h1></div>
+        <button class="icon-button" id="close-settings" aria-label="返回">×</button>
+      </header>
+      <div class="settings-layout">
+        <nav class="settings-nav">
+          ${groups.map(([group, items]) => `
+            <div class="settings-nav-group">
+              <h2>${group}</h2>
+              ${items.map(([id, label, description]) => `
+                <button class="${activeSettingsSection === id ? 'is-active' : ''}" data-settings-section="${id}">
+                  <strong>${label}</strong><span>${description}</span>
+                </button>
+              `).join('')}
+            </div>
+          `).join('')}
+        </nav>
+        <section class="settings-content">${renderSettingsContent(character)}</section>
+      </div>
+    </main>
   `;
 }
 
@@ -5045,7 +5433,9 @@ function renderDesktop(character?: CharacterProfile): string {
   const worldOptions = state.worlds.map(world =>
     `<option value="${escapeHtml(world.id)}" ${world.id === activeWorld().id ? 'selected' : ''}>${escapeHtml(world.name)}</option>`,
   ).join('');
-  const content = state.activeView === 'moments'
+  const content = characterPanelOpen ? renderCharacterPanel(character)
+    : settingsOpen ? renderDesktopSettingsPage(character)
+    : state.activeView === 'moments'
     ? renderMomentsPage()
     : state.activeView === 'groups'
       ? (desktopGroupChatOpen ? renderGroupChatPage() : renderGroupListPage())
@@ -5075,7 +5465,6 @@ function renderDesktop(character?: CharacterProfile): string {
       ${content}
       ${renderGroupSettingsPanel(groupSettingsMode === 'edit' ? activeGroupChat() : undefined)}
     </div>
-    ${renderSettingsCenter(character)}
   `;
 }
 
@@ -5104,7 +5493,9 @@ function renderMobile(character?: CharacterProfile): string {
     `<option value="${escapeHtml(world.id)}" ${world.id === activeWorld().id ? 'selected' : ''}>${escapeHtml(world.name)}</option>`,
   ).join('');
   let content = '';
-  if (mobileChatOpen) {
+  if (characterPanelOpen && character) {
+    content = renderCharacterPanel(character);
+  } else if (mobileChatOpen) {
     content = renderChatPane(character, true);
   } else if (mobileGroupChatOpen) {
     content = renderGroupChatPage(true);
@@ -5158,7 +5549,7 @@ function renderMobile(character?: CharacterProfile): string {
       ${renderGroupSettingsPanel(groupSettingsMode === 'edit' ? activeGroupChat() : undefined)}
     `;
   }
-  const hideNavigation = mobileChatOpen || mobileGroupChatOpen || (mobileSection === 'settings' && mobileSettingsDetail);
+  const hideNavigation = characterPanelOpen || mobileChatOpen || mobileGroupChatOpen || (mobileSection === 'settings' && mobileSettingsDetail);
   return `
     <div class="mobile-shell ${hideNavigation ? 'without-bottom-nav' : ''}">
       ${content}
@@ -5179,6 +5570,71 @@ function renderMobile(character?: CharacterProfile): string {
       `}
     </div>
   `;
+}
+
+function mainSectionTransition(from: MobileSection, to: MobileSection): UiTransitionKind {
+  if (from === to) return 'quiet';
+  const fromIndex = UI_MAIN_NAV_ORDER.indexOf(from);
+  const toIndex = UI_MAIN_NAV_ORDER.indexOf(to);
+  if (fromIndex < 0 || toIndex < 0) return 'main-forward';
+  return toIndex > fromIndex ? 'main-forward' : 'main-back';
+}
+
+function desktopViewTransition(
+  from: 'chat' | 'groups' | 'world' | 'moments',
+  to: 'chat' | 'groups' | 'world' | 'moments',
+): UiTransitionKind {
+  if (from === to) return 'quiet';
+  const order: Array<'chat' | 'groups' | 'world' | 'moments'> = ['chat', 'groups', 'world', 'moments'];
+  return order.indexOf(to) > order.indexOf(from) ? 'main-forward' : 'main-back';
+}
+
+function clearUiTransitionMarker(kind: UiTransitionKind): void {
+  const root = document.documentElement;
+  if (root.getAttribute('data-ui-transition') === kind) {
+    root.removeAttribute('data-ui-transition');
+  }
+  root.classList.remove('ui-fallback-transition');
+}
+
+function reducedMotionRequested(): boolean {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function startFallbackUiTransition(kind: UiTransitionKind): void {
+  const root = document.documentElement;
+  window.clearTimeout(fallbackTransitionTimer);
+  root.classList.add('ui-fallback-transition');
+  root.setAttribute('data-ui-transition', kind);
+  fallbackTransitionTimer = window.setTimeout(() => clearUiTransitionMarker(kind), UI_TRANSITION_MS + 90);
+}
+
+function startViewTransitionRender(kind: UiTransitionKind): boolean {
+  const transitionDocument = document as Document & {
+    startViewTransition?: (callback: () => void) => { finished: Promise<void> };
+  };
+  if (!transitionDocument.startViewTransition) return false;
+  const root = document.documentElement;
+  root.setAttribute('data-ui-transition', kind);
+  const transition = transitionDocument.startViewTransition(() => {
+    render();
+  });
+  void transition.finished.finally(() => clearUiTransitionMarker(kind));
+  return true;
+}
+
+function renderWithUiTransition(kind: UiTransitionKind): void {
+  if (kind === 'quiet' || reducedMotionRequested()) {
+    render();
+    return;
+  }
+  // 大注释：页面切换动效只包住用户主动触发的导航更新，不参与后台调度和输入框 idle 刷新。
+  // 这样可以继续复用 render() 里现有的草稿、焦点和滚动恢复流程，避免动效把手机键盘顶掉。
+  if (startViewTransitionRender(kind)) {
+    return;
+  }
+  startFallbackUiTransition(kind);
+  render();
 }
 
 function modelIsReady(): boolean {
@@ -5449,6 +5905,23 @@ function preserveScrollForNextRender(): void {
   pendingScrollRestore = captureScrollSnapshot() ?? pendingScrollRestore;
 }
 
+function closeTransientOverlaysForPageChange(): void {
+  settingsOpen = false;
+  characterPanelOpen = false;
+  groupSettingsOpen = false;
+  stickerPickerOpen = false;
+  eventComposerOpen = false;
+  momentComposerOpen = false;
+  momentsTutorialOpen = false;
+  messageProfileCharacterId = '';
+  messageProfileAnchor = null;
+  messageActionId = '';
+  groupMessageActionId = '';
+  document.querySelectorAll<HTMLDetailsElement>('.world-gear-panel[open], .world-persona-select[open]').forEach(details => {
+    details.open = false;
+  });
+}
+
 function closeMessageActionMenuInPlace(): void {
   messageActionId = '';
   document.querySelectorAll<HTMLElement>('.message.actions-open-above, .message.actions-open-below').forEach(message => {
@@ -5685,6 +6158,7 @@ export function render(): void {
     bindAuthoringUi(render);
     return;
   }
+  ensureGroupChatForSpeaker();
   if (state.activeView === 'groups' && !compactMedia.matches && !activeGroupChat()) {
     desktopGroupChatOpen = false;
   }
@@ -5723,6 +6197,10 @@ export function render(): void {
       }
     }
     if (restoredMomentInput) window.setTimeout(keepMomentComposerVisible, 80);
+    if (scrollCharacterPanelToTopAfterRender) {
+      scrollCharacterPanelToTopAfterRender = false;
+      document.querySelector<HTMLElement>('.character-panel')?.scrollTo({ top: 0, behavior: 'auto' });
+    }
     scheduleUiSessionSnapshotSave();
   });
   if (!mediaListenerInstalled) {
@@ -5733,7 +6211,7 @@ export function render(): void {
     window.history.replaceState({ ...(window.history.state ?? {}), tavernSocialRoot: true }, '');
     window.addEventListener('popstate', () => {
       if (closeMobileLayer()) {
-        render();
+        renderWithUiTransition('detail-out');
         window.setTimeout(ensureMobileHistoryForState, 0);
       }
     });
@@ -5748,7 +6226,7 @@ export function render(): void {
       }
       if (closeMobileLayer()) {
         event.preventDefault();
-        render();
+        renderWithUiTransition('detail-out');
         window.setTimeout(ensureMobileHistoryForState, 0);
       }
     });
@@ -5839,11 +6317,11 @@ function bindUi(): void {
   const closeMomentsTutorial = () => {
     localStorage.setItem(MOMENTS_TUTORIAL_KEY, 'done');
     momentsTutorialOpen = false;
-    render();
+    renderWithUiTransition('overlay-out');
   };
   document.querySelector<HTMLButtonElement>('#open-moments-tutorial')?.addEventListener('click', () => {
     momentsTutorialOpen = true;
-    render();
+    renderWithUiTransition('overlay-in');
   });
   document.querySelectorAll<HTMLButtonElement>('[data-close-moments-tutorial]').forEach(button => {
     button.addEventListener('click', closeMomentsTutorial);
@@ -5851,7 +6329,7 @@ function bindUi(): void {
   document.querySelector<HTMLButtonElement>('#open-moment-composer')?.addEventListener('click', () => {
     momentGenerationStatus = '';
     momentComposerOpen = true;
-    render();
+    renderWithUiTransition('overlay-in');
     document.querySelector<HTMLTextAreaElement>('#moment-input')?.focus();
     window.setTimeout(keepMomentComposerVisible, 80);
   });
@@ -5861,7 +6339,7 @@ function bindUi(): void {
     momentGenerationStatus = '';
     setMomentComposerKeyboardFocus(false);
     saveUiSessionSnapshot();
-    render();
+    renderWithUiTransition('overlay-out');
   };
   document.querySelector<HTMLButtonElement>('#close-moment-composer')?.addEventListener('click', closeMomentComposer);
   document.querySelector<HTMLButtonElement>('#close-moment-composer-backdrop')?.addEventListener('click', closeMomentComposer);
@@ -6051,7 +6529,7 @@ function bindUi(): void {
     setStatusText('模型连接已保存，可以开始聊天了。');
     render();
     const character = activeCharacter();
-    if (character) void generateOpeningMessage(character, render);
+    if (character) void generateOpeningMessage(character, render, privateConversationActorId(character));
   });
   document.querySelector<HTMLButtonElement>('#save-time-mode-onboarding')?.addEventListener('click', () => {
     state.companionTimeMode = selectedCompanionTimeMode('onboarding');
@@ -6080,7 +6558,7 @@ function bindUi(): void {
   const closeCardRecognition = () => {
     pendingCardRecognition = null;
     setStatusText('已取消这次角色卡导入。');
-    render();
+    renderWithUiTransition('overlay-out');
   };
   document.querySelector<HTMLButtonElement>('#cancel-card-recognition')?.addEventListener('click', closeCardRecognition);
   document.querySelector<HTMLButtonElement>('#import-original-card')?.addEventListener('click', () => {
@@ -6121,7 +6599,7 @@ function bindUi(): void {
   const closeStickerImport = () => {
     pendingStickerImport = null;
     setStatusText('已取消这次表情包导入。');
-    render();
+    renderWithUiTransition('overlay-out');
   };
   document.querySelector<HTMLButtonElement>('#cancel-sticker-import')?.addEventListener('click', closeStickerImport);
   document.querySelector<HTMLButtonElement>('#cancel-sticker-import-button')?.addEventListener('click', closeStickerImport);
@@ -6158,11 +6636,12 @@ function bindUi(): void {
       setStatusText(`已导入 ${stickers.length} 个${pending.scope === 'common' ? '通用' : '用户'}表情包。`);
     }
     pendingStickerImport = null;
-    render();
+    renderWithUiTransition('overlay-out');
   });
   const openSettings = () => {
-    momentComposerOpen = false;
+    closeTransientOverlaysForPageChange();
     momentGenerationStatus = '';
+    const fromSection = mobileSection;
     if (compactMedia.matches) {
       mobileSection = 'settings';
       mobileChatOpen = false;
@@ -6175,7 +6654,7 @@ function bindUi(): void {
     } else {
       settingsOpen = true;
     }
-    render();
+    renderWithUiTransition(compactMedia.matches ? mainSectionTransition(fromSection, 'settings') : 'detail-in');
   };
   document.querySelector<HTMLButtonElement>('#open-settings')?.addEventListener('click', openSettings);
   document.querySelector<HTMLButtonElement>('#open-settings-bottom')?.addEventListener('click', openSettings);
@@ -6184,7 +6663,8 @@ function bindUi(): void {
     if (!activeCharacter()) return;
     characterPanelOpen = true;
     characterPanelPage = page;
-    render();
+    scrollCharacterPanelToTopAfterRender = true;
+    renderWithUiTransition('detail-in');
   };
   document.querySelector<HTMLButtonElement>('#open-character-profile')?.addEventListener('click', () => openCharacterPanel('status'));
   document.querySelector<HTMLButtonElement>('#open-character-panel')?.addEventListener('click', () => openCharacterPanel('worldbook'));
@@ -6208,29 +6688,72 @@ function bindUi(): void {
         state.activeCharacterId = character.id;
         characterPanelOpen = true;
         characterPanelPage = 'status';
+        scrollCharacterPanelToTopAfterRender = true;
         closeMessageProfilePopover();
       }
-      render();
+      renderWithUiTransition('detail-in');
     });
   });
   const closeCharacterPanel = () => {
     characterPanelOpen = false;
-    render();
+    renderWithUiTransition('detail-out');
   };
   document.querySelector<HTMLButtonElement>('#close-character-panel')?.addEventListener('click', closeCharacterPanel);
   document.querySelector<HTMLButtonElement>('#close-character-panel-backdrop')?.addEventListener('click', closeCharacterPanel);
   document.querySelectorAll<HTMLButtonElement>('[data-character-panel-page]').forEach(button => {
     button.addEventListener('click', () => {
-      characterPanelPage = (button.dataset.characterPanelPage as CharacterPanelPage | undefined) ?? 'worldbook';
-      render();
+      const nextPage = button.dataset.characterPanelPage;
+      preserveScrollForNextRender();
+      characterPanelPage = nextPage === 'status' || nextPage === 'worldbook-editor' ? nextPage : 'worldbook';
+      renderWithUiTransition('detail-in');
     });
+  });
+  document.querySelector<HTMLButtonElement>('#jump-character-worldbook')?.addEventListener('click', () => {
+    characterPanelPage = 'worldbook-editor';
+    scrollCharacterPanelToTopAfterRender = true;
+    renderWithUiTransition('detail-in');
+  });
+  document.querySelector<HTMLButtonElement>('#back-character-settings')?.addEventListener('click', () => {
+    const character = activeCharacter();
+    if (character) {
+      // 大注释：世界书是独立编辑页，返回时也先吸收当前表单草稿，避免页面切回设置时丢掉刚写的条目内容。
+      setCharacterWorldBookEntryDrafts(character, readCharacterWorldBookEntryDraftsFromPanel());
+      saveState();
+    }
+    characterPanelPage = 'worldbook';
+    scrollCharacterPanelToTopAfterRender = true;
+    renderWithUiTransition('detail-out');
+  });
+  document.querySelector<HTMLButtonElement>('#save-character-worldbook')?.addEventListener('click', () => {
+    const character = activeCharacter();
+    if (!character) return;
+    setCharacterWorldBookEntryDrafts(character, readCharacterWorldBookEntryDraftsFromPanel());
+    saveState();
+    setStatusText(`${character.name} 的角色世界书已保存。`);
+    preserveScrollForNextRender();
+    render();
+  });
+  document.querySelector<HTMLButtonElement>('#regenerate-character-panel-reply-strategy')?.addEventListener('click', () => {
+    const character = activeCharacter();
+    if (!character) return;
+    // 大注释：角色页内生成回复策略时只填当前角色的私信设置，不会碰其它角色的回复策略。
+    const generated = createCharacterReplyStrategy(character);
+    character.replyStrategy = generated;
+    const replyStrategyInput = document.querySelector<HTMLTextAreaElement>('#character-panel-reply-strategy');
+    if (replyStrategyInput) replyStrategyInput.value = generated;
+    saveState();
+    setStatusText(`${character.name} 的回复策略已按人设生成，可继续微调。`);
+    preserveScrollForNextRender();
+    render();
   });
   document.querySelector<HTMLButtonElement>('#add-character-worldbook-entry')?.addEventListener('click', () => {
     const character = activeCharacter();
     if (!character) return;
+    setCharacterWorldBookEntryDrafts(character, readCharacterWorldBookEntryDraftsFromPanel());
     appendCharacterWorldBookEntry(character);
     saveState();
     setStatusText(`已为 ${character.name} 新增世界书条目。`);
+    preserveScrollForNextRender();
     render();
   });
   document.querySelectorAll<HTMLButtonElement>('[data-delete-character-worldbook-entry]').forEach(button => {
@@ -6238,9 +6761,11 @@ function bindUi(): void {
       const character = activeCharacter();
       const entryId = button.dataset.deleteCharacterWorldbookEntry;
       if (!character || !entryId) return;
+      setCharacterWorldBookEntryDrafts(character, readCharacterWorldBookEntryDraftsFromPanel());
       deleteCharacterWorldBookEntry(character, entryId);
       saveState();
       setStatusText(`已删除 ${character.name} 的这个世界书条目。`);
+      preserveScrollForNextRender();
       render();
     });
   });
@@ -6274,20 +6799,55 @@ function bindUi(): void {
     const character = activeCharacter();
     if (!character) return;
     character.profileNote = fieldValue<HTMLTextAreaElement>('#character-profile-note');
+    character.replyStrategy = fieldValue<HTMLTextAreaElement>('#character-panel-reply-strategy');
     character.relationship.affinity = Math.max(0, Math.round(finiteNumber(fieldValue('#character-affinity-free'), character.relationship.affinity)));
     character.relationship.updatedAt = Date.now();
     updateCharacterCardDetails(character, {
       name: fieldValue('#character-panel-name'),
-      settings: fieldValue<HTMLTextAreaElement>('#character-panel-worldbook'),
+      // Big comment: the private settings panel no longer exposes the main settings worldbook textarea, so saving the panel preserves the existing main settings entry.
+      settings: characterSettingsText(character),
     });
-    setCharacterWorldBookEntryDrafts(character, readCharacterWorldBookEntryDraftsFromPanel());
     saveState();
     state.activeCharacterId = character.id;
-    setStatusText(`${character.name} 的背景故事备注、好感度和世界书已保存。`);
+    setStatusText(`${character.name} 的背景故事备注和好感度已保存。`);
     render();
   });
   document.querySelector<HTMLInputElement>('#character-panel-avatar-import')?.addEventListener('change', event => {
     void handleCharacterAvatarInput(event.currentTarget as HTMLInputElement);
+  });
+  document.querySelector<HTMLInputElement>('#private-chat-background-import')?.addEventListener('change', event => {
+    const input = event.currentTarget as HTMLInputElement;
+    void (async () => {
+      const character = activeCharacter();
+      if (!character) return;
+      const image = normalizeChatBackgroundImage(await readImageInputAsDataUrl(input));
+      if (!image) {
+        setStatusText('请选择 PNG、JPG 或 WebP 图片作为私聊背景。');
+        render();
+        return;
+      }
+      const conversation = ensureConversation(character, privateConversationActorId(character));
+      conversation.backgroundImage = image;
+      conversation.updatedAt = Date.now();
+      saveState();
+      preserveScrollForNextRender();
+      setStatusText(`${character.name} 的私聊背景已更新。`);
+      render();
+    })().catch(error => {
+      setStatusText(error instanceof Error ? error.message : String(error));
+      render();
+    });
+  });
+  document.querySelector<HTMLButtonElement>('#clear-private-chat-background')?.addEventListener('click', () => {
+    const character = activeCharacter();
+    const conversation = character ? conversationFor(character.id, privateConversationActorId(character)) : undefined;
+    if (!character || !conversation) return;
+    conversation.backgroundImage = undefined;
+    conversation.updatedAt = Date.now();
+    saveState();
+    preserveScrollForNextRender();
+    setStatusText(`${character.name} 的私聊背景已恢复默认。`);
+    render();
   });
   document.querySelector<HTMLButtonElement>('#close-settings')?.addEventListener('click', () => {
     settingsOpen = false;
@@ -6300,12 +6860,13 @@ function bindUi(): void {
   document.querySelectorAll<HTMLButtonElement>('[data-settings-section]').forEach(button => {
     button.addEventListener('click', () => {
       const section = button.dataset.settingsSection as SettingsSection | undefined;
+      preserveScrollForNextRender();
       if (section) activeSettingsSection = section;
       if (compactMedia.matches) {
         mobileSettingsDetail = true;
         pushMobileHistory('settings-detail');
       }
-      render();
+      renderWithUiTransition('detail-in');
     });
   });
   document.querySelector<HTMLButtonElement>('[data-settings-back]')?.addEventListener('click', () => {
@@ -6314,7 +6875,9 @@ function bindUi(): void {
   document.querySelectorAll<HTMLButtonElement>('[data-mobile-section]').forEach(button => {
     button.addEventListener('click', () => {
       captureVisibleDraftsFromDom();
+      closeTransientOverlaysForPageChange();
       const nextSection = button.dataset.mobileSection;
+      const fromSection = mobileSection;
       mobileSection = isMobileSection(nextSection) ? nextSection : 'messages';
       setActiveView(
         mobileSection === 'moments' ? 'moments'
@@ -6338,12 +6901,14 @@ function bindUi(): void {
       mobileSettingsDetail = false;
       if (mobileSection !== 'messages') pushMobileHistory('section');
       saveUiSessionSnapshot();
-      render();
+      renderWithUiTransition(mainSectionTransition(fromSection, mobileSection));
     });
   });
   document.querySelectorAll<HTMLButtonElement>('[data-open-timeline]').forEach(button => {
     button.addEventListener('click', () => {
       captureVisibleDraftsFromDom();
+      const fromSection = mobileSection;
+      const fromView = state.activeView;
       setActiveView('world');
       mobileSection = 'world';
       activeWorldRpEventId = '';
@@ -6355,7 +6920,7 @@ function bindUi(): void {
       momentComposerOpen = false;
       if (compactMedia.matches) pushMobileHistory('section');
       saveUiSessionSnapshot();
-      render();
+      renderWithUiTransition(compactMedia.matches ? mainSectionTransition(fromSection, 'world') : desktopViewTransition(fromView, 'world'));
     });
   });
   document.querySelector<HTMLButtonElement>('[data-mobile-back]')?.addEventListener('click', () => {
@@ -6371,7 +6936,7 @@ function bindUi(): void {
       } else {
         settingsOpen = true;
       }
-      render();
+      renderWithUiTransition('detail-in');
     });
   });
   document.onkeydown = event => {
@@ -6384,23 +6949,24 @@ function bindUi(): void {
     if (event.key === 'Escape' && momentComposerOpen) {
       momentComposerOpen = false;
       momentGenerationStatus = '';
-      render();
+      renderWithUiTransition('overlay-out');
       return;
     }
     if (event.key === 'Escape' && groupSettingsOpen) {
       groupSettingsOpen = false;
       groupSettingsMode = 'create';
-      render();
+      renderWithUiTransition('overlay-out');
       return;
     }
     if (event.key === 'Escape' && settingsOpen) {
       settingsOpen = false;
-      render();
+      renderWithUiTransition('detail-out');
     }
   };
   document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach(button => {
     button.addEventListener('click', () => {
       captureVisibleDraftsFromDom();
+      const fromView = state.activeView;
       const nextView = button.dataset.view === 'moments'
         ? 'moments'
         : button.dataset.view === 'groups'
@@ -6426,12 +6992,14 @@ function bindUi(): void {
         groupSettingsMode = 'create';
       }
       saveUiSessionSnapshot();
-      render();
+      renderWithUiTransition(desktopViewTransition(fromView, nextView));
     });
   });
   document.querySelectorAll<HTMLButtonElement>('[data-open-groups]').forEach(button => {
     button.addEventListener('click', () => {
       captureVisibleDraftsFromDom();
+      const fromSection = mobileSection;
+      const fromView = state.activeView;
       setActiveView('groups');
       desktopGroupChatOpen = false;
       groupSettingsOpen = false;
@@ -6443,7 +7011,7 @@ function bindUi(): void {
         mobileSettingsDetail = false;
       }
       saveUiSessionSnapshot();
-      render();
+      renderWithUiTransition(compactMedia.matches ? mainSectionTransition(fromSection, 'messages') : desktopViewTransition(fromView, 'groups'));
     });
   });
   document.querySelectorAll<HTMLButtonElement>('[data-open-group-create]').forEach(button => {
@@ -6453,7 +7021,7 @@ function bindUi(): void {
       mobileSettingsDetail = false;
       if (compactMedia.matches) pushMobileHistory('modal');
       saveUiSessionSnapshot();
-      render();
+      renderWithUiTransition('overlay-in');
     });
   });
   document.querySelectorAll<HTMLButtonElement>('#open-group-settings, [data-open-group-settings]').forEach(button => {
@@ -6463,26 +7031,26 @@ function bindUi(): void {
       mobileSettingsDetail = false;
       if (compactMedia.matches) pushMobileHistory('modal');
       saveUiSessionSnapshot();
-      render();
+      renderWithUiTransition('overlay-in');
     });
   });
   document.querySelector<HTMLButtonElement>('#close-group-settings')?.addEventListener('click', () => {
     groupSettingsOpen = false;
     groupSettingsMode = 'create';
     saveUiSessionSnapshot();
-    render();
+    renderWithUiTransition('overlay-out');
   });
   document.querySelector<HTMLButtonElement>('#close-group-settings-backdrop')?.addEventListener('click', () => {
     groupSettingsOpen = false;
     groupSettingsMode = 'create';
     saveUiSessionSnapshot();
-    render();
+    renderWithUiTransition('overlay-out');
   });
   document.querySelector<HTMLButtonElement>('#cancel-group-settings')?.addEventListener('click', () => {
     groupSettingsOpen = false;
     groupSettingsMode = 'create';
     saveUiSessionSnapshot();
-    render();
+    renderWithUiTransition('overlay-out');
   });
   document.querySelector<HTMLButtonElement>('[data-mobile-group-back]')?.addEventListener('click', () => {
     backMobileLayer();
@@ -6493,7 +7061,7 @@ function bindUi(): void {
     groupSettingsOpen = false;
     groupSettingsMode = 'create';
     saveUiSessionSnapshot();
-    render();
+    renderWithUiTransition('detail-out');
   });
   document.querySelector<HTMLButtonElement>('[data-mobile-group-list-back]')?.addEventListener('click', () => {
     backMobileLayer();
@@ -6504,6 +7072,7 @@ function bindUi(): void {
       if (!groupChatId) return;
       captureVisibleDraftsFromDom();
       state.activeGroupChatId = groupChatId;
+      ensureGroupChatForSpeaker();
       setActiveView('groups');
       desktopGroupChatOpen = true;
       groupSettingsOpen = false;
@@ -6516,7 +7085,7 @@ function bindUi(): void {
       }
       saveState();
       saveUiSessionSnapshot();
-      render();
+      renderWithUiTransition('detail-in');
     });
   });
   document.querySelector<HTMLButtonElement>('#create-group-chat')?.addEventListener('click', () => {
@@ -6525,6 +7094,8 @@ function bindUi(): void {
       .filter(Boolean);
     const group = createGroupChat(fieldValue('#group-title-input') || undefined, participantIds);
     state.activeGroupChatId = group.id;
+    ensureGroupChatForSpeaker();
+    saveState();
     setActiveView('groups');
     desktopGroupChatOpen = false;
     if (compactMedia.matches) {
@@ -6535,13 +7106,34 @@ function bindUi(): void {
     groupSettingsOpen = false;
     groupSettingsMode = 'create';
     setVisibleStatus(`已创建群聊：${group.title}`);
-    render();
+    renderWithUiTransition('overlay-out');
   });
-  document.querySelector<HTMLSelectElement>('#group-speaker-select')?.addEventListener('change', event => {
+  document.querySelector<HTMLInputElement>('#group-chat-background-import')?.addEventListener('change', event => {
+    const input = event.currentTarget as HTMLInputElement;
+    void (async () => {
+      const chat = activeGroupChat();
+      if (!chat) return;
+      const image = normalizeChatBackgroundImage(await readImageInputAsDataUrl(input));
+      if (!image) {
+        setStatusText('请选择 PNG、JPG 或 WebP 图片作为群聊背景。');
+        render();
+        return;
+      }
+      updateGroupChat(chat.id, { backgroundImage: image });
+      preserveScrollForNextRender();
+      setStatusText(`${chat.title} 的群聊背景已更新。`);
+      render();
+    })().catch(error => {
+      setStatusText(error instanceof Error ? error.message : String(error));
+      render();
+    });
+  });
+  document.querySelector<HTMLButtonElement>('#clear-group-chat-background')?.addEventListener('click', () => {
     const chat = activeGroupChat();
     if (!chat) return;
-    const select = event.currentTarget as HTMLSelectElement;
-    updateGroupChat(chat.id, { selectedSpeakerId: select.value });
+    updateGroupChat(chat.id, { backgroundImage: '' });
+    preserveScrollForNextRender();
+    setStatusText(`${chat.title} 的群聊背景已恢复默认。`);
     render();
   });
   document.querySelector<HTMLButtonElement>('#save-group-chat')?.addEventListener('click', () => {
@@ -6553,13 +7145,13 @@ function bindUi(): void {
       ? updateGroupChat(editingChat.id, {
         title: fieldValue('#group-title-input'),
         participantCharacterIds: participantIds,
-        selectedSpeakerId: document.querySelector<HTMLSelectElement>('#group-speaker-select')?.value,
         replyAllOnUserMessage: checked('#group-reply-all-on-user-message'),
         allowModelInitiatedMessages: checked('#group-allow-model-initiated-messages'),
       })
       : createGroupChat(fieldValue('#group-title-input') || undefined, participantIds);
     if (saved) {
       state.activeGroupChatId = saved.id;
+      ensureGroupChatForSpeaker();
       setActiveView('groups');
       desktopGroupChatOpen = Boolean(editingChat);
       if (compactMedia.matches) {
@@ -6573,7 +7165,7 @@ function bindUi(): void {
       saveUiSessionSnapshot();
       setVisibleStatus(`${editingChat ? '群聊已保存' : '已创建群聊'}：${saved.title}`);
     }
-    render();
+    renderWithUiTransition(editingChat ? 'overlay-out' : 'detail-in');
   });
   document.querySelector<HTMLButtonElement>('#clear-group-messages')?.addEventListener('click', () => {
     const chat = activeGroupChat();
@@ -6616,7 +7208,7 @@ function bindUi(): void {
       saveUiSessionSnapshot({ captureDom: false });
     }
     setVisibleStatus(result.ok ? `已解散群聊：${title}` : result.reason ?? '解散群聊失败。');
-    render();
+    renderWithUiTransition('detail-out');
   });
   const groupInput = document.querySelector<HTMLTextAreaElement>('#group-message-input');
   if (groupInput) {
@@ -6777,6 +7369,9 @@ function bindUi(): void {
   });
   document.querySelectorAll<HTMLSelectElement>('#world-select, [data-world-select]').forEach(select => {
     select.addEventListener('change', event => {
+      captureVisibleDraftsFromDom();
+      preserveScrollForNextRender();
+      saveUiSessionSnapshot();
       setActiveWorld((event.currentTarget as HTMLSelectElement).value);
       desktopGroupChatOpen = false;
       mobileChatOpen = false;
@@ -6879,6 +7474,7 @@ function bindUi(): void {
       const target = event.currentTarget as HTMLInputElement;
       const preferGroupSearch = Boolean(target.closest('.group-list-page'));
       contactQuery = target.value;
+      preserveScrollForNextRender();
       render();
       const inputs = Array.from(document.querySelectorAll<HTMLInputElement>('#contact-search'));
       const input = inputs.find(item => Boolean(item.closest('.group-list-page')) === preferGroupSearch) ?? inputs[0];
@@ -6959,6 +7555,11 @@ function bindUi(): void {
     proactiveManagerCharacterId = (event.currentTarget as HTMLSelectElement).value;
     render();
   });
+  document.querySelector<HTMLSelectElement>('#reply-strategy-character-select')?.addEventListener('change', event => {
+    replyStrategyManagerCharacterId = (event.currentTarget as HTMLSelectElement).value;
+    preserveScrollForNextRender();
+    render();
+  });
   const bindStickerImport = (
     selector: string,
     scope: StickerLibraryScope,
@@ -7016,6 +7617,7 @@ function bindUi(): void {
     const world = activeWorld();
     world.name = fieldValue('#world-name') || world.name;
     world.description = fieldValue('#world-description');
+    world.worldLore = fieldValue('#world-lore');
     world.currentLocation = fieldValue('#world-current-location') || world.currentLocation;
     world.sceneAtmosphere = fieldValue('#world-scene-atmosphere') || world.sceneAtmosphere;
     world.sceneSummary = fieldValue('#world-scene-summary');
@@ -7028,6 +7630,7 @@ function bindUi(): void {
     const world = activeWorld();
     world.name = fieldValue('#workbench-world-name') || world.name;
     world.description = fieldValue('#workbench-world-description');
+    world.worldLore = fieldValue('#workbench-world-lore');
     world.currentLocation = fieldValue('#workbench-world-current-location') || world.currentLocation;
     world.sceneAtmosphere = fieldValue('#workbench-world-scene-atmosphere') || world.sceneAtmosphere;
     world.sceneSummary = fieldValue('#workbench-world-scene-summary');
@@ -7073,11 +7676,12 @@ function bindUi(): void {
     if (!character) return;
     updateCharacterCardDetails(character, {
       name: fieldValue('#character-name'),
-      settings: fieldValue<HTMLTextAreaElement>('#character-settings-text'),
+      // Big comment: the settings center now only edits the card name; the main settings worldbook body stays in the dedicated character worldbook editor.
+      settings: characterSettingsText(character),
     });
     state.activeCharacterId = character.id;
     saveState();
-    setStatusText(`${character.name} 的卡名和设定世界书已保存。`);
+    setStatusText(`${character.name} 的卡名已保存。`);
     render();
   });
   document.querySelector<HTMLButtonElement>('#delete-character')?.addEventListener('click', () => {
@@ -7092,6 +7696,7 @@ function bindUi(): void {
     relationshipPairACharacterId = '';
     relationshipPairBCharacterId = '';
     proactiveManagerCharacterId = '';
+    replyStrategyManagerCharacterId = '';
     if (compactMedia.matches) {
       mobileChatOpen = false;
       mobileGroupChatOpen = false;
@@ -7115,7 +7720,7 @@ function bindUi(): void {
     setStatusText('模型设置已保存。');
     render();
     const character = activeCharacter();
-    if (character) void generateOpeningMessage(character, render);
+    if (character) void generateOpeningMessage(character, render, privateConversationActorId(character));
   });
   document.querySelector<HTMLButtonElement>('#fetch-model-list')?.addEventListener('click', () => {
     if (modelListLoading) return;
@@ -7476,6 +8081,7 @@ function bindUi(): void {
       preset.regexScripts = preset.regexScripts.filter(script => script.id !== id);
       preset.regexScriptCount = preset.regexScripts.length;
       saveState();
+      preserveScrollForNextRender();
       render();
     });
   });
@@ -7485,6 +8091,7 @@ function bindUi(): void {
     resetPromptPresetDefaults(preset);
     saveState();
     setStatusText('已恢复当前预设的默认开关。');
+    preserveScrollForNextRender();
     render();
   });
   document.querySelector<HTMLButtonElement>('#delete-prompt-preset')?.addEventListener('click', () => {
@@ -7510,6 +8117,25 @@ function bindUi(): void {
     state.worldPromptPresetEnabled = state.worldPromptPresetEnabled && Boolean(state.activeWorldPromptPresetId);
     saveState();
     setStatusText(`已删除提示词预设：${preset.name}`);
+    preserveScrollForNextRender();
+    render();
+  });
+  document.querySelector<HTMLButtonElement>('#save-character-reply-strategy')?.addEventListener('click', () => {
+    const character = replyStrategyManagerCharacter();
+    if (!character) return;
+    character.replyStrategy = fieldValue<HTMLTextAreaElement>('#character-reply-strategy');
+    saveState();
+    setStatusText(`${character.name} 的回复策略已保存，不影响其他角色。`);
+    preserveScrollForNextRender();
+    render();
+  });
+  document.querySelector<HTMLButtonElement>('#regenerate-character-reply-strategy')?.addEventListener('click', () => {
+    const character = replyStrategyManagerCharacter();
+    if (!character) return;
+    character.replyStrategy = createCharacterReplyStrategy(character);
+    saveState();
+    setStatusText(`${character.name} 的回复策略已按人设生成，可继续微调。`);
+    preserveScrollForNextRender();
     render();
   });
   document.querySelector<HTMLButtonElement>('#save-chat-reply-mode')?.addEventListener('click', () => {
@@ -7521,6 +8147,7 @@ function bindUi(): void {
     state.userPersona = world.userPersona;
     state.chatReplyMode = selected === 'manual' ? 'manual' : 'auto';
     state.enterToSend = checked('#enter-to-send');
+    state.chatFontScale = normalizeChatFontScale(Number(fieldValue<HTMLInputElement>('#chat-font-scale') || state.chatFontScale));
     state.companionTimeMode = selectedCompanionTimeMode('settings');
     state.virtualTimeMinutes = companionTimeMinutesFromFields('settings');
     localStorage.setItem(CHAT_REPLY_MODE_ONBOARDING_KEY, 'done');
@@ -7534,7 +8161,16 @@ function bindUi(): void {
       ? `虚拟时间 ${formatClockMinutes(state.virtualTimeMinutes)}`
       : '系统时间';
     setStatusText(`聊天与 user 人设已保存：${replyModeText}，${enterText}，${timeModeText}。`);
+    preserveScrollForNextRender();
     render();
+  });
+  document.querySelector<HTMLInputElement>('#chat-font-scale')?.addEventListener('input', event => {
+    const input = event.currentTarget as HTMLInputElement;
+    const preview = document.querySelector<HTMLElement>('.chat-font-preview');
+    const label = preview?.querySelector<HTMLElement>('strong');
+    const normalized = normalizeChatFontScale(Number(input.value));
+    if (preview) preview.style.setProperty('--chat-font-scale', String(normalized));
+    if (label) label.textContent = fontScaleLabel(normalized);
   });
   document.querySelector<HTMLButtonElement>('#save-relationship')?.addEventListener('click', () => {
     const character = relationshipManagerCharacter();
@@ -7579,6 +8215,7 @@ function bindUi(): void {
     }
     saveState();
     setStatusText(`${character.name} 的关系状态已保存，并会参与聊天与主动消息节奏。`);
+    preserveScrollForNextRender();
     render();
   });
   document.querySelector<HTMLButtonElement>('#save-character-relationship')?.addEventListener('click', () => {
@@ -7636,6 +8273,7 @@ function bindUi(): void {
     }
     saveState();
     setStatusText(`${first.name} 与 ${second.name} 的双向关系已保存。`);
+    preserveScrollForNextRender();
     render();
   });
   document.querySelector<HTMLButtonElement>('#save-world-interactions')?.addEventListener('click', () => {
@@ -7645,12 +8283,14 @@ function bindUi(): void {
     setStatusText(state.worldInteractionHighSimulation
       ? '热闹世界已开启，角色之间会更频繁地产生自然互动。'
       : '角色互动已切回克制自然。');
+    preserveScrollForNextRender();
     render();
   });
   document.querySelectorAll<HTMLButtonElement>('[data-apply-relationship-suggestion]').forEach(button => {
     button.addEventListener('click', () => {
       const result = applyCharacterRelationshipSuggestion(button.dataset.applyRelationshipSuggestion ?? '');
       setStatusText(result.ok ? '关系阶段建议已应用，可在时间线里撤销。' : result.reason ?? '应用失败。');
+      preserveScrollForNextRender();
       render();
     });
   });
@@ -7658,6 +8298,7 @@ function bindUi(): void {
     button.addEventListener('click', () => {
       const result = ignoreCharacterRelationshipSuggestion(button.dataset.ignoreRelationshipSuggestion ?? '');
       setStatusText(result.ok ? '已忽略这条关系阶段建议。' : result.reason ?? '忽略失败。');
+      preserveScrollForNextRender();
       render();
     });
   });
@@ -7776,29 +8417,35 @@ function bindUi(): void {
     character.autoMessage.pacingStrategy = createAutoMessagePacingStrategy(character);
     saveState();
     setStatusText('已按当前人设重建主动消息节奏策略。');
+    preserveScrollForNextRender();
     render();
   });
   document.querySelector<HTMLButtonElement>('#run-auto-check')?.addEventListener('click', () => {
     setStatusText('正在检查主动消息、自动动态和岛上事件…');
+    preserveScrollForNextRender();
     render();
     void runAutoMessageCheckNow(render)
       .then(() => {
         setStatusText('已完成一次主动检查；如果没有新内容，说明当前未到触发条件或仍在安静时段。');
-        render();
+        preserveScrollForNextRender();
+        renderWithUiTransition('detail-in');
       })
       .catch(error => {
         setStatusText(error instanceof Error ? `主动检查失败：${error.message}` : String(error));
+        preserveScrollForNextRender();
         render();
       });
   });
   document.querySelector<HTMLButtonElement>('#restore-auto-pacing')?.addEventListener('click', () => {
     const character = proactiveManagerCharacter();
     if (character) applyResetDecision(character, 'restore');
+    preserveScrollForNextRender();
     render();
   });
   document.querySelector<HTMLButtonElement>('#keep-auto-pacing')?.addEventListener('click', () => {
     const character = proactiveManagerCharacter();
     if (character) applyResetDecision(character, 'keep');
+    preserveScrollForNextRender();
     render();
   });
   document.querySelector<HTMLButtonElement>('#request-notification')?.addEventListener('click', () => {
@@ -7852,7 +8499,7 @@ function bindUi(): void {
   if (messageInput) {
     resizeComposerTextarea(messageInput);
     messageInput.addEventListener('input', event => {
-      const character = activeCharacter();
+      const character = activePrivateChatTarget();
       const textarea = event.currentTarget as HTMLTextAreaElement;
       noteComposerEditedAfterSubmit(character, textarea.value);
       setMessageDraft(character, textarea.value);
@@ -7868,14 +8515,27 @@ function bindUi(): void {
     messageInput.addEventListener('beforeinput', event => requestTextareaFormSubmitFromBeforeInput(messageInput, event));
   }
   document.querySelector<HTMLSelectElement>('#private-chat-target-select')?.addEventListener('change', event => {
-    openPrivateChatByCharacterId((event.currentTarget as HTMLSelectElement).value || '', { pushHistory: true });
+    captureVisibleDraftsFromDom();
+    const selectedId = (event.currentTarget as HTMLSelectElement).value || 'user';
+    const nextActorId = setCommunicationActor(activeWorld().id, selectedId);
+    closeMessageDetailAfterCommunicationIdentityChange();
+    ensureCommunicationIdentityViewState();
+    ensureGroupChatForSpeaker();
+    saveUiSessionSnapshot({ captureDom: false });
+    const nextCharacter = state.characters.find(character => character.id === nextActorId);
+    setStatusText(nextCharacter ? `已切换为 ${nextCharacter.name} 通讯身份。` : '已切换为 user 通讯身份。');
+    renderWithUiTransition('detail-out');
   });
   document.querySelector<HTMLFormElement>('#composer')?.addEventListener('submit', event => {
     event.preventDefault();
-    const character = activeCharacter();
+    const character = activePrivateChatTarget();
     const input = document.querySelector<HTMLTextAreaElement>('#message-input');
     const content = input?.value ?? messageDraftFor(character);
     if (!content.trim()) return;
+    if (!character) {
+      setStatusText('请先选择一个可以私聊的联系人。');
+      return;
+    }
     if (isReplying()) {
       setStatusText('上一条消息仍在回复中。');
       return;
@@ -7917,6 +8577,7 @@ function bindUi(): void {
   document.querySelectorAll<HTMLButtonElement>('[data-world-rp-render-mode]').forEach(button => {
     button.addEventListener('click', () => {
       worldRpRenderMode = button.dataset.worldRpRenderMode === 'bubble' ? 'bubble' : 'narration';
+      preserveScrollForNextRender();
       saveUiSessionSnapshot();
       render();
     });
@@ -7927,13 +8588,14 @@ function bindUi(): void {
       const worldEvent = state.worldEvents.find(event => event.id === eventId && event.worldId === activeWorld().id);
       if (!worldEvent) return;
       captureVisibleDraftsFromDom();
+      closeTransientOverlaysForPageChange();
       setActiveView('world');
       mobileSection = 'world';
       activeWorldRpEventId = worldEvent.id;
       worldRpInputDraft = '';
       saveUiSessionSnapshot({ captureDom: false });
       requestChatStickToBottom();
-      render();
+      renderWithUiTransition('detail-in');
     });
   });
   document.querySelector<HTMLButtonElement>('[data-close-world-event-rp]')?.addEventListener('click', () => {
@@ -7941,7 +8603,7 @@ function bindUi(): void {
     worldRpInputDraft = '';
     worldRpMessageEditId = '';
     saveUiSessionSnapshot({ captureDom: false });
-    render();
+    renderWithUiTransition('detail-out');
   });
   document.querySelector<HTMLButtonElement>('[data-end-world-rp-event]')?.addEventListener('click', buttonEvent => {
     const button = buttonEvent.currentTarget as HTMLButtonElement;
@@ -7959,12 +8621,12 @@ function bindUi(): void {
     } catch (error) {
       setStatusText(error instanceof Error ? error.message : String(error));
     }
-    render();
+    renderWithUiTransition('detail-out');
   });
   document.querySelectorAll<HTMLButtonElement>('[data-edit-world-rp-message]').forEach(button => {
     button.addEventListener('click', () => {
       worldRpMessageEditId = button.dataset.editWorldRpMessage ?? '';
-      render();
+      renderWithUiTransition('overlay-in');
       window.requestAnimationFrame(() => {
         const input = document.querySelector<HTMLTextAreaElement>('#world-rp-message-edit-input');
         input?.focus();
@@ -7974,7 +8636,7 @@ function bindUi(): void {
   });
   const closeWorldRpMessageEdit = () => {
     worldRpMessageEditId = '';
-    render();
+    renderWithUiTransition('overlay-out');
   };
   document.querySelector<HTMLButtonElement>('#close-world-rp-message-edit')?.addEventListener('click', closeWorldRpMessageEdit);
   document.querySelector<HTMLButtonElement>('#close-world-rp-message-edit-backdrop')?.addEventListener('click', closeWorldRpMessageEdit);
@@ -7986,7 +8648,7 @@ function bindUi(): void {
       setStatusText('世界 RP 记录已修改。');
     }
     worldRpMessageEditId = '';
-    render();
+    renderWithUiTransition('overlay-out');
   });
   document.querySelector<HTMLFormElement>('#world-rp-composer')?.addEventListener('submit', event => {
     event.preventDefault();
@@ -8099,7 +8761,7 @@ function bindUi(): void {
       messageDeleteChoiceId = button.dataset.deleteMessageMenu ?? '';
       messageActionId = '';
       preserveScrollForNextRender();
-      render();
+      renderWithUiTransition('overlay-in');
     });
   });
   document.querySelectorAll<HTMLButtonElement>('[data-edit-message]').forEach(button => {
@@ -8107,7 +8769,7 @@ function bindUi(): void {
       messageEditId = button.dataset.editMessage ?? '';
       messageActionId = '';
       preserveScrollForNextRender();
-      render();
+      renderWithUiTransition('overlay-in');
       window.requestAnimationFrame(() => {
         const input = document.querySelector<HTMLTextAreaElement>('#message-edit-input');
         input?.focus();
@@ -8146,7 +8808,7 @@ function bindUi(): void {
         top: Math.min(Math.max(76, rect.top - 8), window.innerHeight - 220),
       };
       messageActionId = '';
-      render();
+      renderWithUiTransition('overlay-in');
     });
   });
   document.querySelectorAll<HTMLButtonElement>('[data-close-message-profile]').forEach(button => {
@@ -8158,7 +8820,7 @@ function bindUi(): void {
   });
   const closeMessageEdit = () => {
     messageEditId = '';
-    render();
+    renderWithUiTransition('overlay-out');
   };
   document.querySelector<HTMLButtonElement>('#close-message-edit')?.addEventListener('click', closeMessageEdit);
   document.querySelector<HTMLButtonElement>('#close-message-edit-backdrop')?.addEventListener('click', closeMessageEdit);
@@ -8171,7 +8833,7 @@ function bindUi(): void {
   });
   const closeMessageChoice = () => {
     messageDeleteChoiceId = '';
-    render();
+    renderWithUiTransition('overlay-out');
   };
   document.querySelector<HTMLButtonElement>('#cancel-message-choice')?.addEventListener('click', closeMessageChoice);
   document.querySelector<HTMLButtonElement>('#close-message-choice')?.addEventListener('click', closeMessageChoice);
@@ -8182,7 +8844,7 @@ function bindUi(): void {
       setStatusText('消息已彻底删除，后续不会提供给 AI。');
     }
     messageDeleteChoiceId = '';
-    render();
+    renderWithUiTransition('overlay-out');
   });
   document.querySelector<HTMLButtonElement>('#confirm-recall-message')?.addEventListener('click', () => {
     const messageId = messageDeleteChoiceId;
@@ -8191,7 +8853,7 @@ function bindUi(): void {
       setStatusText('消息已撤回，聊天中保留痕迹。');
     }
     messageDeleteChoiceId = '';
-    render();
+    renderWithUiTransition('overlay-out');
   });
   document.querySelectorAll<HTMLElement>('[data-message-id]').forEach(message => {
     let longPressTimer: ReturnType<typeof setTimeout> | undefined;
@@ -8306,6 +8968,7 @@ function bindUi(): void {
     momentVisibilityMode = (event.currentTarget as HTMLSelectElement).value as MomentVisibilityMode;
     if (momentVisibilityMode === 'private') momentVisibilityPickerOpenFor = null;
     scheduleUiSessionSnapshotSave();
+    preserveScrollForNextRender();
     render();
   });
   document.querySelectorAll<HTMLButtonElement>('[data-moment-visibility-picker]').forEach(button => {
@@ -8313,6 +8976,7 @@ function bindUi(): void {
       const mode = button.dataset.momentVisibilityPicker === 'blocked' ? 'blocked' : 'specific';
       momentVisibilityPickerOpenFor = momentVisibilityPickerOpenFor === mode ? null : mode;
       scheduleUiSessionSnapshotSave();
+      preserveScrollForNextRender();
       render();
     });
   });
@@ -8322,6 +8986,7 @@ function bindUi(): void {
       if (target.checked) momentVisibilityCharacterIds.add(target.value);
       else momentVisibilityCharacterIds.delete(target.value);
       scheduleUiSessionSnapshotSave();
+      preserveScrollForNextRender();
       render();
     });
   });
@@ -8331,6 +8996,7 @@ function bindUi(): void {
       if (target.checked) momentVisibilityBlockedIds.add(target.value);
       else momentVisibilityBlockedIds.delete(target.value);
       scheduleUiSessionSnapshotSave();
+      preserveScrollForNextRender();
       render();
     });
   });
@@ -8376,14 +9042,6 @@ function bindUi(): void {
       scheduleUiSessionSnapshotSave();
     });
   });
-  document.querySelectorAll<HTMLSelectElement>('[data-comment-author-select]').forEach(select => {
-    select.addEventListener('change', event => {
-      const target = event.currentTarget as HTMLSelectElement;
-      const momentId = target.dataset.commentAuthorSelect ?? '';
-      if (momentId) momentCommentAuthorDrafts.set(momentId, target.value || 'user');
-      scheduleUiSessionSnapshotSave();
-    });
-  });
   document.querySelectorAll<HTMLElement>('[data-moment-comment-tap]').forEach(comment => {
     let longPressTimer: number | undefined;
     const momentId = comment.dataset.momentCommentMoment ?? '';
@@ -8395,18 +9053,21 @@ function bindUi(): void {
     const openMenu = () => {
       clearLongPress();
       openMomentCommentActionMenu(momentId, commentId);
+      preserveScrollForNextRender();
       render();
     };
     comment.addEventListener('click', event => {
       if ((event.target as HTMLElement).closest('button, select, option')) return;
       if (Date.now() < momentCommentSuppressTapUntil) return;
       setMomentCommentReplyTarget(momentId, commentId);
+      preserveScrollForNextRender();
       render();
     });
     comment.addEventListener('keydown', event => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
       event.preventDefault();
       setMomentCommentReplyTarget(momentId, commentId);
+      preserveScrollForNextRender();
       render();
     });
     comment.addEventListener('pointerdown', event => {
@@ -8427,6 +9088,7 @@ function bindUi(): void {
       const target = event.target as HTMLElement | null;
       if (target?.closest('.moment-comment-menu, [data-moment-comment-menu]')) return;
       momentCommentActionMenu = null;
+      preserveScrollForNextRender();
       render();
     }, { capture: true, once: true });
   }
@@ -8437,6 +9099,7 @@ function bindUi(): void {
         momentCommentReplyTargetDrafts.delete(momentId);
         clearMomentCommentActionMenu(momentId);
         focusMomentCommentAfterRenderId = momentId;
+        preserveScrollForNextRender();
         saveUiSessionSnapshot({ captureDom: true });
       }
       render();
@@ -8449,6 +9112,7 @@ function bindUi(): void {
       if (!content.trim()) {
         momentGenerationStatus = '动态至少要写一个字。';
         setVisibleStatus(momentGenerationStatus);
+        preserveScrollForNextRender();
         render();
         return;
       }
@@ -8469,33 +9133,44 @@ function bindUi(): void {
       momentComposerOpen = false;
       setMomentComposerKeyboardFocus(false);
       setVisibleStatus(momentGenerationStatus);
+      preserveScrollForNextRender();
       render();
       if (hasVisibleCharacters) void inviteInterestedCharacters(moment.id);
       return;
     } catch (error) {
       setVisibleStatus(error instanceof Error ? error.message : String(error));
     }
+    preserveScrollForNextRender();
     render();
   });
   document.querySelector<HTMLButtonElement>('#generate-moment')?.addEventListener('click', () => {
+    const selectedAuthorId = document.querySelector<HTMLSelectElement>('#moment-author-select')?.value || momentComposerAuthorId;
+    momentComposerAuthorId = selectedAuthorId || 'user';
+    momentComposerTextDraft = document.querySelector<HTMLTextAreaElement>('#moment-input')?.value ?? momentComposerTextDraft;
     const character = state.characters.find(item =>
       item.id === momentComposerAuthorId && item.worldId === activeWorld().id,
     );
     if (!character) {
+      momentComposerOpen = true;
       momentGenerationStatus = '请先在发布身份里选择一个角色。';
       setVisibleStatus(momentGenerationStatus);
+      preserveScrollForNextRender();
       render();
       return;
     }
     if (!state.modelConfig.apiUrl.trim() || !state.modelConfig.model.trim()) {
+      momentComposerOpen = true;
       momentGenerationStatus = '还没有配置模型，请先到“设置 -> 模型连接”填写 API 地址和模型名称。';
       setVisibleStatus(momentGenerationStatus);
+      preserveScrollForNextRender();
       render();
       return;
     }
     momentGenerating = true;
+    momentComposerOpen = true;
     momentGenerationStatus = `正在让 ${character.name} 生成动态草稿…`;
     setVisibleStatus(momentGenerationStatus);
+    preserveScrollForNextRender();
     render();
     void generateCharacterMomentDraft(character)
       .then(content => {
@@ -8503,15 +9178,18 @@ function bindUi(): void {
         momentGenerationStatus = `${character.name} 已写好草稿，确认后点“发布动态”。`;
         saveUiSessionSnapshot({ captureDom: false });
         setVisibleStatus(momentGenerationStatus);
+        preserveScrollForNextRender();
         render();
       })
       .catch(error => {
         momentGenerationStatus = error instanceof Error ? error.message : String(error);
         setVisibleStatus(momentGenerationStatus);
+        preserveScrollForNextRender();
         render();
       })
       .finally(() => {
         momentGenerating = false;
+        preserveScrollForNextRender();
         render();
       });
   });
@@ -8521,12 +9199,9 @@ function bindUi(): void {
       const momentId = form.dataset.commentForm ?? '';
       try {
         const input = document.querySelector<HTMLInputElement>(`[data-comment-input="${momentId}"]`);
-        const authorId = document.querySelector<HTMLSelectElement>(
-          `[data-comment-author-select="${momentId}"]`,
-        )?.value ?? momentCommentAuthorDrafts.get(momentId) ?? 'user';
-        const commentCharacter = authorId === 'user'
-          ? undefined
-          : state.characters.find(item => item.id === authorId && item.worldId === activeWorld().id);
+        const moment = state.moments.find(item => item.id === momentId && item.worldId === activeWorld().id);
+        if (!moment) throw new Error('找不到这条动态。');
+        const commentCharacter = momentCommentCharacterFromCommunicationIdentity(moment);
         const replyToCommentId = momentCommentReplyTargetDrafts.get(momentId);
         const comment = addMomentComment(
           momentId,
@@ -8539,16 +9214,16 @@ function bindUi(): void {
         momentCommentDrafts.delete(momentId);
         momentCommentReplyTargetDrafts.delete(momentId);
         clearMomentCommentActionMenu(momentId);
-        momentCommentAuthorDrafts.set(momentId, authorId || 'user');
-        const moment = state.moments.find(item => item.id === momentId);
         const willReply = Boolean(moment?.characterId && !commentCharacter && modelIsReady());
         setStatusText(willReply ? '评论已发送，对方正在回复…' : '评论已发送。');
+        preserveScrollForNextRender();
         render();
         if (willReply) void replyToUserComment(momentId, comment.id);
         return;
       } catch (error) {
         setStatusText(error instanceof Error ? error.message : String(error));
       }
+      preserveScrollForNextRender();
       render();
     });
   });
@@ -8565,12 +9240,14 @@ function bindUi(): void {
       if (!moment || !character) return;
       if (!state.modelConfig.apiUrl.trim() || !state.modelConfig.model.trim()) {
         setStatusText('请先到“设置 -> 模型连接”配置模型，再让角色评论。');
+        preserveScrollForNextRender();
         render();
         return;
       }
       commentingMomentId = momentId;
       momentGenerationStatus = `正在生成 ${character.name} 的评论…`;
       setStatusText(momentGenerationStatus);
+      preserveScrollForNextRender();
       render();
       void generateCharacterComment(moment, character)
         .then(() => {
@@ -8583,8 +9260,9 @@ function bindUi(): void {
         })
         .finally(() => {
           commentingMomentId = '';
+          preserveScrollForNextRender();
           render();
-      });
+        });
     });
   });
   document.querySelectorAll<HTMLButtonElement>('[data-open-comment-character-reply]').forEach(button => {
@@ -8593,6 +9271,7 @@ function bindUi(): void {
       const momentId = button.dataset.openCommentCharacterReplyMoment ?? '';
       const commentId = button.dataset.openCommentCharacterReply ?? '';
       openMomentCommentActionMenu(momentId, commentId, true);
+      preserveScrollForNextRender();
       render();
     });
   });
@@ -8611,6 +9290,7 @@ function bindUi(): void {
       if (!moment || !character || !commentId) return;
       if (!state.modelConfig.apiUrl.trim() || !state.modelConfig.model.trim()) {
         setStatusText('请先到“设置 -> 模型连接”配置模型，再让角色回复评论。');
+        preserveScrollForNextRender();
         render();
         return;
       }
@@ -8618,6 +9298,7 @@ function bindUi(): void {
       momentGenerationStatus = `正在生成 ${character.name} 的回复…`;
       setStatusText(momentGenerationStatus);
       clearMomentCommentActionMenu(momentId, commentId);
+      preserveScrollForNextRender();
       render();
       void generateCharacterComment(moment, character, { targetCommentId: commentId })
         .then(() => {
@@ -8630,6 +9311,7 @@ function bindUi(): void {
         })
         .finally(() => {
           commentingMomentId = '';
+          preserveScrollForNextRender();
           render();
         });
     });
@@ -8645,6 +9327,7 @@ function bindUi(): void {
       if (!moment || !character || !commentId) return;
       if (!state.modelConfig.apiUrl.trim() || !state.modelConfig.model.trim()) {
         setStatusText('请先到“设置 -> 模型连接”配置模型，再让楼主回复评论。');
+        preserveScrollForNextRender();
         render();
         return;
       }
@@ -8652,6 +9335,7 @@ function bindUi(): void {
       momentGenerationStatus = `正在让 ${character.name} 回复这条评论…`;
       setStatusText(momentGenerationStatus);
       clearMomentCommentActionMenu(momentId, commentId);
+      preserveScrollForNextRender();
       render();
       void generateCharacterComment(moment, character, { countBudget: true, targetCommentId: commentId })
         .then(() => {
@@ -8664,6 +9348,7 @@ function bindUi(): void {
         })
         .finally(() => {
           autoCommentingMomentIds.delete(momentId);
+          preserveScrollForNextRender();
           render();
         });
     });
@@ -8677,12 +9362,14 @@ function bindUi(): void {
         clearMomentCommentActionMenu(momentId);
         setStatusText('评论已删除。');
       }
+      preserveScrollForNextRender();
       render();
     });
   });
   document.querySelectorAll<HTMLButtonElement>('[data-moment-id]').forEach(button => {
     button.addEventListener('click', () => {
       if (deleteMoment(button.dataset.momentId ?? '')) setStatusText('动态已删除。');
+      preserveScrollForNextRender();
       render();
     });
   });
@@ -8691,7 +9378,7 @@ function bindUi(): void {
     eventComposerOpen = false;
     preserveScrollForNextRender();
     saveUiSessionSnapshot();
-    render();
+    renderWithUiTransition('overlay-out');
   };
   document.querySelector<HTMLButtonElement>('#close-event-composer')?.addEventListener('click', closeEventComposer);
   document.querySelector<HTMLButtonElement>('#close-event-composer-backdrop')?.addEventListener('click', closeEventComposer);
@@ -8704,12 +9391,42 @@ function bindUi(): void {
       scheduleUiSessionSnapshotSave();
     });
   });
+  document.querySelectorAll<HTMLButtonElement>('[data-event-composer-mode]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      captureEventComposerDraftFromDom();
+      eventComposerDraft.mode = button.dataset.eventComposerMode === 'manual' ? 'manual' : 'auto';
+      preserveScrollForNextRender();
+      saveUiSessionSnapshot({ captureDom: false });
+      render();
+    });
+  });
   document.querySelector<HTMLFormElement>('#event-composer')?.addEventListener('submit', event => {
     event.preventDefault();
     captureEventComposerDraftFromDom();
     const leadActor = eventComposerLeadActor();
     const participantIds = eventComposerParticipantIds();
     try {
+      if (eventComposerDraft.mode === 'manual') {
+        const worldEvent = createWorldEvent({
+          title: eventComposerDraft.title,
+          description: eventComposerDraft.description,
+          participantCharacterIds: participantIds,
+          leadActor,
+          affinityDelta: finiteNumber(eventComposerDraft.affinityDelta, 0),
+          type: 'daily',
+          source: 'manual',
+        });
+        activeWorldRpEventId = worldEvent.id;
+        eventComposerOpen = false;
+        eventComposerDraft = { mode: 'auto', title: '', description: '', participantIds: [], affinityDelta: '0' };
+        saveUiSessionSnapshot();
+        setStatusText(`手写事件已创建：${worldEvent.title}`);
+        preserveScrollForNextRender();
+        render();
+        return;
+      }
       if (!modelIsReady()) {
         setStatusText('请先到“设置 -> 模型连接”配置模型，再生成生活线索。');
         preserveScrollForNextRender();
@@ -8727,7 +9444,7 @@ function bindUi(): void {
         .then(worldEvent => {
           activeWorldRpEventId = worldEvent.id;
           eventComposerOpen = false;
-          eventComposerDraft = { title: '', description: '', participantIds: [], affinityDelta: '0' };
+          eventComposerDraft = { mode: 'auto', title: '', description: '', participantIds: [], affinityDelta: '0' };
           saveUiSessionSnapshot();
           setStatusText(`生活线索已生成：${worldEvent.title}`);
         })
@@ -8737,7 +9454,7 @@ function bindUi(): void {
         .finally(() => {
           eventGenerating = false;
           preserveScrollForNextRender();
-          render();
+          renderWithUiTransition(eventComposerOpen ? 'quiet' : 'detail-in');
         });
       return;
     } catch (error) {
@@ -8749,8 +9466,17 @@ function bindUi(): void {
     openEventComposer();
   });
   document.querySelectorAll<HTMLButtonElement>('[data-open-event-composer]').forEach(button => {
-    button.addEventListener('click', () => {
-      openEventComposer();
+    button.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      openEventComposer(button.dataset.openEventComposerMode === 'manual' ? 'manual' : 'auto');
+    });
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-open-event-composer-mode]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      openEventComposer(button.dataset.openEventComposerMode === 'manual' ? 'manual' : 'auto');
     });
   });
   document.querySelectorAll<HTMLButtonElement>('[data-event-choice]').forEach(button => {
@@ -8759,11 +9485,13 @@ function bindUi(): void {
       const choiceId = button.dataset.eventChoiceId ?? '';
       if (!modelIsReady()) {
         setStatusText('请先到“设置 -> 模型连接”配置模型，再生成事件后续。');
+        preserveScrollForNextRender();
         render();
         return;
       }
       eventResolvingId = eventId;
       setStatusText('正在生成这条分支的后续结果…');
+      preserveScrollForNextRender();
       render();
       void resolveWorldEventChoice(eventId, choiceId)
         .then(worldEvent => {
@@ -8774,6 +9502,7 @@ function bindUi(): void {
         })
         .finally(() => {
           eventResolvingId = '';
+          preserveScrollForNextRender();
           render();
         });
     });
@@ -8788,6 +9517,7 @@ function bindUi(): void {
       } catch (error) {
         setStatusText(error instanceof Error ? error.message : String(error));
       }
+      preserveScrollForNextRender();
       render();
     });
   });
@@ -8796,6 +9526,7 @@ function bindUi(): void {
       if (resolveWorldEvent(button.dataset.resolveEvent ?? '')) {
         setStatusText('事件已直接记为结束，并写入近期生活记忆。');
       }
+      preserveScrollForNextRender();
       render();
     });
   });
@@ -8813,6 +9544,7 @@ function bindUi(): void {
       if (deleteWorldEvent(eventId, { rollbackImpact })) {
         setStatusText(rollbackImpact ? '事件已删除，相关影响也已撤销。' : '事件已删除，已保留既有关系影响。');
       }
+      preserveScrollForNextRender();
       render();
     });
   });

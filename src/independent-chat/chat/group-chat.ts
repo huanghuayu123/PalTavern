@@ -12,8 +12,10 @@ import {
 } from '../model/prompt-presets';
 import {
   activeWorld,
+  communicationActor,
   ensureGroupChat,
   groupMessagesFor,
+  normalizeChatBackgroundImage,
   saveState,
   state,
 } from '../core/state';
@@ -73,6 +75,7 @@ export function createGroupChat(title?: string, participantIds?: string[]): Grou
     selectedSpeakerId: 'user',
     replyAllOnUserMessage: false,
     allowModelInitiatedMessages: false,
+    backgroundImage: undefined,
     createdAt: now,
     updatedAt: now,
   };
@@ -90,6 +93,7 @@ export function updateGroupChat(
     selectedSpeakerId?: string;
     replyAllOnUserMessage?: boolean;
     allowModelInitiatedMessages?: boolean;
+    backgroundImage?: string;
   },
 ): GroupChatProfile | undefined {
   const chat = state.groupChats.find(item => item.id === chatId && item.worldId === activeWorld().id);
@@ -110,6 +114,9 @@ export function updateGroupChat(
   }
   if (typeof input.allowModelInitiatedMessages === 'boolean') {
     chat.allowModelInitiatedMessages = input.allowModelInitiatedMessages;
+  }
+  if ('backgroundImage' in input) {
+    chat.backgroundImage = normalizeChatBackgroundImage(input.backgroundImage);
   }
   if (chat.selectedSpeakerId !== 'user' && !chat.participantCharacterIds.includes(chat.selectedSpeakerId)) {
     chat.selectedSpeakerId = 'user';
@@ -341,10 +348,13 @@ export function sendGroupUserMessage(content: string, chatId?: string): GroupCha
   }
   const text = content.trim();
   if (!text) return undefined;
-  const selected = chat.selectedSpeakerId;
-  const selectedCharacter = selected === 'user'
-    ? undefined
-    : state.characters.find(character => character.id === selected && character.worldId === chat.worldId);
+  const actor = communicationActor(chat.worldId);
+  // Big comment: group records are shared inside a world; only the authored speaker follows the current communication identity.
+  const selectedCharacter = actor.type === 'character'
+    && chat.participantCharacterIds.includes(actor.character.id)
+    ? actor.character
+    : undefined;
+  chat.selectedSpeakerId = selectedCharacter?.id ?? 'user';
   const message = appendGroupMessage(chat, {
     speakerType: selectedCharacter ? 'character' : 'user',
     speakerCharacterId: selectedCharacter?.id,
@@ -406,6 +416,7 @@ function participantContext(chat: GroupChatProfile): string {
     `- ${character.name}`,
     character.description?.trim() ? `设定：${compactText(character.description, 180)}` : '',
     character.personality?.trim() ? `性格：${compactText(character.personality, 140)}` : '',
+    character.replyStrategy?.trim() ? `回复策略：${compactText(character.replyStrategy, 160)}` : '',
     character.relationship.summary.trim() ? `和用户关系：${compactText(character.relationship.summary, 120)}` : '',
   ].filter(Boolean).join('；')).join('\n');
   return [
@@ -459,6 +470,7 @@ function groupPresetMarkerContent(
         `当前发言角色：${speaker.nickname || speaker.name}`,
         speaker.description?.trim() ? `角色设定：${compactText(speaker.description, 260)}` : '',
         speaker.personality?.trim() ? `角色性格：${compactText(speaker.personality, 220)}` : '',
+        speaker.replyStrategy?.trim() ? `角色专属回复策略：${speaker.replyStrategy.trim()}` : '',
         speaker.relationship.summary.trim() ? `和用户关系：${compactText(speaker.relationship.summary, 180)}` : '',
         stickerUsageContext(speaker),
       ].filter(Boolean).join('\n');

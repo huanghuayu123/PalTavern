@@ -4,9 +4,23 @@
  */
 import type { CharacterProfile, ChatMessage, ConversationProfile } from '../core/types';
 import { parseModelChatOutput } from './format';
+import {
+  ensureCharacterRelationship,
+  relationshipSideFor,
+  updateCharacterRelationshipSide,
+} from '../characters/relationships';
 import { findUserStickerById } from '../media/stickers';
 import { callModel } from '../model/client';
-import { activeCharacter, ensureConversation, markConversationRead, messagesFor, saveState, state } from '../core/state';
+import {
+  activeCharacter,
+  communicationActorId,
+  ensureConversation,
+  markConversationRead,
+  messagesFor,
+  privateConversationActorIdFor,
+  saveState,
+  state,
+} from '../core/state';
 import { addRelationshipTimelineEntry } from '../memory/timeline';
 import { waitForModelTyping } from './typing-delay';
 import { nowId } from '../core/utils';
@@ -41,6 +55,21 @@ function clearReplyController(controller: AbortController): void {
   if (replyController !== controller) return;
   replyController = null;
   replyStartedAt = 0;
+}
+
+function actorIdFromSpeaker(character: CharacterProfile, speaker: PrivateChatSpeaker = { speakerType: 'user' }): string {
+  const candidate = speaker.speakerType === 'character' && speaker.speakerCharacterId
+    ? speaker.speakerCharacterId
+    : 'user';
+  return privateConversationActorIdFor(character, candidate);
+}
+
+function activePrivateConversationActorId(character: CharacterProfile): string {
+  return privateConversationActorIdFor(character, communicationActorId(character.worldId));
+}
+
+function conversationActorId(conversation: ConversationProfile): string {
+  return conversation.ownerCharacterId ?? 'user';
 }
 
 function abortReply(status: string, finalStatus = status): boolean {
@@ -190,7 +219,8 @@ export async function editUserMessageAndRegenerate(
   }
   appendMessageVariant(message, text);
   deleteMessagesAfter(message);
-  const conversation = ensureConversation(character);
+  const conversation = state.conversations.find(item => item.id === message.conversationId)
+    ?? ensureConversation(character);
   conversation.updatedAt = Date.now();
   saveState();
   await generateModelReply(character, conversation, onChange);
@@ -209,13 +239,14 @@ export async function regenerateAssistantMessage(messageId: string, onChange: ()
     onChange();
     return;
   }
-  const conversation = ensureConversation(character);
+  const conversation = state.conversations.find(item => item.id === message.conversationId)
+    ?? ensureConversation(character);
   statusText = '正在重新生成这一条回复…';
   const controller = new AbortController();
   markReplyStarted(controller);
   onChange();
   try {
-    const contextMessages = messagesFor(character.id)
+    const contextMessages = messagesFor(character.id, conversationActorId(conversation))
       .filter(item => item.createdAt < message.createdAt);
     const rawReply = await callModel(
       character,
@@ -269,7 +300,42 @@ export function setStatusText(value: string): void {
   statusText = value;
 }
 
-function noteUserActivity(character: CharacterProfile, conversation: ConversationProfile, createdAt: number): void {
+function appendPrivateRelationshipSummary(existing: string, line: string): string {
+  return existing ? `${existing}\n${line}`.slice(-900) : line;
+}
+
+function noteCharacterAuthoredPrivateActivity(
+  target: CharacterProfile,
+  speakerId: string | undefined,
+  conversation: ConversationProfile,
+  createdAt: number,
+  userMessageCount: number,
+): boolean {
+  if (!speakerId || speakerId === target.id || userMessageCount === 0 || userMessageCount % 5 !== 0) return false;
+  const speaker = state.characters.find(character =>
+    character.id === speakerId && character.worldId === target.worldId,
+  );
+  if (!speaker) return false;
+  const relationship = ensureCharacterRelationship(speaker, target);
+  const speakerSide = relationshipSideFor(relationship, speaker.id);
+  // Big comment: a character-authored private message is still stored in the target private chat, but relationship memory belongs to character-to-character context.
+  updateCharacterRelationshipSide(relationship, speaker.id, {
+    stage: speakerSide.stage,
+    summary: appendPrivateRelationshipSummary(
+      speakerSide.summary,
+      `${new Date(createdAt).toLocaleDateString()} 私聊里连续互动，${speaker.name} 主动联系了 ${target.name}。`,
+    ),
+  });
+  conversation.updatedAt = createdAt;
+  return true;
+}
+
+function noteUserActivity(
+  character: CharacterProfile,
+  conversation: ConversationProfile,
+  createdAt: number,
+  speaker: PrivateChatSpeaker = { speakerType: 'user' },
+): void {
   character.autoMessage.lastUserReplyAt = createdAt;
   if (character.autoMessage.unansweredCount > 0) {
     character.autoMessage.pendingResetDecision = true;
@@ -283,6 +349,15 @@ function noteUserActivity(character: CharacterProfile, conversation: Conversatio
     )
     .length;
   if (userMessageCount > 0 && userMessageCount % 5 === 0) {
+    if (speaker.speakerType === 'character' && noteCharacterAuthoredPrivateActivity(
+      character,
+      speaker.speakerCharacterId,
+      conversation,
+      createdAt,
+      userMessageCount,
+    )) {
+      return;
+    }
     character.relationship.affinity = Math.max(0, Math.round(character.relationship.affinity + 1));
     character.relationship.updatedAt = createdAt;
     addRelationshipTimelineEntry(
@@ -323,12 +398,12 @@ function appendUserMessage(
     createdAt,
     source: 'user',
   });
-  noteUserActivity(character, conversation, createdAt);
+  noteUserActivity(character, conversation, createdAt, speaker);
   saveState();
 }
 
-function hasPendingUserInput(character: CharacterProfile): boolean {
-  const visibleMessages = messagesFor(character.id)
+function hasPendingUserInput(character: CharacterProfile, actorId = 'user'): boolean {
+  const visibleMessages = messagesFor(character.id, actorId)
     .filter(message => !message.recalledAt)
     .sort((left, right) => left.createdAt - right.createdAt);
   const lastAssistantIndex = visibleMessages.findLastIndex(message => message.role === 'assistant');
@@ -351,7 +426,10 @@ async function generateModelReply(
   onChange();
 
   try {
-    const reply = await callModel(character, '', false, true, controller.signal, { useChatPreset: true });
+    const reply = await callModel(character, '', false, true, controller.signal, {
+      contextMessages: messagesFor(character.id, conversationActorId(conversation)),
+      useChatPreset: true,
+    });
     if (controller.signal.aborted) {
       statusText = '已停止回复。';
       return;
@@ -365,7 +443,7 @@ async function generateModelReply(
     }
     appendAssistantReply(character, conversation, reply, 'model_reply');
     if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-      markConversationRead(character.id);
+      markConversationRead(character.id, Date.now(), conversationActorId(conversation));
     }
     statusText = '回复完成。';
   } catch (error) {
@@ -415,8 +493,14 @@ export function appendAssistantReply(
   return messages;
 }
 
-export async function generateOpeningMessage(character: CharacterProfile, onChange: () => void): Promise<boolean> {
-  if (messagesFor(character.id).length > 0 || openingRequests.has(character.id)) {
+export async function generateOpeningMessage(
+  character: CharacterProfile,
+  onChange: () => void,
+  actorId = 'user',
+): Promise<boolean> {
+  const conversationActorId = privateConversationActorIdFor(character, actorId);
+  const openingRequestId = `${conversationActorId}:${character.id}`;
+  if (messagesFor(character.id, conversationActorId).length > 0 || openingRequests.has(openingRequestId)) {
     return false;
   }
   if (!state.modelConfig.apiUrl.trim() || !state.modelConfig.model.trim()) {
@@ -425,11 +509,11 @@ export async function generateOpeningMessage(character: CharacterProfile, onChan
     return false;
   }
 
-  openingRequests.add(character.id);
+  openingRequests.add(openingRequestId);
   statusText = `正在为 ${character.name} 生成新的开场消息…`;
   onChange();
   try {
-    const conversation = ensureConversation(character);
+    const conversation = ensureConversation(character, conversationActorId);
     const content = await callModel(character, [
       '这是这个角色与用户在本应用中的第一次私聊。',
       '请根据角色描述、性格、当前场景、关系状态、世界书与近期世界事件，主动发出一条全新的开场消息。',
@@ -449,7 +533,7 @@ export async function generateOpeningMessage(character: CharacterProfile, onChan
     saveState();
     return false;
   } finally {
-    openingRequests.delete(character.id);
+    openingRequests.delete(openingRequestId);
     onChange();
   }
 }
@@ -473,7 +557,8 @@ export async function sendUserMessageOnly(
     onChange();
     return;
   }
-  const conversation = ensureConversation(character);
+  const actorId = actorIdFromSpeaker(character, speaker);
+  const conversation = ensureConversation(character, actorId);
   appendUserMessage(character, conversation, text, replyToId, speaker);
   statusText = '已发送。可以继续发短消息，或点生成回复。';
   onChange();
@@ -486,8 +571,9 @@ export async function generateReply(onChange: () => void): Promise<void> {
     onChange();
     return;
   }
-  const conversation = ensureConversation(character);
-  if (!hasPendingUserInput(character)) {
+  const actorId = activePrivateConversationActorId(character);
+  const conversation = ensureConversation(character, actorId);
+  if (!hasPendingUserInput(character, actorId)) {
     statusText = '先发一条短消息，再点生成回复。';
     onChange();
     return;
@@ -516,7 +602,8 @@ export async function sendMessage(
     onChange();
     return;
   }
-  const conversation = ensureConversation(character);
+  const actorId = actorIdFromSpeaker(character, speaker);
+  const conversation = ensureConversation(character, actorId);
   appendUserMessage(character, conversation, text, replyToId, speaker);
   await generateModelReply(character, conversation, onChange);
 }
@@ -538,7 +625,8 @@ export async function sendStickerMessage(
     onChange();
     return;
   }
-  const conversation = ensureConversation(character);
+  const actorId = actorIdFromSpeaker(character, speaker);
+  const conversation = ensureConversation(character, actorId);
   const createdAt = Date.now();
   const speakerType = speaker.speakerType === 'character' && speaker.speakerCharacterId ? 'character' : 'user';
   state.messages.push({
@@ -560,7 +648,7 @@ export async function sendStickerMessage(
     createdAt,
     source: 'user',
   });
-  noteUserActivity(character, conversation, createdAt);
+  noteUserActivity(character, conversation, createdAt, speaker);
   saveState();
   if (state.chatReplyMode === 'manual') {
     statusText = '表情已发送。可以继续发短消息，或点生成回复。';

@@ -375,6 +375,7 @@ export function parseCharacterCard(rawText: string, options: ParseCardOptions = 
   const description = firstString(data.description, raw.description);
   const personality = firstString(data.personality, raw.personality);
   const scenario = firstString(data.scenario, raw.scenario);
+  const tavernSocial = isRecord(extensions.tavern_social) ? extensions.tavern_social : {};
 
   const character: CharacterProfile = {
     id: `card_${stableHash(`${state.activeWorldId}:${rawText}`)}`,
@@ -382,12 +383,16 @@ export function parseCharacterCard(rawText: string, options: ParseCardOptions = 
     name,
     avatar: options.avatar ?? firstString(data.avatar, raw.avatar, data.avatar_url, raw.avatar_url),
     description,
+    age: firstString(tavernSocial.age, data.age, raw.age),
+    backgroundStory: firstString(tavernSocial.background_story, data.background_story, raw.background_story),
     personality,
     scenario,
     firstMessage: firstString(data.first_mes, raw.first_mes, data.first_message, raw.first_message),
     alternateGreetings: stringArray(data.alternate_greetings ?? raw.alternate_greetings),
     groupOnlyGreetings: stringArray(data.group_only_greetings ?? raw.group_only_greetings),
     nickname: firstString(data.nickname, raw.nickname),
+    profileNote: firstString(tavernSocial.profile_note, data.profile_note, raw.profile_note),
+    replyStrategy: firstString(tavernSocial.reply_strategy, data.reply_strategy, raw.reply_strategy),
     creator: firstString(data.creator, raw.creator),
     creatorNotes: firstString(data.creator_notes, raw.creator_notes),
     characterVersion: firstString(data.character_version, raw.character_version),
@@ -527,6 +532,7 @@ export function upsertCharacter(character: CharacterProfile): void {
       avatar: existing.customAvatar ? existing.avatar : character.avatar,
       customAvatar: existing.customAvatar,
       profileNote: existing.profileNote ?? character.profileNote,
+      replyStrategy: existing.replyStrategy ?? character.replyStrategy,
       stickers: existing.stickers,
       relationship: existing.relationship,
       autoMessage: existing.autoMessage,
@@ -547,16 +553,23 @@ export function deleteCharacter(characterId: string): CharacterProfile | undefin
   const character = state.characters.find(item => item.id === characterId);
   if (!character) return undefined;
   const conversationIds = new Set(
-    state.conversations.filter(item => item.characterId === characterId).map(item => item.id),
+    state.conversations
+      .filter(item => item.characterId === characterId || item.ownerCharacterId === characterId)
+      .map(item => item.id),
   );
   state.characters = state.characters.filter(item => item.id !== characterId);
+  if (state.communicationIdentityByWorldId[character.worldId] === characterId) {
+    state.communicationIdentityByWorldId[character.worldId] = 'user';
+  }
   state.characterRelationships = state.characterRelationships.filter(item =>
     item.characterAId !== characterId && item.characterBId !== characterId,
   );
   state.characterRelationshipSuggestions = state.characterRelationshipSuggestions.filter(item =>
     item.fromCharacterId !== characterId && item.toCharacterId !== characterId,
   );
-  state.conversations = state.conversations.filter(item => item.characterId !== characterId);
+  state.conversations = state.conversations.filter(item =>
+    item.characterId !== characterId && item.ownerCharacterId !== characterId,
+  );
   state.messages = state.messages.filter(message =>
     message.characterId !== characterId && !conversationIds.has(message.conversationId),
   );

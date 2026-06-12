@@ -1484,16 +1484,88 @@ legend {
   margin-top: 12px;
 }
 
-.prompt-preset-row {
+.settings-fold-list {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 12px;
-  align-items: start;
-  min-height: 44px;
-  padding: 13px;
+  gap: 10px;
+}
+
+.settings-fold {
+  display: grid;
+  overflow: hidden;
   background: var(--surface-soft);
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: 14px;
+}
+
+.settings-fold > summary {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 50px;
+  padding: 12px 14px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.settings-fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-fold > summary span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.settings-fold > summary strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.settings-fold > summary small {
+  overflow: hidden;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-fold > summary::after {
+  flex: 0 0 auto;
+  color: var(--text-soft);
+  font-size: 14px;
+  content: "⌄";
+  transform: rotate(-90deg);
+  transition: transform 160ms ease, color 160ms ease;
+}
+
+.settings-fold[open] > summary::after {
+  color: var(--accent);
+  transform: rotate(0);
+}
+
+.settings-fold-body {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 0 14px 14px;
+}
+
+.settings-fold-body > h2 {
+  margin-top: 0;
+  font-size: 14px;
+}
+
+.prompt-preset-row {
+  display: grid;
+  gap: 0;
+  min-height: 44px;
+  overflow: hidden;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 14px;
   transition: border-color 160ms ease, background 160ms ease;
 }
 
@@ -1502,10 +1574,58 @@ legend {
   border-color: color-mix(in srgb, var(--accent) 20%, var(--line));
 }
 
+.prompt-preset-row[open] {
+  padding-bottom: 12px;
+}
+
+.prompt-preset-row-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 48px;
+  padding: 10px 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.prompt-preset-row-summary::-webkit-details-marker {
+  display: none;
+}
+
+.prompt-preset-row-summary span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.prompt-preset-row-summary strong {
+  font-size: 13px;
+}
+
+.prompt-preset-row-summary small {
+  overflow: hidden;
+  color: var(--text-soft);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prompt-preset-row-summary em {
+  padding: 2px 7px;
+  color: var(--text-soft);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+  background: var(--surface-raised);
+  border-radius: 999px;
+}
+
 .prompt-preset-main {
   display: grid;
   gap: 10px;
   min-width: 0;
+  padding: 0 12px;
 }
 
 .prompt-preset-line,
@@ -1571,8 +1691,8 @@ legend {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
-  grid-column: 2;
   justify-content: flex-start;
+  padding: 0 12px;
 }
 
 .prompt-preset-meta em,
@@ -1670,18 +1790,25 @@ legend {
     grid-template-columns: 1fr;
   }
 
-  .prompt-preset-row,
   .prompt-regex-row {
     grid-template-columns: 1fr;
   }
 
-  .prompt-preset-row > .switch-control,
   .prompt-regex-row > .switch-control {
     justify-self: start;
   }
 
+  .prompt-preset-row-summary {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .prompt-preset-row-summary em {
+    grid-column: 2;
+    justify-self: start;
+  }
+
   .prompt-preset-meta {
-    grid-column: 1;
+    padding-left: 12px;
   }
 
   .prompt-preset-line,
@@ -3981,6 +4108,7 @@ textarea::placeholder {
 .world-stage-header strong,
 .world-stage-header span,
 .world-stage-header small {
+  display: block;
   overflow: hidden;
   max-width: min(420px, 44vw);
   text-overflow: ellipsis;
@@ -7525,6 +7653,151 @@ textarea::placeholder {
   }
 }
 
+/* 大注释：页面切换动效层只服务用户主动切换页面、详情和浮层的瞬间。
+   后台调度和输入框 idle 刷新不挂这里，避免重建 DOM 时把手机键盘和草稿一起打断。 */
+:root {
+  --ui-transition-duration: 180ms;
+  --ui-transition-shift: 18px;
+  --ui-transition-overlay-shift: 10px;
+  --ui-transition-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.bottom-nav {
+  view-transition-name: paltavern-bottom-nav;
+}
+
+.sidebar {
+  view-transition-name: paltavern-sidebar;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--ui-transition-duration);
+  animation-timing-function: var(--ui-transition-ease);
+  animation-fill-mode: both;
+  mix-blend-mode: normal;
+}
+
+html[data-ui-transition="main-forward"]::view-transition-old(root),
+html[data-ui-transition="detail-in"]::view-transition-old(root) {
+  animation-name: paltavern-page-exit-forward;
+}
+
+html[data-ui-transition="main-forward"]::view-transition-new(root),
+html[data-ui-transition="detail-in"]::view-transition-new(root) {
+  animation-name: paltavern-page-enter-forward;
+}
+
+html[data-ui-transition="main-back"]::view-transition-old(root),
+html[data-ui-transition="detail-out"]::view-transition-old(root) {
+  animation-name: paltavern-page-exit-back;
+}
+
+html[data-ui-transition="main-back"]::view-transition-new(root),
+html[data-ui-transition="detail-out"]::view-transition-new(root) {
+  animation-name: paltavern-page-enter-back;
+}
+
+html[data-ui-transition="overlay-in"]::view-transition-old(root),
+html[data-ui-transition="overlay-out"]::view-transition-old(root) {
+  animation-name: paltavern-overlay-old;
+}
+
+html[data-ui-transition="overlay-in"]::view-transition-new(root),
+html[data-ui-transition="overlay-out"]::view-transition-new(root) {
+  animation-name: paltavern-overlay-new;
+}
+
+.ui-fallback-transition[data-ui-transition="main-forward"] .mobile-page,
+.ui-fallback-transition[data-ui-transition="detail-in"] .mobile-page,
+.ui-fallback-transition[data-ui-transition="main-forward"] .desktop-shell > :not(.sidebar):not(.group-settings-panel),
+.ui-fallback-transition[data-ui-transition="detail-in"] .desktop-shell > :not(.sidebar):not(.group-settings-panel) {
+  animation: paltavern-page-enter-forward var(--ui-transition-duration) var(--ui-transition-ease) both;
+}
+
+.ui-fallback-transition[data-ui-transition="main-back"] .mobile-page,
+.ui-fallback-transition[data-ui-transition="detail-out"] .mobile-page,
+.ui-fallback-transition[data-ui-transition="main-back"] .desktop-shell > :not(.sidebar):not(.group-settings-panel),
+.ui-fallback-transition[data-ui-transition="detail-out"] .desktop-shell > :not(.sidebar):not(.group-settings-panel) {
+  animation: paltavern-page-enter-back var(--ui-transition-duration) var(--ui-transition-ease) both;
+}
+
+.ui-fallback-transition[data-ui-transition="overlay-in"] [role="dialog"],
+.ui-fallback-transition[data-ui-transition="overlay-out"] [role="dialog"] {
+  animation: paltavern-overlay-new 160ms var(--ui-transition-ease) both;
+}
+
+@keyframes paltavern-page-enter-forward {
+  from {
+    opacity: 0;
+    transform: translate3d(var(--ui-transition-shift), 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes paltavern-page-exit-forward {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(calc(var(--ui-transition-shift) * -0.55), 0, 0);
+  }
+}
+
+@keyframes paltavern-page-enter-back {
+  from {
+    opacity: 0;
+    transform: translate3d(calc(var(--ui-transition-shift) * -1), 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes paltavern-page-exit-back {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(calc(var(--ui-transition-shift) * 0.55), 0, 0);
+  }
+}
+
+@keyframes paltavern-overlay-old {
+  from { opacity: 1; }
+  to { opacity: 0.92; }
+}
+
+@keyframes paltavern-overlay-new {
+  from {
+    opacity: 0;
+    transform: translate3d(0, var(--ui-transition-overlay-shift), 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-ui-transition]::view-transition-old(root),
+  html[data-ui-transition]::view-transition-new(root),
+  .ui-fallback-transition[data-ui-transition] .mobile-page,
+  .ui-fallback-transition[data-ui-transition] .desktop-shell > :not(.sidebar):not(.group-settings-panel),
+  .ui-fallback-transition[data-ui-transition] [role="dialog"] {
+    animation-duration: 0.01ms !important;
+    transform: none !important;
+  }
+}
+
 /* Final interface pass: cleaner mobile surfaces and quieter controls. */
 :root {
   --accent: #087f72;
@@ -8815,10 +9088,6 @@ body,
   resize: vertical;
 }
 
-#character-panel-worldbook {
-  min-height: 260px;
-}
-
 .character-worldbook-editor {
   display: grid;
   gap: 10px;
@@ -8829,10 +9098,11 @@ body,
 }
 
 .character-worldbook-editor > header {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
   gap: 10px;
+  flex-wrap: wrap;
   align-items: start;
+  justify-content: space-between;
 }
 
 .character-worldbook-editor > header strong {
@@ -8847,18 +9117,44 @@ body,
   line-height: 1.5;
 }
 
+.character-worldbook-actions {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.character-worldbook-entry-count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 760;
+  background: var(--surface-solid);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
 .character-worldbook-list {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .character-worldbook-entry {
   display: grid;
-  gap: 10px;
-  padding: 12px;
+  gap: 0;
+  padding: 0;
   background: var(--surface-solid);
   border: 1px solid var(--line);
   border-radius: 12px;
+  overflow: hidden;
+}
+
+.character-worldbook-entry[open] {
+  gap: 10px;
+  padding-bottom: 12px;
 }
 
 .character-worldbook-entry-head {
@@ -8866,21 +9162,52 @@ body,
   gap: 8px;
   align-items: center;
   justify-content: space-between;
+  min-height: 48px;
+  padding: 10px 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.character-worldbook-entry-head::-webkit-details-marker {
+  display: none;
 }
 
 .character-worldbook-entry-head strong {
+  display: block;
   font-size: 13px;
 }
 
-.character-worldbook-entry-head .danger {
-  min-height: 34px;
-  padding: 0 12px;
+.character-worldbook-entry-head small {
+  display: block;
+  max-width: 26ch;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--text-soft);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.character-worldbook-entry-head em {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  color: var(--accent-strong);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  background: var(--accent-soft);
+  border-radius: 999px;
 }
 
 .character-worldbook-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+  padding: 0 12px;
+}
+
+.character-worldbook-entry > .field {
+  padding: 0 12px;
 }
 
 .character-worldbook-entry textarea {
@@ -8891,6 +9218,7 @@ body,
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  padding: 0 12px;
 }
 
 .character-worldbook-switches label {
@@ -8905,6 +9233,13 @@ body,
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 999px;
+}
+
+.character-worldbook-delete {
+  justify-self: start;
+  min-height: 34px;
+  margin: 0 12px;
+  padding: 0 12px;
 }
 
 .character-worldbook-empty {
@@ -9755,8 +10090,10 @@ body,
   }
 
   .mobile-chat-detail .chat-status-expanded {
+    max-height: min(34vh, 230px);
+    overflow-y: auto;
     padding: 9px;
-    margin-left: 18px;
+    margin-left: 0;
   }
 
   .mobile-chat-detail .chat-status-metrics {
@@ -13851,4 +14188,822 @@ summary:focus-visible {
 .private-chat-identity-select:focus-within .private-chat-identity-avatar,
 .world-persona-select:focus-within .header-avatar {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--avatar-tone-ring) 36%, transparent);
+}
+
+/* 大注释：聊天阅读层的个性化只落在私聊和群聊正文里。
+   字体大小用 CSS 变量承接全局设置，背景图用同一套变量承接单个私聊/群聊设置，避免影响设置页、动态和世界页的排版密度。 */
+.chat {
+  --chat-font-scale: 1;
+  --chat-background-image: none;
+}
+
+.messages,
+.group-messages {
+  background-image:
+    linear-gradient(180deg, color-mix(in srgb, var(--page) 82%, transparent), color-mix(in srgb, var(--page) 88%, transparent)),
+    var(--chat-background-image);
+  background-position: center;
+  background-size: cover;
+  background-attachment: local;
+}
+
+/* 小注释：只放大聊天正文和输入框，不把头像、导航、设置标题一起撑大。 */
+.message-copy,
+.group-message-body p,
+.messages > p,
+.composer textarea,
+.group-composer textarea {
+  font-size: calc(15px * var(--chat-font-scale, 1));
+  line-height: 1.62;
+}
+
+.message-meta,
+.message-reason,
+.message-memory-hint,
+.message-choice-hint,
+.group-message-body small,
+.group-message-body header {
+  font-size: calc(12px * var(--chat-font-scale, 1));
+}
+
+.chat-font-scale-field input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.chat-font-preview {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--surface-solid) 82%, var(--social-teal-bg));
+  border: 1px solid color-mix(in srgb, var(--social-teal-ring) 34%, var(--line));
+  border-radius: 14px;
+}
+
+.chat-font-preview strong {
+  color: var(--accent-strong);
+  font-size: 13px;
+}
+
+.chat-font-preview span {
+  font-size: calc(15px * var(--chat-font-scale, 1));
+  line-height: 1.58;
+}
+
+.chat-background-control {
+  display: grid;
+  gap: 10px;
+}
+
+.chat-background-preview {
+  display: grid;
+  min-height: 108px;
+  place-items: center;
+  overflow: hidden;
+  color: var(--muted);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--social-teal-bg) 72%, white), color-mix(in srgb, var(--social-lavender-bg) 64%, white)),
+    var(--surface-raised);
+  background-position: center;
+  background-size: cover;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.chat-background-preview.has-image {
+  color: white;
+  text-shadow: 0 1px 8px rgb(0 0 0 / 46%);
+}
+
+.chat-background-preview span {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  background: color-mix(in srgb, var(--surface-solid) 72%, transparent);
+  border: 1px solid color-mix(in srgb, white 42%, transparent);
+  border-radius: 999px;
+  backdrop-filter: blur(10px);
+}
+
+.chat-background-actions {
+  justify-content: flex-start;
+}
+
+/* Mobile density polish final guard.
+   Big comment: this block intentionally lives at the end of the stylesheet because the mobile UI has several historical reset layers.
+   It keeps the phone layout from drifting back into heavy nested cards, clipped sheets, and side-stripe active states. */
+:root {
+  --mobile-control-height: 52px;
+  --mobile-sheet-top: max(14px, env(safe-area-inset-top));
+}
+
+@media (max-width: 980px), (hover: none), (pointer: coarse) {
+  /* Small comment: mobile list pages should read like light social lists, not stacked admin panels. */
+  .mobile-list-page {
+    padding: var(--mobile-sheet-top) 18px calc(86px + env(safe-area-inset-bottom));
+  }
+
+  .mobile-page-header {
+    min-height: auto;
+    padding: 2px 0 14px;
+    background: transparent;
+    border-bottom: 0;
+    backdrop-filter: none;
+  }
+
+  .mobile-page-header .eyebrow {
+    margin: 0 0 3px;
+    color: var(--text-soft);
+    font-size: 12px;
+    font-weight: 760;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+  .mobile-page-header h1 {
+    margin: 0;
+    font-size: 28px;
+    line-height: 1.14;
+    letter-spacing: 0;
+  }
+
+  .mobile-page-header p {
+    margin: 5px 0 0;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
+  .mobile-list-tools {
+    gap: 10px;
+    padding: 0;
+    margin: 0 0 18px;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .mobile-list-tools .world-switcher,
+  .mobile-list-tools .contact-search,
+  .mobile-list-tools .private-chat-identity-select {
+    margin: 0;
+  }
+
+  .mobile-list-tools .world-switcher > span {
+    position: static;
+    display: block;
+    margin: 0 0 6px;
+    padding: 0 2px;
+    color: var(--text-soft);
+    font-size: 12px;
+    font-weight: 760;
+    line-height: 1.2;
+    letter-spacing: 0;
+    text-transform: none;
+    transform: none;
+  }
+
+  .mobile-list-tools .world-switcher select,
+  .mobile-list-tools .contact-search,
+  .mobile-list-tools .private-chat-identity-select {
+    min-height: var(--mobile-control-height);
+    border-radius: 14px;
+  }
+
+  .mobile-list-tools > .primary,
+  .mobile-list-tools > .file-button {
+    min-height: var(--mobile-control-height);
+    border-radius: 14px;
+  }
+
+  .mobile-list-tools > .file-button {
+    color: var(--text);
+    background: var(--surface-raised);
+    border: 1px solid var(--line);
+  }
+
+  .mobile-conversation-list {
+    display: grid;
+    gap: 0;
+    padding: 0;
+    overflow: hidden;
+    background: var(--surface-raised);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    box-shadow: none;
+  }
+
+  .mobile-conversation-list .contact,
+  .contact-list .contact {
+    min-height: 64px;
+    padding: 10px 14px;
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .mobile-conversation-list .contact:last-child,
+  .contact-list .contact:last-child {
+    border-bottom: 0;
+  }
+
+  .mobile-conversation-list .contact:hover,
+  .mobile-conversation-list .contact.is-active,
+  .contact-list .contact:hover,
+  .contact-list .contact.is-active {
+    background: color-mix(in srgb, var(--accent) 7%, var(--surface-raised));
+    border-color: transparent;
+    box-shadow: none;
+  }
+
+  .mobile-inbox-private-panel .mobile-conversation-list {
+    gap: 10px;
+    overflow: visible;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .mobile-inbox-private-panel .contact {
+    background: var(--surface-raised);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+
+  /* Small comment: settings groups stay grouped, but rows behave like a clean list instead of separate chunky cards. */
+  .mobile-settings-list {
+    gap: 14px;
+    padding: 0 18px calc(86px + env(safe-area-inset-bottom));
+  }
+
+  .mobile-settings-list .settings-menu-group {
+    overflow: hidden;
+    padding: 8px 0;
+    background: var(--surface-raised);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    box-shadow: none;
+  }
+
+  .mobile-settings-list .settings-menu-group h2 {
+    margin: 8px 18px 6px;
+    color: var(--text-soft);
+    font-size: 13px;
+    font-weight: 820;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+  .mobile-settings-list .settings-list-item {
+    min-height: 58px;
+    padding: 11px 18px;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .mobile-settings-list .settings-list-item + .settings-list-item {
+    margin-top: 0;
+    border-top: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
+  }
+
+  .mobile-settings-list .settings-list-item:hover,
+  .mobile-settings-list .settings-list-item.is-active {
+    background: color-mix(in srgb, var(--accent) 8%, var(--surface-raised));
+    border-color: transparent;
+    box-shadow: none;
+  }
+
+  .mobile-settings-list .settings-list-item.is-active {
+    color: var(--accent-strong);
+  }
+
+  .mobile-settings-list .settings-list-item strong {
+    font-size: 15px;
+    line-height: 1.25;
+  }
+
+  .mobile-settings-list .settings-list-item small {
+    margin-top: 3px;
+    font-size: 13px;
+    line-height: 1.35;
+  }
+
+  .mobile-settings-list .settings-list-item b {
+    width: 24px;
+    color: var(--text-soft);
+    font-size: 20px;
+    text-align: right;
+  }
+
+  /* Small comment: the character settings sheet keeps a visible top anchor and avoids hiding fields under the phone status bar. */
+  .character-panel-overlay {
+    align-items: flex-end;
+  }
+
+  .character-panel {
+    width: 100%;
+    max-width: none;
+    max-height: calc(100dvh - var(--mobile-sheet-top));
+    padding: 12px 16px max(18px, env(safe-area-inset-bottom));
+    overflow-y: auto;
+    background: var(--surface-solid);
+    border-left: 0;
+    border-radius: 18px 18px 0 0;
+    scroll-padding-top: var(--mobile-sheet-top);
+    box-shadow: 0 -14px 34px rgba(20, 32, 31, 0.14);
+  }
+
+  .character-panel-header {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    min-height: 52px;
+    padding: 12px 16px 10px;
+    margin: -12px -16px 10px;
+    background: color-mix(in srgb, var(--surface-solid) 96%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
+    backdrop-filter: blur(14px);
+  }
+
+  .character-panel-header h2 {
+    font-size: 18px;
+    line-height: 1.22;
+  }
+
+  .character-panel-tabs {
+    position: sticky;
+    top: 52px;
+    z-index: 3;
+    margin: 0 0 12px;
+    background: var(--surface-raised);
+    border: 1px solid var(--line);
+  }
+
+  .character-panel-page {
+    gap: 10px;
+    padding-bottom: 12px;
+  }
+
+  .character-panel-page .field:first-of-type {
+    scroll-margin-top: calc(var(--mobile-sheet-top) + 88px);
+  }
+
+  .character-panel-page textarea {
+    min-height: 78px;
+    max-height: 180px;
+  }
+
+  .character-panel-page > .primary {
+    min-height: 46px;
+    border-radius: 14px;
+  }
+
+  .character-worldbook-editor {
+    gap: 0;
+    overflow: hidden;
+    padding: 0;
+    background: var(--surface-raised);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+  }
+
+  .character-worldbook-editor > header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .character-worldbook-editor > header p {
+    display: none;
+  }
+
+  .character-worldbook-actions {
+    justify-content: end;
+  }
+
+  .character-worldbook-entry-count,
+  .character-worldbook-actions .secondary {
+    min-height: 30px;
+    padding-inline: 10px;
+  }
+
+  .character-worldbook-list {
+    gap: 0;
+  }
+
+  .character-worldbook-entry {
+    border: 0;
+    border-radius: 0;
+  }
+
+  .character-worldbook-entry + .character-worldbook-entry {
+    border-top: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  }
+
+  .character-worldbook-entry-head {
+    min-height: 50px;
+    padding: 10px 14px;
+  }
+
+  .character-worldbook-entry-head em {
+    background: color-mix(in srgb, var(--accent) 12%, var(--surface-solid));
+  }
+}
+
+/* Mobile overlap repair guard.
+   Big comment: these rules are intentionally after the density guard. They fix the reported phone-only problems:
+   world settings must behave like a page, the world header must stay centered, character sheets must start at the top,
+   and moments must never widen the viewport horizontally. */
+@media (max-width: 980px), (hover: none), (pointer: coarse) {
+  html,
+  body,
+  #app,
+  .mobile-shell,
+  .mobile-page,
+  .moments-page,
+  .world-workbench {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .world-workbench-header {
+    grid-template-columns: 46px minmax(0, 1fr) auto;
+    gap: 8px;
+    min-width: 0;
+    padding: max(8px, env(safe-area-inset-top)) 12px 8px;
+  }
+
+  .world-persona-select.world-persona-avatar-only {
+    z-index: 1;
+    width: 46px;
+    min-width: 46px;
+    max-width: 46px;
+  }
+
+  .world-persona-select.world-persona-avatar-only summary {
+    display: grid;
+    grid-template-columns: 36px 8px;
+    width: 46px;
+    min-width: 46px;
+    min-height: 44px;
+    gap: 2px;
+    padding: 0;
+    place-items: center;
+  }
+
+  .world-persona-select.world-persona-avatar-only .world-persona-name {
+    display: none;
+  }
+
+  .world-persona-chevron {
+    color: var(--text-soft);
+    font-size: 12px;
+    line-height: 1;
+  }
+
+  .world-stage-header {
+    grid-area: 1 / 1 / 2 / -1;
+    position: relative;
+    z-index: 0;
+    align-self: center;
+    justify-self: center;
+    width: min(48vw, 224px);
+    max-width: min(48vw, 224px);
+    text-align: center;
+    transform: none;
+    pointer-events: none;
+  }
+
+  .world-stage-header strong,
+  .world-stage-header span {
+    max-width: 100%;
+  }
+
+  .world-stage-actions {
+    display: grid;
+    z-index: 1;
+    grid-auto-flow: column;
+    grid-auto-columns: 44px;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .world-stage-actions #generate-event,
+  .world-gear-panel,
+  .world-gear-panel > summary {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    border-radius: 14px;
+  }
+
+  .world-gear-panel[open] {
+    position: static;
+    z-index: 120;
+  }
+
+  .world-gear-panel[open] > summary {
+    position: fixed;
+    top: max(10px, env(safe-area-inset-top));
+    right: 14px;
+    z-index: 142;
+    background: color-mix(in srgb, var(--surface-solid) 94%, transparent);
+    box-shadow: var(--shadow-soft);
+    backdrop-filter: blur(14px);
+  }
+
+  .world-gear-panel[open] .world-gear-card {
+    position: fixed;
+    inset: 0;
+    z-index: 140;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    width: 100vw;
+    height: 100dvh;
+    max-height: none;
+    overflow: hidden;
+    background: var(--surface-solid);
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .world-gear-panel[open] .world-gear-card header {
+    min-height: 76px;
+    padding: calc(16px + env(safe-area-inset-top)) 72px 14px 18px;
+    background: color-mix(in srgb, var(--surface-solid) 96%, transparent);
+    backdrop-filter: blur(16px);
+  }
+
+  .world-gear-panel[open] .world-gear-body {
+    max-height: none;
+    min-height: 0;
+    padding: 16px 18px calc(28px + env(safe-area-inset-bottom));
+    overflow-y: auto;
+  }
+
+  .world-gear-panel[open] .world-drawer-section {
+    border-radius: 16px;
+  }
+
+  .event-settings-action-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .event-settings-action-row > span {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+
+  .event-settings-generate,
+  .event-settings-manual {
+    min-width: 0;
+    justify-content: center;
+  }
+
+  .event-composer-mode {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .character-panel-header,
+  .character-panel-tabs {
+    position: static;
+    top: auto;
+  }
+
+  .character-panel {
+    scroll-padding-top: 0;
+  }
+
+  .character-worldbook-jump {
+    display: inline-flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .character-panel-reply-strategy-generate {
+    width: 100%;
+    min-height: 44px;
+    margin: -2px 0 12px;
+  }
+
+  .moments-scroll,
+  .moments-column,
+  .moments-publisher,
+  .moments-publisher-body,
+  .moment-compose-meta,
+  .moment-visibility-contact-controls,
+  .moment-card,
+  .moment-comment-form {
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    overflow-x: hidden;
+  }
+
+  .moments-scroll {
+    width: 100%;
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+
+  .moments-column {
+    width: 100%;
+    margin-inline: 0;
+  }
+
+  .moments-publisher.is-open {
+    width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
+  }
+}
+
+/* 大注释：私聊设置和全局设置最终去弹窗化。
+   角色状态/设置、角色世界书编辑、桌面设置中心都作为页面进入主内容区；
+   旧的 overlay 样式留给其它真实弹窗使用，但这些入口不再产生遮罩、半屏抽屉或嵌套弹窗。 */
+.desktop-shell > .desktop-settings-page,
+.desktop-shell > .character-page {
+  width: 100%;
+  max-width: none;
+  height: 100vh;
+  max-height: none;
+  min-width: 0;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-solid) 82%, var(--page)) 0%, var(--page) 260px),
+    var(--page);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.desktop-settings-page {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.desktop-settings-page .settings-layout {
+  min-height: 0;
+}
+
+.desktop-settings-page .settings-content {
+  width: 100%;
+  max-width: none;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.character-page {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  padding: 0;
+}
+
+.character-worldbook-shell {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.character-page .character-panel-header {
+  min-height: 70px;
+  padding: 16px clamp(16px, 3vw, 28px);
+  margin: 0;
+  background: color-mix(in srgb, var(--surface-solid) 94%, transparent);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(16px);
+}
+
+.character-page .character-panel-header .header-back {
+  width: 40px;
+  height: 40px;
+}
+
+.character-page .character-panel-tabs {
+  width: min(560px, calc(100% - 32px));
+  margin: 14px auto 0;
+  background: color-mix(in srgb, var(--surface-soft) 82%, transparent);
+  border: 1px solid var(--line);
+}
+
+.character-page > .character-panel-page {
+  width: min(780px, 100%);
+  min-height: 0;
+  margin: 0 auto;
+  padding: 18px clamp(16px, 5vw, 48px) 30px;
+  overflow-y: auto;
+}
+
+.character-settings-shell > .character-panel-page {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.character-worldbook-jump {
+  justify-content: flex-start;
+  min-height: 58px;
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.character-worldbook-jump > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.character-worldbook-jump small {
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.character-settings-shell .character-worldbook-editor {
+  flex: 0 0 auto;
+}
+
+.character-page .character-worldbook-editor {
+  scroll-margin-top: 18px;
+}
+
+.character-worldbook-page .character-worldbook-editor {
+  /* 大注释：世界书独立页的滚动层在 `.character-worldbook-page`，编辑器本身不能收缩或裁掉展开条目，否则手机上会看起来“翻不动”。 */
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.character-worldbook-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: stretch;
+}
+
+.character-worldbook-page-note {
+  padding: 14px;
+  background: color-mix(in srgb, var(--surface-soft) 82%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+
+.character-worldbook-page-note strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 15px;
+}
+
+.character-worldbook-page-note p {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.character-worldbook-page-actions {
+  position: sticky;
+  bottom: 0;
+  display: grid;
+  padding-top: 10px;
+  background: linear-gradient(180deg, transparent, var(--page) 30%);
+}
+
+@media (max-width: 980px), (hover: none), (pointer: coarse) {
+  .mobile-shell > .character-page {
+    width: 100vw;
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: none;
+    overflow: hidden;
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--surface-solid) 78%, var(--page)) 0%, var(--page) 220px),
+      var(--page);
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .mobile-shell > .character-page .character-panel-header {
+    min-height: 62px;
+    padding: max(10px, env(safe-area-inset-top)) 14px 10px;
+  }
+
+  .mobile-shell > .character-page .character-panel-tabs {
+    width: calc(100% - 28px);
+    margin-top: 12px;
+  }
+
+  .mobile-shell > .character-page > .character-panel-page {
+    width: 100%;
+    padding: 14px 16px calc(24px + env(safe-area-inset-bottom));
+  }
 }

@@ -52,6 +52,9 @@ export function createCharacterCardDraft(_mode: CharacterCardDraftMode = 'simple
     currentStep: 'identity',
     name: '',
     concept: '',
+    age: '',
+    backgroundStory: '',
+    profileNote: '',
     appearance: '',
     personality: '',
     hobbies: '',
@@ -106,6 +109,8 @@ function finalPersonality(draft: CharacterCardDraft): string {
 function finalDescription(draft: CharacterCardDraft): string {
   return [
     draft.concept.trim() ? `【角色构想】\n${draft.concept.trim()}` : '',
+    draft.age.trim() ? `【年龄】\n${draft.age.trim()}` : '',
+    draft.backgroundStory.trim() ? `【背景故事】\n${draft.backgroundStory.trim()}` : '',
     draft.appearance.trim() ? `【外貌】\n${draft.appearance.trim()}` : '',
     draft.hobbies.trim() ? `【爱好】\n${draft.hobbies.trim()}` : '',
   ].filter(Boolean).join('\n\n');
@@ -116,6 +121,9 @@ function authoringExtension(draft: CharacterCardDraft): Record<string, unknown> 
     draft_id: draft.id,
     mode: draft.mode,
     concept: draft.concept,
+    age: draft.age,
+    background_story: draft.backgroundStory,
+    profile_note: draft.profileNote,
     appearance: draft.appearance,
     hobbies: draft.hobbies,
     personality: draft.personality,
@@ -161,8 +169,11 @@ export function characterProfileFromDraft(draft: CharacterCardDraft): CharacterP
     worldId: draft.worldId,
     name: draft.name.trim(),
     description: finalDescription(draft),
+    age: draft.age.trim(),
+    backgroundStory: draft.backgroundStory.trim(),
     personality: finalPersonality(draft),
     firstMessage: draft.firstMessage.trim(),
+    profileNote: draft.profileNote.trim(),
     tags: existing?.tags ?? ['原创角色'],
     importInfo: {
       sourceFormat: 'json',
@@ -219,6 +230,9 @@ function draftContext(draft: CharacterCardDraft): string {
   return [
     `角色名：${draft.name || '未命名'}`,
     `核心构想：${draft.concept || '未填写'}`,
+    `年龄：${draft.age || '未填写'}`,
+    `背景故事：${draft.backgroundStory || '未填写'}`,
+    `备注：${draft.profileNote || '未填写'}`,
     `外貌：${draft.appearance || '未填写'}`,
     `性格：${draft.personality || '未填写'}`,
     `爱好：${draft.hobbies || '未填写'}`,

@@ -137,7 +137,11 @@ function mockModelResponses(responses: string[]) {
     throw new Error('Creating a group chat did not select valid participants or activate the group.');
   }
 
-  groupChat.updateGroupChat(created.id, { selectedSpeakerId: 'group_character_a' });
+  stateModule.setCommunicationActor('world_default', 'group_character_a');
+  groupChat.updateGroupChat(created.id, { backgroundImage: 'data:image/webp;base64,GROUP_CHAT_BG' });
+  if (stateModule.state.groupChats.find((chat: any) => chat.id === created.id)?.backgroundImage !== 'data:image/webp;base64,GROUP_CHAT_BG') {
+    throw new Error('Updating group chat appearance did not persist the custom background image.');
+  }
   const authored = groupChat.sendGroupUserMessage('我先用林夏的身份说一句。', created.id);
   if (
     !authored
@@ -148,7 +152,7 @@ function mockModelResponses(responses: string[]) {
     throw new Error('Sending a group message as a selected character did not preserve the speaker identity.');
   }
 
-  groupChat.updateGroupChat(created.id, { selectedSpeakerId: 'user' });
+  stateModule.setCommunicationActor('world_default', 'user');
   const userMessage = groupChat.sendGroupUserMessage('这次用用户身份发言。', created.id);
   if (!userMessage || userMessage.speakerType !== 'user' || userMessage.source !== 'user') {
     throw new Error('Sending a group message as the user did not keep the user speaker identity.');
@@ -404,6 +408,7 @@ function mockModelResponses(responses: string[]) {
 
   console.log(JSON.stringify({
     createGroup: true,
+    groupBackground: true,
     selectedCharacterSpeaker: true,
     userSpeaker: true,
     modelInitiatedDefaultOff: true,

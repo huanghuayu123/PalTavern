@@ -181,6 +181,8 @@ export interface WorldProfile {
   id: string;
   name: string;
   description: string;
+  // Big comment: World lore is shared by every character in the same world; it is intentionally separate from per-character world books.
+  worldLore: string;
   userPersona: string;
   currentLocation: string;
   sceneAtmosphere: string;
@@ -222,6 +224,8 @@ export interface CharacterProfile {
   avatar?: string;
   customAvatar?: boolean;
   description?: string;
+  age?: string;
+  backgroundStory?: string;
   personality?: string;
   scenario?: string;
   firstMessage?: string;
@@ -229,6 +233,7 @@ export interface CharacterProfile {
   groupOnlyGreetings?: string[];
   nickname?: string;
   profileNote?: string;
+  replyStrategy?: string;
   creator?: string;
   creatorNotes?: string;
   characterVersion?: string;
@@ -306,6 +311,9 @@ export interface CharacterCardDraft {
   currentStep: CharacterCardDraftStep;
   name: string;
   concept: string;
+  age: string;
+  backgroundStory: string;
+  profileNote: string;
   appearance: string;
   personality: string;
   hobbies: string;
@@ -324,6 +332,9 @@ export interface ConversationProfile {
   id: string;
   worldId: string;
   characterId: string;
+  // Big comment: undefined means the user persona owns this private chat; a character id means that character's view owns it.
+  ownerCharacterId?: string;
+  backgroundImage?: string;
   createdAt: number;
   updatedAt: number;
   lastReadAt: number;
@@ -337,6 +348,7 @@ export interface GroupChatProfile {
   selectedSpeakerId: string;
   replyAllOnUserMessage: boolean;
   allowModelInitiatedMessages: boolean;
+  backgroundImage?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -359,7 +371,7 @@ export interface ChatMessage {
   conversationId: string;
   characterId: string;
   role: MessageRole;
-  // Big comment: Private-chat messages always belong to characterId; speaker metadata only records who the user is writing as.
+  // Big comment: characterId is the target window; conversationId isolates the current communication identity's view.
   speakerType?: 'user' | 'character';
   speakerCharacterId?: string;
   content: string;
@@ -574,9 +586,11 @@ export interface AppState {
   activeWorldId: string;
   activeCharacterId: string;
   activeGroupChatId: string;
+  communicationIdentityByWorldId: Record<string, string>;
   activeView: 'chat' | 'groups' | 'world' | 'moments';
   chatReplyMode: ChatReplyMode;
   enterToSend: boolean;
+  chatFontScale: number;
   worldInteractionHighSimulation: boolean;
   worldInteractionNextAttemptAt: number | null;
   worldInteractionStatusReason: string;

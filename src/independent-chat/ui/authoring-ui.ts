@@ -19,6 +19,32 @@ let authoringOpen = false;
 let activeDraftId = '';
 let requestBusy = false;
 let authoringStatus = '';
+let pendingAuthoringScrollTop: number | null = null;
+
+function authoringScrollContainer(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('.authoring-body');
+}
+
+function preserveAuthoringScrollForNextRender(): void {
+  pendingAuthoringScrollTop = authoringScrollContainer()?.scrollTop ?? pendingAuthoringScrollTop;
+}
+
+function restoreAuthoringScrollIfNeeded(): void {
+  const top = pendingAuthoringScrollTop;
+  pendingAuthoringScrollTop = null;
+  if (top === null) return;
+  window.requestAnimationFrame(() => {
+    authoringScrollContainer()?.scrollTo({ top, behavior: 'auto' });
+  });
+}
+
+function rerenderAuthoringInPlace(rerender: () => void): void {
+  // Big comment: authoring replaces the whole app root before the shared app scroll
+  // restorer runs, so it keeps its own lightweight scroll snapshot for tab-like edits.
+  preserveAuthoringScrollForNextRender();
+  rerender();
+  restoreAuthoringScrollIfNeeded();
+}
 
 export function isAuthoringOpen(): boolean {
   return authoringOpen;
@@ -117,7 +143,10 @@ function renderEditor(draft: CharacterCardDraft, step: CharacterCardDraftStep): 
       <section class="authoring-editor">
         <div class="authoring-panel-heading"><div><span>基础信息</span><h2>这个角色是谁？</h2></div></div>
         <label class="field"><span>角色名称（必填）</span><input id="draft-name" value="${escapeHtml(draft.name)}" placeholder="例如：沈灵" /></label>
+        <label class="field"><span>年龄</span><input id="draft-age" value="${escapeHtml(draft.age)}" placeholder="例如：17岁、大学二年级、未知" /></label>
         <label class="field"><span>一句话构想</span><textarea id="draft-concept" placeholder="例如：总在替别人收拾残局，却不肯承认自己也需要被照顾。">${escapeHtml(draft.concept)}</textarea></label>
+        <label class="field"><span>背景故事</span><textarea id="draft-background-story" placeholder="写出生长环境、过去经历，或她为什么会来到当前世界。">${escapeHtml(draft.backgroundStory)}</textarea></label>
+        <label class="field"><span>备注</span><textarea id="draft-profile-note" placeholder="给自己看的补充信息，比如关系前情、禁忌、容易忘的细节。">${escapeHtml(draft.profileNote)}</textarea></label>
       </section>
     `;
   }
@@ -155,6 +184,9 @@ function renderPreview(draft: CharacterCardDraft): string {
       <section class="authoring-preview-card">
         <span>角色名称</span><h2>${escapeHtml(draft.name || '未命名角色')}</h2>
         ${draft.concept ? `<h3>角色构想</h3><p>${escapeHtml(draft.concept)}</p>` : ''}
+        ${draft.age ? `<h3>年龄</h3><p>${escapeHtml(draft.age)}</p>` : ''}
+        ${draft.backgroundStory ? `<h3>背景故事</h3><p>${escapeHtml(draft.backgroundStory)}</p>` : ''}
+        ${draft.profileNote ? `<h3>备注</h3><p>${escapeHtml(draft.profileNote)}</p>` : ''}
         <h3>外貌</h3><p>${escapeHtml(draft.appearance || '尚未填写')}</p>
         <h3>性格</h3><p>${escapeHtml(personality || '尚未填写')}</p>
         <h3>爱好</h3><p>${escapeHtml(draft.hobbies || '尚未填写')}</p>
@@ -321,8 +353,17 @@ export function bindAuthoringUi(rerender: () => void): void {
   document.querySelector<HTMLInputElement>('#draft-name')?.addEventListener('input', event => {
     updateTextField(draft, 'name', (event.currentTarget as HTMLInputElement).value);
   });
+  document.querySelector<HTMLInputElement>('#draft-age')?.addEventListener('input', event => {
+    updateTextField(draft, 'age', (event.currentTarget as HTMLInputElement).value);
+  });
   document.querySelector<HTMLTextAreaElement>('#draft-concept')?.addEventListener('input', event => {
     updateTextField(draft, 'concept', (event.currentTarget as HTMLTextAreaElement).value);
+  });
+  document.querySelector<HTMLTextAreaElement>('#draft-background-story')?.addEventListener('input', event => {
+    updateTextField(draft, 'backgroundStory', (event.currentTarget as HTMLTextAreaElement).value);
+  });
+  document.querySelector<HTMLTextAreaElement>('#draft-profile-note')?.addEventListener('input', event => {
+    updateTextField(draft, 'profileNote', (event.currentTarget as HTMLTextAreaElement).value);
   });
   document.querySelector<HTMLTextAreaElement>('#draft-main-content')?.addEventListener('input', event => {
     const field = fieldForStep(step);
@@ -340,7 +381,7 @@ export function bindAuthoringUi(rerender: () => void): void {
     draft.currentStep = steps[index - 1];
     touchDraft(draft);
     authoringStatus = '';
-    rerender();
+    rerenderAuthoringInPlace(rerender);
   });
   document.querySelector<HTMLButtonElement>('#next-authoring-step')?.addEventListener('click', () => {
     if (step === 'identity' && !draft.name.trim()) {
@@ -351,7 +392,7 @@ export function bindAuthoringUi(rerender: () => void): void {
     draft.currentStep = steps[Math.min(index + 1, steps.length - 1)];
     touchDraft(draft);
     authoringStatus = '';
-    rerender();
+    rerenderAuthoringInPlace(rerender);
   });
   document.querySelectorAll<HTMLButtonElement>('[data-authoring-step]').forEach(button => {
     button.addEventListener('click', () => {
@@ -360,7 +401,9 @@ export function bindAuthoringUi(rerender: () => void): void {
       draft.currentStep = target;
       touchDraft(draft);
       authoringStatus = '';
+      preserveAuthoringScrollForNextRender();
       rerender();
+      restoreAuthoringScrollIfNeeded();
     });
   });
   document.querySelector<HTMLButtonElement>('#ask-authoring-tutor')?.addEventListener('click', () => {
@@ -377,7 +420,7 @@ export function bindAuthoringUi(rerender: () => void): void {
       delete draft.candidates[step];
       touchDraft(draft);
       authoringStatus = '候选稿已采用，你仍可继续修改。';
-      rerender();
+      rerenderAuthoringInPlace(rerender);
     }
   });
   document.querySelector<HTMLButtonElement>('#generate-authoring-opening')?.addEventListener('click', () => {
@@ -478,7 +521,7 @@ export function bindDraftManager(rerender: () => void): void {
     button.addEventListener('click', () => {
       const draft = state.characterCardDrafts.find(item => item.id === button.dataset.duplicateDraft);
       if (draft) duplicateCharacterCardDraft(draft);
-      rerender();
+      rerenderAuthoringInPlace(rerender);
     });
   });
   document.querySelectorAll<HTMLButtonElement>('[data-delete-draft]').forEach(button => {
@@ -487,7 +530,7 @@ export function bindDraftManager(rerender: () => void): void {
       const draft = state.characterCardDrafts.find(item => item.id === id);
       if (!draft || !window.confirm(`确定删除草稿“${draft.name || '未命名角色'}”吗？`)) return;
       deleteCharacterCardDraft(id);
-      rerender();
+      rerenderAuthoringInPlace(rerender);
     });
   });
 }
