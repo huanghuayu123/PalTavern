@@ -1878,6 +1878,24 @@ if (
   throw new Error('World RP user actions should be editable from inside the event dialogue.');
 }
 if (
+  !appSource.includes('function avatarToneForId')
+  || !appSource.includes('function avatarToneAttribute')
+  || !privateTargetSelectorBlock.includes('avatarToneAttribute(selectedCharacter)')
+  || !worldPersonaSelectorBlock.includes('avatarToneAttribute(actor.character)')
+  || !appSource.includes('renderEventAvatars')
+  || !appSource.includes('avatarToneAttribute(character)')
+  || !styleSource.includes('--social-sky-bg')
+  || !styleSource.includes('--social-lavender-bg')
+  || !styleSource.includes('--social-peach-bg')
+  || !styleSource.includes('--social-amber-bg')
+  || !styleSource.includes('[data-avatar-tone="sky"]')
+  || !styleSource.includes('[data-avatar-tone="lavender"]')
+  || !styleSource.includes('[data-avatar-tone="peach"]')
+  || !styleSource.includes('[data-avatar-tone="amber"]')
+) {
+  throw new Error('Mobile social UI should use a restrained multi-tone palette for avatars and event participants instead of one flat accent color.');
+}
+if (
   !styleSource.includes('.world-event-detail-toolbar')
   || !styleSource.includes('position: sticky')
 ) {

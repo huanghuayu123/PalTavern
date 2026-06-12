@@ -8033,6 +8033,27 @@ body,
   --line: rgba(18, 30, 34, 0.09);
   --line-strong: rgba(18, 30, 34, 0.17);
   --accent-soft: color-mix(in srgb, var(--accent) 12%, white);
+  --social-teal-bg: #e0f5ef;
+  --social-teal-ink: #087f72;
+  --social-teal-ring: #9eddd3;
+  --social-sky-bg: #e6f3fb;
+  --social-sky-ink: #225f7a;
+  --social-sky-ring: #abd9ee;
+  --social-lavender-bg: #eeeafa;
+  --social-lavender-ink: #5d4f87;
+  --social-lavender-ring: #cec2ef;
+  --social-peach-bg: #fff0ea;
+  --social-peach-ink: #814737;
+  --social-peach-ring: #f3c3b3;
+  --social-amber-bg: #fff6d9;
+  --social-amber-ink: #715c18;
+  --social-amber-ring: #ead278;
+  --social-user-bg: #eaf1f0;
+  --social-user-ink: #244843;
+  --social-user-ring: #c5d8d5;
+  --social-world-bg: #edf7f3;
+  --social-world-ink: #0d6d64;
+  --social-world-ring: #b2ded5;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -8043,6 +8064,27 @@ body,
     --line: rgba(233, 243, 241, 0.1);
     --line-strong: rgba(233, 243, 241, 0.18);
     --accent-soft: rgba(75, 197, 180, 0.14);
+    --social-teal-bg: #143b37;
+    --social-teal-ink: #b8f1e7;
+    --social-teal-ring: #2a6f67;
+    --social-sky-bg: #163345;
+    --social-sky-ink: #c3e8f7;
+    --social-sky-ring: #2d6680;
+    --social-lavender-bg: #2b2544;
+    --social-lavender-ink: #ded4ff;
+    --social-lavender-ring: #564a82;
+    --social-peach-bg: #402a24;
+    --social-peach-ink: #ffd6c8;
+    --social-peach-ring: #815143;
+    --social-amber-bg: #3b3219;
+    --social-amber-ink: #f7e7a5;
+    --social-amber-ring: #79642b;
+    --social-user-bg: #1f302e;
+    --social-user-ink: #d7e9e6;
+    --social-user-ring: #415d59;
+    --social-world-bg: #183630;
+    --social-world-ink: #c1f0df;
+    --social-world-ring: #367464;
   }
 }
 
@@ -13665,4 +13707,148 @@ summary:focus-visible {
   background: var(--surface-raised);
   border-color: var(--line);
   box-shadow: none;
+}
+
+/* 大注释：清透社交多色点缀层。
+   颜色只承担“识别角色、标记状态、给列表一点呼吸”的职责，主操作仍然统一使用薄荷绿。 */
+.avatar[data-avatar-tone],
+.moment-avatar[data-avatar-tone],
+.event-avatar[data-avatar-tone],
+.message-avatar[data-avatar-tone] {
+  --avatar-tone-bg: var(--social-teal-bg);
+  --avatar-tone-ink: var(--social-teal-ink);
+  --avatar-tone-ring: var(--social-teal-ring);
+  color: var(--avatar-tone-ink);
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--avatar-tone-bg) 92%, white), var(--avatar-tone-bg)),
+    var(--avatar-tone-bg);
+  border-color: color-mix(in srgb, var(--avatar-tone-ring) 78%, var(--line));
+}
+
+.avatar[data-avatar-tone="teal"],
+.moment-avatar[data-avatar-tone="teal"],
+.event-avatar[data-avatar-tone="teal"],
+.message-avatar[data-avatar-tone="teal"] {
+  --avatar-tone-bg: var(--social-teal-bg);
+  --avatar-tone-ink: var(--social-teal-ink);
+  --avatar-tone-ring: var(--social-teal-ring);
+}
+
+.avatar[data-avatar-tone="sky"],
+.moment-avatar[data-avatar-tone="sky"],
+.event-avatar[data-avatar-tone="sky"],
+.message-avatar[data-avatar-tone="sky"] {
+  --avatar-tone-bg: var(--social-sky-bg);
+  --avatar-tone-ink: var(--social-sky-ink);
+  --avatar-tone-ring: var(--social-sky-ring);
+}
+
+.avatar[data-avatar-tone="lavender"],
+.moment-avatar[data-avatar-tone="lavender"],
+.event-avatar[data-avatar-tone="lavender"],
+.message-avatar[data-avatar-tone="lavender"] {
+  --avatar-tone-bg: var(--social-lavender-bg);
+  --avatar-tone-ink: var(--social-lavender-ink);
+  --avatar-tone-ring: var(--social-lavender-ring);
+}
+
+.avatar[data-avatar-tone="peach"],
+.moment-avatar[data-avatar-tone="peach"],
+.event-avatar[data-avatar-tone="peach"],
+.message-avatar[data-avatar-tone="peach"] {
+  --avatar-tone-bg: var(--social-peach-bg);
+  --avatar-tone-ink: var(--social-peach-ink);
+  --avatar-tone-ring: var(--social-peach-ring);
+}
+
+.avatar[data-avatar-tone="amber"],
+.moment-avatar[data-avatar-tone="amber"],
+.event-avatar[data-avatar-tone="amber"],
+.message-avatar[data-avatar-tone="amber"] {
+  --avatar-tone-bg: var(--social-amber-bg);
+  --avatar-tone-ink: var(--social-amber-ink);
+  --avatar-tone-ring: var(--social-amber-ring);
+}
+
+.avatar[data-avatar-tone="user"],
+.moment-avatar[data-avatar-tone="user"],
+.event-avatar[data-avatar-tone="user"],
+.message-avatar[data-avatar-tone="user"] {
+  --avatar-tone-bg: var(--social-user-bg);
+  --avatar-tone-ink: var(--social-user-ink);
+  --avatar-tone-ring: var(--social-user-ring);
+}
+
+.avatar[data-avatar-tone="world"],
+.moment-avatar[data-avatar-tone="world"],
+.event-avatar[data-avatar-tone="world"],
+.message-avatar[data-avatar-tone="world"] {
+  --avatar-tone-bg: var(--social-world-bg);
+  --avatar-tone-ink: var(--social-world-ink);
+  --avatar-tone-ring: var(--social-world-ring);
+}
+
+.avatar[data-avatar-tone] img,
+.moment-avatar[data-avatar-tone] img,
+.event-avatar[data-avatar-tone] img,
+.message-avatar[data-avatar-tone] img {
+  border-color: transparent;
+}
+
+.mobile-character-story .avatar[data-avatar-tone] {
+  border-color: color-mix(in srgb, var(--avatar-tone-ring) 82%, var(--line));
+  box-shadow:
+    0 0 0 3px var(--surface-solid),
+    0 0 0 5px color-mix(in srgb, var(--avatar-tone-ring) 48%, transparent);
+}
+
+.mobile-inbox-private-panel .contact .avatar[data-avatar-tone],
+.world-event-entry-card .event-avatar[data-avatar-tone] {
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 46%, transparent);
+}
+
+.world-event-entry-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.world-event-entry-meta span:not(.world-event-entry-status) {
+  display: inline-flex;
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+  align-items: center;
+  padding: 3px 8px;
+  color: var(--social-sky-ink);
+  background: color-mix(in srgb, var(--social-sky-bg) 64%, var(--surface-raised));
+  border: 1px solid color-mix(in srgb, var(--social-sky-ring) 34%, transparent);
+  border-radius: 999px;
+  line-height: 1.2;
+}
+
+.world-event-entry-status {
+  display: inline-flex;
+  width: auto;
+  min-width: max-content;
+  align-items: center;
+  margin-left: 0;
+  padding: 3px 8px;
+  color: var(--social-teal-ink);
+  background: color-mix(in srgb, var(--social-teal-bg) 74%, var(--surface-raised));
+  border: 1px solid color-mix(in srgb, var(--social-teal-ring) 42%, transparent);
+  border-radius: 999px;
+  line-height: 1.2;
+}
+
+.world-event-entry-status.is-resolved {
+  color: var(--social-amber-ink);
+  background: color-mix(in srgb, var(--social-amber-bg) 74%, var(--surface-raised));
+  border-color: color-mix(in srgb, var(--social-amber-ring) 40%, transparent);
+}
+
+.private-chat-identity-select:focus-within .private-chat-identity-avatar,
+.world-persona-select:focus-within .header-avatar {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--avatar-tone-ring) 36%, transparent);
 }

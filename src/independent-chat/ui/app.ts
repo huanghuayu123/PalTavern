@@ -1432,6 +1432,25 @@ function renderAvatar(character: CharacterProfile): string {
     : escapeHtml(character.name.slice(0, 1));
 }
 
+type AvatarTone = 'teal' | 'sky' | 'lavender' | 'peach' | 'amber';
+
+const AVATAR_TONES: AvatarTone[] = ['teal', 'sky', 'lavender', 'peach', 'amber'];
+
+function avatarToneForId(id: string): AvatarTone {
+  // 小注释：用角色 ID 做稳定哈希，避免每次渲染后头像色调跳变。
+  const seed = id.trim() || 'character';
+  let hash = 0;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash = ((hash * 31) + seed.charCodeAt(index)) >>> 0;
+  }
+  return AVATAR_TONES[hash % AVATAR_TONES.length];
+}
+
+function avatarToneAttribute(character?: CharacterProfile): string {
+  const tone: AvatarTone | 'user' = character ? avatarToneForId(character.id) : 'user';
+  return ` data-avatar-tone="${escapeHtml(tone)}"`;
+}
+
 type IconName = 'message' | 'contacts' | 'world' | 'moments' | 'events' | 'timeline' | 'settings' | 'search' | 'send' | 'refresh' | 'import' | 'sticker' | 'add' | 'back';
 
 function icon(name: IconName): string {
@@ -1690,7 +1709,7 @@ function renderMessageProfilePopover(character?: CharacterProfile): string {
     <button class="message-profile-backdrop" id="close-message-profile-popover" data-close-message-profile type="button" aria-label="关闭关系概览"></button>
     <aside class="message-profile-popover" style="left: ${left}px; top: ${top}px" role="dialog" aria-label="关系概览">
       <header>
-        <span class="avatar mini-avatar">${renderAvatar(character)}</span>
+        <span class="avatar mini-avatar"${avatarToneAttribute(character)}>${renderAvatar(character)}</span>
         <div>
           <strong>${escapeHtml(character.name)}</strong>
           <small>和 user 的关系</small>
@@ -1749,7 +1768,7 @@ function renderContacts(mode: 'contacts' | 'recent' = 'contacts'): string {
       : statusLine || compactText(characterSettingsText(character), 48) || '已导入角色卡';
     return `
     <button class="contact conversation-row ${character.id === activeCharacter()?.id ? 'is-active' : ''}" data-character-id="${escapeHtml(character.id)}">
-      <span class="avatar">${renderAvatar(character)}</span>
+      <span class="avatar"${avatarToneAttribute(character)}>${renderAvatar(character)}</span>
       <span class="contact-copy">
         <span class="contact-name">${escapeHtml(character.name)}</span>
         <span class="contact-subtitle">${escapeHtml(subtitle)}</span>
@@ -1781,7 +1800,7 @@ function renderGroupAvatarStack(chat: GroupChatProfile): string {
   }
   return `
     <span class="group-avatar-stack" aria-hidden="true">
-      ${participants.map(character => `<span class="avatar">${renderAvatar(character)}</span>`).join('')}
+      ${participants.map(character => `<span class="avatar"${avatarToneAttribute(character)}>${renderAvatar(character)}</span>`).join('')}
     </span>
   `;
 }
@@ -1865,7 +1884,7 @@ function renderMobileCharacterStoryStrip(): string {
     <section class="mobile-character-story-strip" aria-label="角色快捷入口">
       ${characters.map(character => `
         <button class="mobile-character-story" data-character-id="${escapeHtml(character.id)}" type="button">
-          <span class="avatar">${renderAvatar(character)}</span>
+          <span class="avatar"${avatarToneAttribute(character)}>${renderAvatar(character)}</span>
           <small>${escapeHtml(character.name)}</small>
         </button>
       `).join('')}
@@ -1967,7 +1986,7 @@ function renderPrivateChatTargetSelector(): string {
   if (characters.length === 0) return '';
   return `
     <label class="private-chat-identity-select">
-      <span class="avatar private-chat-identity-avatar">${selectedCharacter ? renderAvatar(selectedCharacter) : renderUserAvatar()}</span>
+      <span class="avatar private-chat-identity-avatar"${avatarToneAttribute(selectedCharacter)}>${selectedCharacter ? renderAvatar(selectedCharacter) : renderUserAvatar()}</span>
       <span class="private-chat-identity-copy">
         <strong>${escapeHtml(selectedCharacter?.name ?? '选择角色')}</strong>
         <small>选择私信角色</small>
@@ -2000,7 +2019,7 @@ function renderMessages(character?: CharacterProfile): string {
     return `
       ${introCard}
       <div class="empty-state compact-empty">
-        <span class="avatar hero-avatar">${renderAvatar(character)}</span>
+        <span class="avatar hero-avatar"${avatarToneAttribute(character)}>${renderAvatar(character)}</span>
         <h2>和 ${escapeHtml(character.name)} 开始聊天</h2>
         <p>${escapeHtml(compactText(characterSettingsText(character), 130) || '正在等待一条由角色设定生成的新开场消息。')}</p>
       </div>
@@ -2036,7 +2055,7 @@ function renderMessages(character?: CharacterProfile): string {
     ${showTime ? `<div class="message-time">${formatConversationTime(message.createdAt)}</div>` : ''}
     <div class="message-row ${message.role === 'assistant' ? 'assistant' : 'user'} ${selfAuthoredCharacter ? 'is-authored-character' : ''} ${messageActionId === message.id ? 'has-actions-open-above' : ''}">
       ${message.role === 'assistant'
-        ? `<button class="message-avatar assistant-avatar message-profile-trigger" type="button" data-message-profile-character="${escapeHtml(character.id)}" aria-label="查看 ${escapeHtml(character.name)} 和 user 的关系">${renderAvatar(character)}</button>`
+        ? `<button class="message-avatar assistant-avatar message-profile-trigger" type="button" data-message-profile-character="${escapeHtml(character.id)}" aria-label="查看 ${escapeHtml(character.name)} 和 user 的关系"${avatarToneAttribute(character)}>${renderAvatar(character)}</button>`
         : `<span class="message-avatar user-avatar" aria-hidden="true">${privateChatSpeakerAvatar(message)}</span>`}
       <div class="message ${message.role === 'assistant' ? 'assistant' : 'user'} ${sticker ? 'sticker-message' : ''} ${messageActionId === message.id ? 'actions-open-above' : ''}"
         data-message-id="${escapeHtml(message.id)}" tabindex="0">
@@ -2497,7 +2516,7 @@ function renderGroupParticipantsEditor(chat?: GroupChatProfile): string {
       ${characters.map(character => `
         <label class="group-participant-option ${selected.has(character.id) ? 'is-active' : ''}">
           <input type="checkbox" data-group-participant value="${escapeHtml(character.id)}" ${selected.has(character.id) ? 'checked' : ''} />
-          <span class="avatar">${renderAvatar(character)}</span>
+          <span class="avatar"${avatarToneAttribute(character)}>${renderAvatar(character)}</span>
           <strong>${escapeHtml(character.name)}</strong>
         </label>
       `).join('')}
@@ -2750,7 +2769,7 @@ function renderMomentVisibilityContactPicker(
           <div class="moment-visibility-contact-list">
             ${characters.map(character => `
               <label class="moment-visibility-contact-row">
-                <span class="avatar mini-avatar">${renderAvatar(character)}</span>
+                <span class="avatar mini-avatar"${avatarToneAttribute(character)}>${renderAvatar(character)}</span>
                 <span class="moment-visibility-contact-main">
                   <strong>${escapeHtml(character.name)}</strong>
                   <small>${escapeHtml(character.relationship.summary || character.relationship.stage)}</small>
@@ -2830,7 +2849,7 @@ function renderMomentsPage(mobile = false): string {
               <div><span class="eyebrow">Moment</span><strong>发布动态</strong></div>
               <button class="icon-button" id="close-moment-composer" type="button" aria-label="关闭发布动态">×</button>
             </div>
-            <div class="moment-avatar ${selectedMomentCharacter ? '' : 'user-avatar'}" aria-hidden="true">${authorAvatar}</div>
+            <div class="moment-avatar ${selectedMomentCharacter ? '' : 'user-avatar'}"${selectedMomentCharacter ? avatarToneAttribute(selectedMomentCharacter) : ' data-avatar-tone="user"'} aria-hidden="true">${authorAvatar}</div>
             <div class="moments-publisher-body">
               <div class="moment-compose-meta">
               <label class="field moment-author-select">
@@ -2942,7 +2961,7 @@ function renderEventComposerLeadActor(): string {
   const avatar = character ? renderAvatar(character) : renderUserAvatar();
   return `
     <div class="event-lead-actor" data-event-lead-actor="${escapeHtml(leadActor.id)}">
-      <span class="avatar mini-avatar">${avatar}</span>
+      <span class="avatar mini-avatar"${avatarToneAttribute(character)}>${avatar}</span>
       <span><small>当前身份</small><strong>${escapeHtml(leadActor.name)}</strong></span>
     </div>
   `;
@@ -2964,7 +2983,7 @@ function renderEventParticipantSelect(): string {
         ${characters.map(character => `
           <label class="event-participant-option ${selected.has(character.id) ? 'is-active' : ''}">
             <input type="checkbox" data-event-participant value="${escapeHtml(character.id)}" ${selected.has(character.id) ? 'checked' : ''} />
-            <span class="avatar mini-avatar">${renderAvatar(character)}</span>
+            <span class="avatar mini-avatar"${avatarToneAttribute(character)}>${renderAvatar(character)}</span>
             <span>${escapeHtml(character.name)}</span>
           </label>
         `).join('')}
@@ -3109,7 +3128,7 @@ function renderMoments(): string {
       : escapeHtml(author.slice(0, 1));
     return `
       <article class="moment-card">
-        <div class="moment-avatar ${character ? '' : 'user-avatar'}">${avatar}</div>
+        <div class="moment-avatar ${character ? '' : 'user-avatar'}"${character ? avatarToneAttribute(character) : ' data-avatar-tone="user"'}>${avatar}</div>
         <div class="moment-body">
           <div class="moment-header">
             <div>
@@ -3205,10 +3224,10 @@ function renderEventAvatars(event: WorldEvent): string {
     .map(id => state.characters.find(character => character.id === id))
     .filter((character): character is CharacterProfile => Boolean(character));
   if (participants.length === 0) {
-    return '<span class="event-avatar world-avatar">岛</span>';
+    return '<span class="event-avatar world-avatar" data-avatar-tone="world">岛</span>';
   }
   return participants.slice(0, 4).map(character =>
-    `<span class="event-avatar" title="${escapeHtml(character.name)}">${renderAvatar(character)}</span>`,
+    `<span class="event-avatar" title="${escapeHtml(character.name)}"${avatarToneAttribute(character)}>${renderAvatar(character)}</span>`,
   ).join('');
 }
 
@@ -3442,7 +3461,7 @@ function renderWorldPersonaSelector(): string {
   return `
     <details class="world-persona-select">
       <summary>
-        <span class="avatar header-avatar">${avatar}</span>
+        <span class="avatar header-avatar"${avatarToneAttribute(actor.character)}>${avatar}</span>
         <span class="world-persona-name">
           <strong>${escapeHtml(personaName)}</strong>
         </span>
@@ -3712,7 +3731,7 @@ function renderRpSegment(segment: RpRenderSegment, fallbackCharacter?: Character
   const emotion = segment.kind === 'thought' ? `内心 · ${segment.emotion ?? '日常'}` : segment.emotion ?? '日常';
   return `
     <div class="dialogue-turn">
-      <span class="avatar">${speakerCharacter ? renderAvatar(speakerCharacter) : escapeHtml(speakerName.slice(0, 1))}</span>
+      <span class="avatar"${avatarToneAttribute(speakerCharacter)}>${speakerCharacter ? renderAvatar(speakerCharacter) : escapeHtml(speakerName.slice(0, 1))}</span>
       <div class="dialogue-bubble">
         <div class="dialogue-head">
           <span class="dialogue-name">${escapeHtml(speakerName)}</span>
