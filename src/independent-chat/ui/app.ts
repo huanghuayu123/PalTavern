@@ -178,7 +178,6 @@ import {
   communicationActor,
   communicationActorId,
   createWorld,
-  DEEPSEEK_API_URL,
   deleteWorld,
   conversationFor,
   ensureConversation,
@@ -238,6 +237,12 @@ import {
   renderChatBackgroundControl,
   renderUserAvatar,
 } from './chat-surface';
+import {
+  apiUrlForProvider,
+  modelProviderFor,
+  modelProviderOptions,
+  modelProviderValue,
+} from './model-settings';
 
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) {
@@ -1215,31 +1220,6 @@ function bindCompanionTimeControls(prefix: 'settings' | 'onboarding'): void {
   document.querySelector<HTMLInputElement>(`#${prefix}-virtual-time-minute`)?.addEventListener('input', () => {
     syncVirtualClockFields(prefix, 'parts');
   });
-}
-
-function modelProviderValue(value: string | undefined): ModelProvider {
-  return value === 'custom' ? 'custom' : 'deepseek';
-}
-
-function modelProviderFor(apiUrl: string, provider?: ModelProvider): ModelProvider {
-  if (provider === 'custom') return 'custom';
-  const normalized = apiUrl.trim().replace(/\/+$/, '').toLowerCase();
-  if (normalized && normalized !== DEEPSEEK_API_URL.toLowerCase()) return 'custom';
-  return 'deepseek';
-}
-
-function apiUrlForProvider(provider: ModelProvider, currentUrl: string): string {
-  if (provider === 'deepseek') return DEEPSEEK_API_URL;
-  return currentUrl.trim().replace(/\/+$/, '').toLowerCase() === DEEPSEEK_API_URL.toLowerCase()
-    ? ''
-    : currentUrl;
-}
-
-function modelProviderOptions(provider: ModelProvider): string {
-  return `
-    <option value="deepseek" ${provider === 'deepseek' ? 'selected' : ''}>DeepSeek（默认）</option>
-    <option value="custom" ${provider === 'custom' ? 'selected' : ''}>其他兼容 OpenAI</option>
-  `;
 }
 
 function affinityProgress(value: number): number {
@@ -4783,7 +4763,7 @@ function renderSettingsContent(character?: CharacterProfile): string {
   if (activeSettingsSection === 'model') {
     const config = modelFormDraft ?? state.modelConfig;
     const provider = modelProviderFor(config.apiUrl, config.provider);
-    const apiUrl = provider === 'deepseek' ? DEEPSEEK_API_URL : config.apiUrl;
+    const apiUrl = apiUrlForProvider(provider, config.apiUrl);
     const modelConnectionSettings = `
       <label class="field"><span>模型厂商</span><select id="model-provider">${modelProviderOptions(provider)}</select></label>
       <label class="field"><span>API 地址</span><input id="api-url" value="${escapeHtml(apiUrl)}" placeholder="https://example.com/v1" /></label>
@@ -5089,7 +5069,7 @@ function renderDesktopSettingsPage(character?: CharacterProfile): string {
 function renderModelOnboarding(): string {
   if (!modelOnboardingOpen) return '';
   const provider = modelProviderFor(modelOnboardingDraft.apiUrl, modelOnboardingDraft.provider);
-  const apiUrl = provider === 'deepseek' ? DEEPSEEK_API_URL : modelOnboardingDraft.apiUrl;
+  const apiUrl = apiUrlForProvider(provider, modelOnboardingDraft.apiUrl);
   return `
     <div class="model-onboarding-overlay" role="dialog" aria-modal="true" aria-labelledby="model-onboarding-title">
       <section class="model-onboarding-window">

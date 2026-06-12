@@ -1300,6 +1300,10 @@ const chatSurfacePath = path.join(process.cwd(), 'src/independent-chat/ui/chat-s
 const chatSurfaceSource = fs.existsSync(chatSurfacePath)
   ? fs.readFileSync(chatSurfacePath, 'utf8')
   : '';
+const modelSettingsPath = path.join(process.cwd(), 'src/independent-chat/ui/model-settings.ts');
+const modelSettingsSource = fs.existsSync(modelSettingsPath)
+  ? fs.readFileSync(modelSettingsPath, 'utf8')
+  : '';
 const chatSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/chat/private-chat.ts'), 'utf8');
 const schedulerSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/automation/scheduler.ts'), 'utf8');
 const groupChatSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/chat/group-chat.ts'), 'utf8');
@@ -2179,6 +2183,19 @@ if (
   || uiSource.includes('function renderChatBackgroundControl(')
 ) {
   throw new Error('Chat surface helpers should live in ui/chat-surface.ts instead of the main app renderer.');
+}
+if (
+  !modelSettingsSource.includes('export function modelProviderValue')
+  || !modelSettingsSource.includes('export function modelProviderFor')
+  || !modelSettingsSource.includes('export function apiUrlForProvider')
+  || !modelSettingsSource.includes('export function modelProviderOptions')
+  || !uiSource.includes("from './model-settings'")
+  || uiSource.includes('function modelProviderValue(')
+  || uiSource.includes('function modelProviderFor(')
+  || uiSource.includes('function apiUrlForProvider(')
+  || uiSource.includes('function modelProviderOptions(')
+) {
+  throw new Error('Model provider UI helpers should live in ui/model-settings.ts instead of the main app renderer.');
 }
 if (
   !styleSource.includes('/* 大注释：页面切换动效层')

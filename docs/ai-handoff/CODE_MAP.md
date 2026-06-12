@@ -61,6 +61,11 @@ Do not treat this as a pure view file. It is view plus UI controller plus transi
 - Owns shared chat-surface display helpers: avatar markup, stable avatar tone attributes, user avatar initials, chat background controls, image import reading, and chat surface inline style.
 - Keeps visual chat chrome separate from page renderers so private chat, group chat, moments, and world RP can share the same display rules.
 
+`src/independent-chat/ui/model-settings.ts`
+
+- Owns model-provider UI helpers: provider normalization, API URL selection, and provider `<option>` rendering.
+- Keep this module pure. It should not read DOM fields or save model config.
+
 `src/independent-chat/ui/rp-rendering.ts`
 
 - Parses RP text into narration, dialogue, and thought segments.
