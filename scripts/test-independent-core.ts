@@ -1292,6 +1292,10 @@ const transitionsPath = path.join(process.cwd(), 'src/independent-chat/ui/transi
 const transitionsSource = fs.existsSync(transitionsPath)
   ? fs.readFileSync(transitionsPath, 'utf8')
   : '';
+const iconsPath = path.join(process.cwd(), 'src/independent-chat/ui/icons.ts');
+const iconsSource = fs.existsSync(iconsPath)
+  ? fs.readFileSync(iconsPath, 'utf8')
+  : '';
 const chatSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/chat/private-chat.ts'), 'utf8');
 const schedulerSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/automation/scheduler.ts'), 'utf8');
 const groupChatSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/chat/group-chat.ts'), 'utf8');
@@ -2151,6 +2155,15 @@ if (
   || renderWhenChatInputIdleBlock.includes('renderWithUiTransition')
 ) {
   throw new Error('Page changes should use one guarded UI transition entry while idle/background renders stay quiet.');
+}
+if (
+  !iconsSource.includes('export type IconName')
+  || !iconsSource.includes('export function icon')
+  || !uiSource.includes("from './icons'")
+  || uiSource.includes('function icon(name: IconName)')
+  || uiSource.includes('type IconName =')
+) {
+  throw new Error('Shared UI icons should live in ui/icons.ts instead of the main app renderer.');
 }
 if (
   !styleSource.includes('/* 大注释：页面切换动效层')

@@ -51,6 +51,11 @@ Do not treat this as a pure view file. It is view plus UI controller plus transi
 - Exports `renderWithUiTransition(kind, renderPage)` so the module can run transitions without importing the whole UI shell.
 - Do not call this module for background scheduler refreshes or input-idle renders.
 
+`src/independent-chat/ui/icons.ts`
+
+- Owns shared icon names and SVG rendering.
+- Keeps repeated navigation/action icon paths out of the main app renderer.
+
 `src/independent-chat/ui/rp-rendering.ts`
 
 - Parses RP text into narration, dialogue, and thought segments.
