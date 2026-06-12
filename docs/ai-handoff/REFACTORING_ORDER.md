@@ -29,6 +29,7 @@ Candidate files:
 - `src/independent-chat/ui/chat-surface.ts`: avatar rendering and chat background helpers. Completed first slice: shared avatar tones, user initials, chat background controls, image reading, and chat surface style now live here.
 - `src/independent-chat/ui/model-settings.ts`: model-provider UI helpers. Completed: provider normalization, API URL selection, and provider option rendering now live here.
 - `src/independent-chat/ui/settings-ui.ts`: reusable settings UI fragments. Completed: compact folds, switch controls, prompt-role options, and prompt parameter summaries now live here.
+- `src/independent-chat/ui/display-labels.ts`: shared display text. Completed: relationship, pacing, countdown, conversation time, and timeline labels now live here.
 
 Keep exported function names close to current names so tests and future diffs are easy to review.
 

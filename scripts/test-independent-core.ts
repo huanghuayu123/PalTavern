@@ -1308,6 +1308,10 @@ const settingsUiPath = path.join(process.cwd(), 'src/independent-chat/ui/setting
 const settingsUiSource = fs.existsSync(settingsUiPath)
   ? fs.readFileSync(settingsUiPath, 'utf8')
   : '';
+const displayLabelsPath = path.join(process.cwd(), 'src/independent-chat/ui/display-labels.ts');
+const displayLabelsSource = fs.existsSync(displayLabelsPath)
+  ? fs.readFileSync(displayLabelsPath, 'utf8')
+  : '';
 const chatSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/chat/private-chat.ts'), 'utf8');
 const schedulerSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/automation/scheduler.ts'), 'utf8');
 const groupChatSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/chat/group-chat.ts'), 'utf8');
@@ -2208,6 +2212,23 @@ if (
   || uiSource.includes('function modelProviderOptions(')
 ) {
   throw new Error('Model provider UI helpers should live in ui/model-settings.ts instead of the main app renderer.');
+}
+if (
+  !displayLabelsSource.includes('export function formatConversationTime')
+  || !displayLabelsSource.includes('export function relationshipStageLabel')
+  || !displayLabelsSource.includes('export function pacingStateLabel')
+  || !displayLabelsSource.includes('export function countdownText')
+  || !displayLabelsSource.includes('export function timelineTypeLabel')
+  || !displayLabelsSource.includes('export function timelineSourceLabel')
+  || !uiSource.includes("from './display-labels'")
+  || uiSource.includes('function formatConversationTime(')
+  || uiSource.includes('function relationshipStageLabel(')
+  || uiSource.includes('function pacingStateLabel(')
+  || uiSource.includes('function countdownText(')
+  || uiSource.includes('function timelineTypeLabel(')
+  || uiSource.includes('function timelineSourceLabel(')
+) {
+  throw new Error('Shared display labels should live in ui/display-labels.ts instead of the main app renderer.');
 }
 if (
   !styleSource.includes('/* 大注释：页面切换动效层')

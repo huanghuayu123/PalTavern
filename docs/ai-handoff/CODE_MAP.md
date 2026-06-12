@@ -71,6 +71,11 @@ Do not treat this as a pure view file. It is view plus UI controller plus transi
 - Owns reusable settings UI fragments: compact folds, switch controls, prompt-role options, and prompt parameter summaries.
 - Keep this module stateless. It should render from arguments only.
 
+`src/independent-chat/ui/display-labels.ts`
+
+- Owns user-facing labels and time text for relationship stages, pacing states, conversations, countdowns, and timeline entries.
+- Keep business state codes in data modules; translate them for display here.
+
 `src/independent-chat/ui/rp-rendering.ts`
 
 - Parses RP text into narration, dialogue, and thought segments.
