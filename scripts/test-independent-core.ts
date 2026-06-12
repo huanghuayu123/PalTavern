@@ -1304,6 +1304,10 @@ const modelSettingsPath = path.join(process.cwd(), 'src/independent-chat/ui/mode
 const modelSettingsSource = fs.existsSync(modelSettingsPath)
   ? fs.readFileSync(modelSettingsPath, 'utf8')
   : '';
+const settingsUiPath = path.join(process.cwd(), 'src/independent-chat/ui/settings-ui.ts');
+const settingsUiSource = fs.existsSync(settingsUiPath)
+  ? fs.readFileSync(settingsUiPath, 'utf8')
+  : '';
 const chatSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/chat/private-chat.ts'), 'utf8');
 const schedulerSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/automation/scheduler.ts'), 'utf8');
 const groupChatSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/chat/group-chat.ts'), 'utf8');
@@ -1891,8 +1895,16 @@ if (
   throw new Error('Dedicated character worldbook page should let expanded entries grow the page so the page itself can scroll.');
 }
 if (
-  !uiSource.includes('function renderSettingsFold(')
-  || !uiSource.includes('class="settings-fold"')
+  !settingsUiSource.includes('export function renderSettingsFold(')
+  || !settingsUiSource.includes('class="settings-fold"')
+  || !settingsUiSource.includes('export function renderSwitchControl')
+  || !settingsUiSource.includes('export function renderPromptRoleOptions')
+  || !settingsUiSource.includes('export function renderParameterSummary')
+  || !uiSource.includes("from './settings-ui'")
+  || uiSource.includes('function renderSettingsFold(')
+  || uiSource.includes('function renderSwitchControl(')
+  || uiSource.includes('function renderPromptRoleOptions(')
+  || uiSource.includes('function renderParameterSummary(')
   || !uiSource.includes('class="settings-fold-list"')
   || !styleSource.includes('.settings-fold > summary')
   || !renderAutoMessageBlock.includes('renderSettingsFold(')

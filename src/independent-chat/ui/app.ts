@@ -243,6 +243,12 @@ import {
   modelProviderOptions,
   modelProviderValue,
 } from './model-settings';
+import {
+  renderParameterSummary,
+  renderPromptRoleOptions,
+  renderSettingsFold,
+  renderSwitchControl,
+} from './settings-ui';
 
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) {
@@ -4387,44 +4393,6 @@ function renderPromptPresetOptions(activeId?: string): string {
   return state.promptPresets.map(preset =>
     `<option value="${escapeHtml(preset.id)}" ${preset.id === activeId ? 'selected' : ''}>${escapeHtml(preset.name)}</option>`,
   ).join('');
-}
-
-function renderParameterSummary(preset: PromptPreset): string {
-  const entries = Object.entries(preset.parameterSummary);
-  if (entries.length === 0) return '未发现可保留的模型参数。';
-  return entries
-    .slice(0, 10)
-    .map(([key, value]) => `${key}: ${String(value)}`)
-    .join(' · ');
-}
-
-function renderSwitchControl(attrs: string, checked: boolean, label: string): string {
-  return `
-    <span class="switch-control">
-      <input type="checkbox" ${attrs} ${checked ? 'checked' : ''} aria-label="${escapeHtml(label)}" />
-      <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
-    </span>
-  `;
-}
-
-function renderSettingsFold(title: string, summary: string, content: string, open = false): string {
-  return `
-    <details class="settings-fold" ${open ? 'open' : ''}>
-      <summary>
-        <span>
-          <strong>${escapeHtml(title)}</strong>
-          <small>${escapeHtml(summary)}</small>
-        </span>
-      </summary>
-      <div class="settings-fold-body">${content}</div>
-    </details>
-  `;
-}
-
-function renderPromptRoleOptions(activeRole: string): string {
-  return ['system', 'user', 'assistant']
-    .map(role => `<option value="${role}" ${role === activeRole ? 'selected' : ''}>${role}</option>`)
-    .join('');
 }
 
 function renderPromptPresetRows(preset: PromptPreset): string {

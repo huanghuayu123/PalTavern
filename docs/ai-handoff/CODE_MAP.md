@@ -66,6 +66,11 @@ Do not treat this as a pure view file. It is view plus UI controller plus transi
 - Owns model-provider UI helpers: provider normalization, API URL selection, and provider `<option>` rendering.
 - Keep this module pure. It should not read DOM fields or save model config.
 
+`src/independent-chat/ui/settings-ui.ts`
+
+- Owns reusable settings UI fragments: compact folds, switch controls, prompt-role options, and prompt parameter summaries.
+- Keep this module stateless. It should render from arguments only.
+
 `src/independent-chat/ui/rp-rendering.ts`
 
 - Parses RP text into narration, dialogue, and thought segments.
