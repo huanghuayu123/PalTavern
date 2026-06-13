@@ -1543,6 +1543,10 @@ const displayLabelsPath = path.join(process.cwd(), 'src/independent-chat/ui/disp
 const displayLabelsSource = fs.existsSync(displayLabelsPath)
   ? fs.readFileSync(displayLabelsPath, 'utf8')
   : '';
+const worldWorkbenchPanelsPath = path.join(process.cwd(), 'src/independent-chat/ui/world-workbench-panels.ts');
+const worldWorkbenchPanelsSource = fs.existsSync(worldWorkbenchPanelsPath)
+  ? fs.readFileSync(worldWorkbenchPanelsPath, 'utf8')
+  : '';
 const chatSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/chat/private-chat.ts'), 'utf8');
 const groupChatSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/chat/group-chat.ts'), 'utf8');
 const typingDelayPath = path.join(process.cwd(), 'src/independent-chat/chat/typing-delay.ts');
@@ -2693,6 +2697,24 @@ if (
   || uiSource.includes('function timelineSourceLabel(')
 ) {
   throw new Error('Shared display labels should live in ui/display-labels.ts instead of the main app renderer.');
+}
+if (
+  !worldWorkbenchPanelsSource.includes('export function renderWorldContinuePanel')
+  || !worldWorkbenchPanelsSource.includes('export function renderWorldChapterPanel')
+  || !worldWorkbenchPanelsSource.includes('export function renderRelationshipMapPanel')
+  || !worldWorkbenchPanelsSource.includes('export function renderMemoryInboxPanel')
+  || !worldWorkbenchPanelsSource.includes('export function renderWorldDrawerTimeline')
+  || !worldWorkbenchPanelsSource.includes('type WorldWorkbenchPanelContext')
+  || !uiSource.includes("from './world-workbench-panels'")
+  || uiSource.includes('function renderWorldContinuePanel(')
+  || uiSource.includes('function renderMemorySuggestionItem(')
+  || uiSource.includes('function renderMemoryVault(')
+  || uiSource.includes('function renderWorldChapterPanel(')
+  || uiSource.includes('function renderRelationshipMapPanel(')
+  || uiSource.includes('function renderMemoryInboxPanel(')
+  || uiSource.includes('function renderWorldDrawerTimeline(')
+) {
+  throw new Error('World workbench memory, chapter, relationship, and continue panels should live in ui/world-workbench-panels.ts instead of the main app renderer.');
 }
 if (false && (
   !styleSource.includes('/* 大注释：页面切换动效层')

@@ -203,19 +203,21 @@ async function main() {
   }
 
   const appSource = fs.readFileSync(path.join(__dirname, '../src/independent-chat/ui/app.ts'), 'utf8');
+  const worldWorkbenchPanelsSource = fs.readFileSync(path.join(__dirname, '../src/independent-chat/ui/world-workbench-panels.ts'), 'utf8');
+  const uiMemorySource = `${appSource}\n${worldWorkbenchPanelsSource}`;
   const styleSource = fs.readFileSync(path.join(__dirname, '../src/independent-chat/styles.css'), 'utf8');
   if (
-    !appSource.includes('pendingMemorySuggestionsForActiveWorld')
-    || !appSource.includes('renderWorldContinuePanel')
-    || !appSource.includes('renderMemorySuggestionQueue')
-    || !appSource.includes('acceptMemorySuggestion')
-    || !appSource.includes('dismissMemorySuggestion')
-    || !appSource.includes('data-accept-memory-suggestion')
-    || !appSource.includes('data-dismiss-memory-suggestion')
-    || !appSource.includes("trigger: 'event_resolved'")
-    || !appSource.includes("trigger: 'manual_note'")
-    || !appSource.includes("trigger: 'chat_message'")
-    || appSource.includes('memorySuggestions.push(')
+    !uiMemorySource.includes('pendingMemorySuggestionsForActiveWorld')
+    || !uiMemorySource.includes('renderWorldContinuePanel')
+    || !uiMemorySource.includes('renderMemorySuggestionQueue')
+    || !uiMemorySource.includes('acceptMemorySuggestion')
+    || !uiMemorySource.includes('dismissMemorySuggestion')
+    || !uiMemorySource.includes('data-accept-memory-suggestion')
+    || !uiMemorySource.includes('data-dismiss-memory-suggestion')
+    || !uiMemorySource.includes("trigger: 'event_resolved'")
+    || !uiMemorySource.includes("trigger: 'manual_note'")
+    || !uiMemorySource.includes("trigger: 'chat_message'")
+    || uiMemorySource.includes('memorySuggestions.push(')
   ) {
     throw new Error('World UI should expose the memory suggestion queue through the memory module, not direct state mutation.');
   }
