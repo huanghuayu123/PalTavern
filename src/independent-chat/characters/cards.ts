@@ -557,6 +557,17 @@ export function deleteCharacter(characterId: string): CharacterProfile | undefin
       .filter(item => item.characterId === characterId || item.ownerCharacterId === characterId)
       .map(item => item.id),
   );
+  const removedMomentIds = new Set(state.moments
+    .filter(moment => moment.characterId === characterId)
+    .map(moment => moment.id));
+  const removedMomentCommentIds = new Set<string>();
+  const removedInteractionIds = new Set(
+    state.characterInteractions
+      .filter(interaction =>
+        interaction.actorCharacterId === characterId || interaction.targetCharacterIds.includes(characterId),
+      )
+      .map(interaction => interaction.id),
+  );
   state.characters = state.characters.filter(item => item.id !== characterId);
   if (state.communicationIdentityByWorldId[character.worldId] === characterId) {
     state.communicationIdentityByWorldId[character.worldId] = 'user';
@@ -573,8 +584,45 @@ export function deleteCharacter(characterId: string): CharacterProfile | undefin
   state.messages = state.messages.filter(message =>
     message.characterId !== characterId && !conversationIds.has(message.conversationId),
   );
-  state.moments = state.moments.filter(moment => moment.characterId !== characterId);
+  state.moments = state.moments
+    .filter(moment => moment.characterId !== characterId)
+    .map(moment => {
+      const commentIdsToRemove = new Set(
+        moment.comments
+          .filter(comment => comment.characterId === characterId)
+          .map(comment => comment.id),
+      );
+      let foundLinkedReply = commentIdsToRemove.size > 0;
+      while (foundLinkedReply) {
+        foundLinkedReply = false;
+        for (const comment of moment.comments) {
+          if (
+            comment.replyToCommentId
+            && commentIdsToRemove.has(comment.replyToCommentId)
+            && !commentIdsToRemove.has(comment.id)
+          ) {
+            commentIdsToRemove.add(comment.id);
+            foundLinkedReply = true;
+          }
+        }
+      }
+      if (commentIdsToRemove.size === 0) return moment;
+      commentIdsToRemove.forEach(id => removedMomentCommentIds.add(id));
+      return {
+        ...moment,
+        comments: moment.comments.filter(comment => !commentIdsToRemove.has(comment.id)),
+      };
+    });
   state.characterStatuses = state.characterStatuses.filter(status => status.characterId !== characterId);
+  state.characterInteractions = state.characterInteractions.filter(interaction =>
+    interaction.actorCharacterId !== characterId && !interaction.targetCharacterIds.includes(characterId),
+  );
+  state.timelineEntries = state.timelineEntries.filter(entry =>
+    !entry.characterIds.includes(characterId)
+    && !(entry.source.type === 'moment' && removedMomentIds.has(entry.source.id))
+    && !(entry.source.type === 'comment' && removedMomentCommentIds.has(entry.source.id))
+    && !(entry.source.type === 'interaction' && removedInteractionIds.has(entry.source.id)),
+  );
   state.dailyBriefs = state.dailyBriefs.map(brief => ({
     ...brief,
     suggestedCharacterIds: brief.suggestedCharacterIds.filter(id => id !== characterId),

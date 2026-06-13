@@ -3,7 +3,7 @@
  * Owns one-on-one messages, reply generation, retry, recall, delete, and input-protection state.
  */
 import type { CharacterProfile, ChatMessage, ConversationProfile } from '../core/types';
-import { parseModelChatOutput } from './format';
+import { cleanModelChatFallback, parseModelChatOutput } from './format';
 import {
   ensureCharacterRelationship,
   relationshipSideFor,
@@ -261,7 +261,13 @@ export async function regenerateAssistantMessage(messageId: string, onChange: ()
       return;
     }
     const parts = parseModelChatOutput(rawReply, character);
-    const next = parts[0] ?? { content: rawReply.trim(), stickerId: undefined };
+    const fallbackContent = cleanModelChatFallback(rawReply);
+    const next = parts[0] ?? (fallbackContent ? { content: fallbackContent, stickerId: undefined } : undefined);
+    if (!next) {
+      statusText = `${character.name} 这次只返回了不可用的表情包，已跳过。`;
+      saveState();
+      return;
+    }
     statusText = `${character.name} 正在输入…`;
     onChange();
     await waitForModelTyping(next.content, controller.signal);
@@ -520,7 +526,7 @@ export async function generateOpeningMessage(
       '不要读取、复述、改写或提及角色卡原本的 first_mes、first_message 或开场白。',
       '写成聊天软件里自然发来的私信，不要写成长篇小说，不要替用户行动或说话。',
       '控制在 1 到 4 个短段落内，可以有少量符合角色风格的动作或环境描写。',
-    ].join('\n'), true, true, undefined, { useChatPreset: true });
+    ].join('\n'), true, true, undefined, { contextMessages: [], useChatPreset: true });
     statusText = `${character.name} 正在输入…`;
     onChange();
     await waitForModelTyping(content);

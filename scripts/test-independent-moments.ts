@@ -194,6 +194,41 @@ if (
 ) {
   throw new Error('Deleting a moment did not revoke its timeline influence.');
 }
+const undoableMoment = moments.publishMoment('undoable character moment', promptCharacter, 'character');
+const undoableComment = moments.addMomentComment(
+  undoableMoment.id,
+  'friend comment that should come back with undo',
+  friendCharacter,
+  'model',
+);
+const undoableMomentTimeline = stateModule.state.timelineEntries.find((entry: any) =>
+  entry.source.type === 'moment' && entry.source.id === undoableMoment.id,
+);
+const undoableCommentTimeline = stateModule.state.timelineEntries.find((entry: any) =>
+  entry.source.type === 'comment' && entry.source.id === undoableComment.id,
+);
+const undoSnapshot = moments.deleteMomentForUndo(undoableMoment.id);
+if (!undoSnapshot || stateModule.state.moments.some((item: any) => item.id === undoableMoment.id)) {
+  throw new Error('Undoable moment deletion did not remove the moment and return a snapshot.');
+}
+if (!undoableMomentTimeline?.revokedAt || !undoableCommentTimeline?.revokedAt) {
+  throw new Error('Undoable moment deletion did not revoke timeline side effects.');
+}
+if (!moments.restoreDeletedMoment(undoSnapshot)) {
+  throw new Error('Undoable moment snapshot could not be restored.');
+}
+const restoredUndoableMoment = stateModule.state.moments.find((item: any) => item.id === undoableMoment.id);
+if (
+  !restoredUndoableMoment
+  || restoredUndoableMoment.comments[0]?.id !== undoableComment.id
+  || undoableMomentTimeline.revokedAt
+  || undoableCommentTimeline.revokedAt
+) {
+  throw new Error('Restoring a deleted moment did not restore the moment and timeline state.');
+}
+if (!moments.deleteMoment(undoableMoment.id)) {
+  throw new Error('Restored undoable moment fixture could not be cleaned up.');
+}
 const privateMoment = moments.publishMoment('private user note', undefined, 'manual', {
   mode: 'private',
   characterIds: [],
@@ -504,16 +539,54 @@ if (moments.momentsForActiveWorld().length !== 1) {
 }
 
 const secondWorld = stateModule.createWorld('second world');
+const secondWorldCharacter = {
+  ...promptCharacter,
+  id: 'character_second_world_test',
+  worldId: secondWorld.id,
+  name: 'Second World Character',
+  relationship: {
+    ...stateModule.createDefaultRelationship(),
+    stage: 'familiar',
+    affinity: 10,
+    updatedAt: Date.now(),
+  },
+  autoMessage: stateModule.createDefaultAutoMessageSchedule(),
+  autoMoment: stateModule.createDefaultAutoMomentSchedule(),
+  autoEvent: stateModule.createDefaultAutoEventSchedule(),
+};
+stateModule.state.characters.push(secondWorldCharacter);
 const second = moments.publishMoment('second world moment');
-const secondWorldMoments = moments.momentsForActiveWorld();
-if (secondWorldMoments.length !== 1 || secondWorldMoments[0].id !== second.id) {
-  throw new Error('World moment isolation failed.');
-}
-
 stateModule.setActiveWorld('world_default');
-const defaultWorldMoments = moments.momentsForActiveWorld();
-if (defaultWorldMoments.length !== 1 || defaultWorldMoments[0].id !== first.id) {
-  throw new Error('Switching back did not restore the default world feed.');
+const combinedWorldMoments = moments.momentsForActiveWorld();
+if (
+  combinedWorldMoments.length !== 2
+  || !combinedWorldMoments.some((moment: any) => moment.id === first.id)
+  || !combinedWorldMoments.some((moment: any) => moment.id === second.id)
+) {
+  throw new Error('Dynamic feed should not switch or split by active world.');
+}
+const secondUserComment = moments.addMomentComment(second.id, 'user can comment without switching world');
+const secondCharacterComment = moments.addMomentComment(
+  second.id,
+  'same world character can comment without switching world',
+  secondWorldCharacter,
+  'model',
+);
+let crossWorldCommentBlocked = false;
+try {
+  moments.addMomentComment(second.id, 'default world character should not comment across worlds', promptCharacter, 'model');
+} catch {
+  crossWorldCommentBlocked = true;
+}
+if (
+  secondUserComment.authorType !== 'user'
+  || secondCharacterComment.characterId !== secondWorldCharacter.id
+  || !crossWorldCommentBlocked
+) {
+  throw new Error('Dynamic comments should allow the user and same-world characters, but block cross-world characters.');
+}
+if (!moments.deleteMoment(second.id)) {
+  throw new Error('Deleting a non-active-world moment from the global dynamic feed failed.');
 }
 
 if (!moments.deleteMoment(first.id) || moments.momentsForActiveWorld().length !== 0) {

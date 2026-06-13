@@ -46,6 +46,27 @@ export interface TimelineEntry {
   revokedAt?: number;
 }
 
+export type MemorySuggestionStatus = 'pending' | 'accepted' | 'dismissed';
+export type MemorySuggestionTrigger = 'event_resolved' | 'manual_note' | 'chat_message' | 'manual_tidy';
+
+export interface MemorySuggestion {
+  id: string;
+  worldId: string;
+  trigger: MemorySuggestionTrigger;
+  source: TimelineSourceRef;
+  title: string;
+  summary: string;
+  reason: string;
+  characterIds: string[];
+  includeInContext: boolean;
+  status: MemorySuggestionStatus;
+  acceptedTimelineEntryId?: string;
+  acceptedAt?: number;
+  dismissedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export type ImpactTargetType =
   | 'relationship'
   | 'character_relationship'
@@ -503,6 +524,34 @@ export interface WorldEvent {
   source: 'manual' | 'model' | 'auto_model';
 }
 
+export type WorldChapterStatus = 'active' | 'ended';
+export type WorldSceneStatus = 'active' | 'ended';
+
+export interface WorldChapterScene {
+  id: string;
+  chapterId: string;
+  worldId: string;
+  title: string;
+  summary: string;
+  sourceEventId?: string;
+  status: WorldSceneStatus;
+  startedAt: number;
+  endedAt?: number;
+}
+
+export interface WorldChapter {
+  id: string;
+  worldId: string;
+  title: string;
+  summary: string;
+  activeSceneId: string;
+  status: WorldChapterStatus;
+  scenes: WorldChapterScene[];
+  createdAt: number;
+  updatedAt: number;
+  endedAt?: number;
+}
+
 export type ModelProvider = 'deepseek' | 'custom';
 
 export type CompanionTimeMode = 'system' | 'virtual';
@@ -578,12 +627,15 @@ export interface AppState {
   messages: ChatMessage[];
   moments: MomentEntry[];
   worldEvents: WorldEvent[];
+  worldChapters: WorldChapter[];
   timelineEntries: TimelineEntry[];
   impactRecords: ImpactRecord[];
   characterInteractions: CharacterInteractionRecord[];
   characterStatuses: CharacterStatusSummary[];
   dailyBriefs: DailyBrief[];
+  memorySuggestions: MemorySuggestion[];
   activeWorldId: string;
+  activeWorldChapterIdByWorldId: Record<string, string>;
   activeCharacterId: string;
   activeGroupChatId: string;
   communicationIdentityByWorldId: Record<string, string>;

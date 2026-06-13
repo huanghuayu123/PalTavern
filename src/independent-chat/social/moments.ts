@@ -1,6 +1,6 @@
 /**
  * 大注释：Moment module.
- * Creates character moments, comments, spread interactions, and active-world filtering.
+ * Creates character moments, comments, spread interactions, and global feed ordering.
  */
 import { callModel, type ModelRequestOptions } from '../model/client';
 import {
@@ -17,7 +17,15 @@ import {
 import { activeWorld, saveState, state } from '../core/state';
 import { companionNow, companionTimeContext, companionTimePeriod } from '../core/time';
 import { addMomentCommentTimelineEntry, addMomentTimelineEntry, revokeTimelineSource } from '../memory/timeline';
-import type { CharacterProfile, MomentComment, MomentEntry, MomentVisibility } from '../core/types';
+import type {
+  CharacterInteractionRecord,
+  CharacterProfile,
+  ImpactRecord,
+  MomentComment,
+  MomentEntry,
+  MomentVisibility,
+  TimelineEntry,
+} from '../core/types';
 import { nowId } from '../core/utils';
 
 export type MomentCommentPromptMode = 'interest' | 'direct' | 'author_reply' | 'author_interest_reply';
@@ -36,11 +44,39 @@ export type MomentInteractionSpreadResult = {
   authorReplyCount: number;
 };
 
-export function momentsForActiveWorld(): MomentEntry[] {
-  const worldId = activeWorld().id;
+export interface DeletedMomentSnapshot {
+  moment: MomentEntry;
+  index: number;
+  timelineEntries: TimelineEntry[];
+  impactRecords: ImpactRecord[];
+  characterInteractions: CharacterInteractionRecord[];
+}
+
+function cloneValue<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function restoreArrayById<T extends { id: string }>(target: T[], snapshot: T[]): void {
+  const existingById = new Map(target.map(item => [item.id, item]));
+  const restored = snapshot.map(item => {
+    const existing = existingById.get(item.id);
+    if (!existing) return cloneValue(item);
+    for (const key of Object.keys(existing)) {
+      delete (existing as Record<string, unknown>)[key];
+    }
+    Object.assign(existing, cloneValue(item));
+    return existing;
+  });
+  target.splice(0, target.length, ...restored);
+}
+
+export function momentsForFeed(): MomentEntry[] {
   return state.moments
-    .filter(moment => moment.worldId === worldId)
     .sort((left, right) => right.createdAt - left.createdAt);
+}
+
+export function momentsForActiveWorld(): MomentEntry[] {
+  return momentsForFeed();
 }
 
 export function publishMoment(
@@ -138,7 +174,7 @@ export function addMomentComment(
   source: MomentComment['source'] = character ? 'model' : 'manual',
   replyToCommentId?: string,
 ): MomentComment {
-  const moment = state.moments.find(item => item.id === momentId && item.worldId === activeWorld().id);
+  const moment = state.moments.find(item => item.id === momentId);
   const text = content.trim();
   if (!moment) throw new Error('找不到这条动态。');
   if (!text) throw new Error('评论内容不能为空。');
@@ -215,7 +251,7 @@ function revokeMomentCommentSideEffects(commentId: string): void {
 }
 
 export function deleteMomentComment(momentId: string, commentId: string): boolean {
-  const moment = state.moments.find(item => item.id === momentId && item.worldId === activeWorld().id);
+  const moment = state.moments.find(item => item.id === momentId);
   if (!moment) return false;
   const index = moment.comments.findIndex(comment => comment.id === commentId);
   if (index < 0) return false;
@@ -545,8 +581,32 @@ export function isSkippedMomentComment(content: string): boolean {
   return !content.trim() || /^\s*(?:\[?跳过\]?|SKIP|不评论)\s*[。.!！]?\s*$/i.test(content);
 }
 
+export function deleteMomentForUndo(momentId: string): DeletedMomentSnapshot | null {
+  const index = state.moments.findIndex(moment => moment.id === momentId);
+  if (index < 0) return null;
+  const snapshot: DeletedMomentSnapshot = {
+    moment: cloneValue(state.moments[index]),
+    index,
+    timelineEntries: cloneValue(state.timelineEntries),
+    impactRecords: cloneValue(state.impactRecords),
+    characterInteractions: cloneValue(state.characterInteractions),
+  };
+  return deleteMoment(momentId) ? snapshot : null;
+}
+
+export function restoreDeletedMoment(snapshot: DeletedMomentSnapshot): boolean {
+  if (state.moments.some(moment => moment.id === snapshot.moment.id)) return false;
+  const index = Math.max(0, Math.min(snapshot.index, state.moments.length));
+  state.moments.splice(index, 0, cloneValue(snapshot.moment));
+  restoreArrayById(state.timelineEntries, snapshot.timelineEntries);
+  restoreArrayById(state.impactRecords, snapshot.impactRecords);
+  restoreArrayById(state.characterInteractions, snapshot.characterInteractions);
+  saveState();
+  return true;
+}
+
 export function deleteMoment(momentId: string): boolean {
-  const index = state.moments.findIndex(moment => moment.id === momentId && moment.worldId === activeWorld().id);
+  const index = state.moments.findIndex(moment => moment.id === momentId);
   if (index < 0) {
     return false;
   }

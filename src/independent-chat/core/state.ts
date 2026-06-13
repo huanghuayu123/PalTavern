@@ -25,6 +25,9 @@ import type {
   GroupChatProfile,
   ImpactRecord,
   ImpactTargetType,
+  MemorySuggestion,
+  MemorySuggestionStatus,
+  MemorySuggestionTrigger,
   MomentVisibility,
   MomentVisibilityMode,
   ModelProvider,
@@ -39,6 +42,10 @@ import type {
   WorldWeatherSnapshot,
   WorldEventChoice,
   WorldEventType,
+  WorldChapter,
+  WorldChapterScene,
+  WorldChapterStatus,
+  WorldSceneStatus,
   WorldProfile,
 } from './types';
 import {
@@ -342,12 +349,15 @@ export function defaultState(): AppState {
     messages: [],
     moments: [],
     worldEvents: [],
+    worldChapters: [],
     timelineEntries: [],
     impactRecords: [],
     characterInteractions: [],
     characterStatuses: [],
     dailyBriefs: [],
+    memorySuggestions: [],
     activeWorldId: DEFAULT_WORLD_ID,
+    activeWorldChapterIdByWorldId: {},
     activeCharacterId: defaultCharacters[0]?.id ?? '',
     activeGroupChatId: '',
     communicationIdentityByWorldId: {
@@ -980,6 +990,49 @@ function normalizeDailyBriefs(value: unknown, fallbackWorldId: string): DailyBri
   }).filter(brief => brief.dateKey);
 }
 
+function normalizeMemorySuggestionStatus(value: unknown): MemorySuggestionStatus {
+  return value === 'accepted' || value === 'dismissed' ? value : 'pending';
+}
+
+function normalizeMemorySuggestionTrigger(value: unknown): MemorySuggestionTrigger {
+  return value === 'event_resolved'
+    || value === 'chat_message'
+    || value === 'manual_tidy'
+    ? value
+    : 'manual_note';
+}
+
+function normalizeMemorySuggestions(value: unknown, fallbackWorldId: string): MemorySuggestion[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isRecord).map(suggestion => {
+    const createdAt = typeof suggestion.createdAt === 'number' ? suggestion.createdAt : Date.now();
+    const status = normalizeMemorySuggestionStatus(suggestion.status);
+    return {
+      id: typeof suggestion.id === 'string' ? suggestion.id : nowId('memory_suggestion'),
+      worldId: typeof suggestion.worldId === 'string' ? suggestion.worldId : fallbackWorldId,
+      trigger: normalizeMemorySuggestionTrigger(suggestion.trigger),
+      source: normalizeTimelineSourceRef(suggestion.source),
+      title: typeof suggestion.title === 'string' && suggestion.title.trim()
+        ? suggestion.title.trim()
+        : '记忆建议',
+      summary: typeof suggestion.summary === 'string' ? suggestion.summary : '',
+      reason: typeof suggestion.reason === 'string' ? suggestion.reason : '',
+      characterIds: Array.isArray(suggestion.characterIds)
+        ? Array.from(new Set(suggestion.characterIds.filter((id): id is string => typeof id === 'string')))
+        : [],
+      includeInContext: suggestion.includeInContext !== false,
+      status,
+      acceptedTimelineEntryId: typeof suggestion.acceptedTimelineEntryId === 'string'
+        ? suggestion.acceptedTimelineEntryId
+        : undefined,
+      acceptedAt: typeof suggestion.acceptedAt === 'number' ? suggestion.acceptedAt : undefined,
+      dismissedAt: typeof suggestion.dismissedAt === 'number' ? suggestion.dismissedAt : undefined,
+      createdAt,
+      updatedAt: typeof suggestion.updatedAt === 'number' ? suggestion.updatedAt : createdAt,
+    };
+  }).filter(suggestion => suggestion.summary.trim() || suggestion.title.trim());
+}
+
 function defaultEventChoices(type: WorldEventType, affinityDelta: number): WorldEventChoice[] {
   const primary = affinityDelta !== 0 ? affinityDelta : type === 'relationship' || type === 'problem' ? 4 : 2;
   return [
@@ -1023,6 +1076,87 @@ function normalizeWorldEventLeadActor(value: unknown): WorldEvent['leadActor'] {
     characterId,
     name: name || '角色',
   };
+}
+
+function normalizeWorldChapterStatus(value: unknown): WorldChapterStatus {
+  return value === 'ended' ? 'ended' : 'active';
+}
+
+function normalizeWorldSceneStatus(value: unknown): WorldSceneStatus {
+  return value === 'ended' ? 'ended' : 'active';
+}
+
+function normalizeWorldChapterScenes(
+  value: unknown,
+  chapterId: string,
+  worldId: string,
+): WorldChapterScene[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isRecord).map(scene => {
+    const startedAt = typeof scene.startedAt === 'number' ? scene.startedAt : Date.now();
+    return {
+      id: typeof scene.id === 'string' && scene.id.trim() ? scene.id.trim() : nowId('scene'),
+      chapterId,
+      worldId,
+      title: typeof scene.title === 'string' && scene.title.trim() ? scene.title.trim() : '未命名场景',
+      summary: typeof scene.summary === 'string' ? scene.summary : '',
+      sourceEventId: typeof scene.sourceEventId === 'string' ? scene.sourceEventId : undefined,
+      status: normalizeWorldSceneStatus(scene.status),
+      startedAt,
+      endedAt: typeof scene.endedAt === 'number' ? scene.endedAt : undefined,
+    };
+  }).filter(scene => scene.title.trim());
+}
+
+function normalizeWorldChapters(value: unknown, fallbackWorldId: string): WorldChapter[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isRecord).map(chapter => {
+    const id = typeof chapter.id === 'string' && chapter.id.trim() ? chapter.id.trim() : nowId('chapter');
+    const worldId = typeof chapter.worldId === 'string' && chapter.worldId.trim()
+      ? chapter.worldId.trim()
+      : fallbackWorldId;
+    const createdAt = typeof chapter.createdAt === 'number' ? chapter.createdAt : Date.now();
+    const scenes = normalizeWorldChapterScenes(chapter.scenes, id, worldId);
+    const activeSceneId = typeof chapter.activeSceneId === 'string'
+      && scenes.some(scene => scene.id === chapter.activeSceneId && scene.status === 'active')
+      ? chapter.activeSceneId
+      : scenes.find(scene => scene.status === 'active')?.id ?? '';
+    return {
+      id,
+      worldId,
+      title: typeof chapter.title === 'string' && chapter.title.trim() ? chapter.title.trim() : '未命名章节',
+      summary: typeof chapter.summary === 'string' ? chapter.summary : '',
+      activeSceneId,
+      status: normalizeWorldChapterStatus(chapter.status),
+      scenes,
+      createdAt,
+      updatedAt: typeof chapter.updatedAt === 'number' ? chapter.updatedAt : createdAt,
+      endedAt: typeof chapter.endedAt === 'number' ? chapter.endedAt : undefined,
+    };
+  }).filter(chapter => chapter.title.trim());
+}
+
+function normalizeActiveWorldChapterIdByWorldId(
+  value: unknown,
+  worlds: WorldProfile[],
+  chapters: WorldChapter[],
+): Record<string, string> {
+  const raw: Record<string, unknown> = isRecord(value) ? value : {};
+  const activeChaptersByWorld = new Map<string, WorldChapter>(
+    chapters
+      .filter(chapter => chapter.status === 'active')
+      .map(chapter => [chapter.id, chapter]),
+  );
+  const result: Record<string, string> = {};
+  for (const world of worlds) {
+    const rawValue = raw[world.id];
+    const rawId = typeof rawValue === 'string' ? rawValue : '';
+    const stored = activeChaptersByWorld.get(rawId);
+    result[world.id] = stored?.worldId === world.id
+      ? stored.id
+      : chapters.find(chapter => chapter.worldId === world.id && chapter.status === 'active')?.id ?? '';
+  }
+  return result;
 }
 
 export function normalizeState(input: unknown): AppState {
@@ -1130,6 +1264,12 @@ export function normalizeState(input: unknown): AppState {
     characterRelationships,
     characters,
     worlds,
+  );
+  const worldChapters = normalizeWorldChapters(parsed.worldChapters, activeWorldId);
+  const activeWorldChapterIdByWorldId = normalizeActiveWorldChapterIdByWorldId(
+    parsed.activeWorldChapterIdByWorldId,
+    worlds,
+    worldChapters,
   );
 
   return {
@@ -1305,12 +1445,15 @@ export function normalizeState(input: unknown): AppState {
         };
       })
       : [],
+    worldChapters,
     timelineEntries: normalizeTimelineEntries(parsed.timelineEntries, activeWorldId),
     impactRecords: normalizeImpactRecords(parsed.impactRecords, activeWorldId),
     characterInteractions: normalizeCharacterInteractions(parsed.characterInteractions, activeWorldId),
     characterStatuses: normalizeCharacterStatuses(parsed.characterStatuses, activeWorldId),
     dailyBriefs: normalizeDailyBriefs(parsed.dailyBriefs, activeWorldId),
+    memorySuggestions: normalizeMemorySuggestions(parsed.memorySuggestions, activeWorldId),
     activeWorldId,
+    activeWorldChapterIdByWorldId,
     activeCharacterId: typeof parsed.activeCharacterId === 'string' ? parsed.activeCharacterId : '',
     activeGroupChatId,
     communicationIdentityByWorldId,
@@ -1576,6 +1719,7 @@ export function deleteWorld(worldId: string): { ok: boolean; reason?: string } {
   state.characterInteractions = state.characterInteractions.filter(record => record.worldId !== worldId);
   state.characterStatuses = state.characterStatuses.filter(status => status.worldId !== worldId);
   state.dailyBriefs = state.dailyBriefs.filter(brief => brief.worldId !== worldId);
+  state.memorySuggestions = state.memorySuggestions.filter(suggestion => suggestion.worldId !== worldId);
   if (state.activeWorldId === worldId) {
     state.activeWorldId = state.worlds[0].id;
     state.activeCharacterId = state.characters.find(character => character.worldId === state.activeWorldId)?.id ?? '';

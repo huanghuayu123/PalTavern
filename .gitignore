@@ -4,6 +4,7 @@ prompt-test-runs/
 dist/
 outputs/
 release/
+.superpowers/
 
 android/.gradle/
 android/build/

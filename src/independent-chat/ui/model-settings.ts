@@ -10,16 +10,24 @@ export function modelProviderValue(value: string | undefined): ModelProvider {
   return value === 'custom' ? 'custom' : 'deepseek';
 }
 
+function normalizeModelApiUrlBase(apiUrl: string): string {
+  return apiUrl
+    .trim()
+    .replace(/\/+$/, '')
+    .replace(/\/v1$/i, '')
+    .toLowerCase();
+}
+
 export function modelProviderFor(apiUrl: string, provider?: ModelProvider): ModelProvider {
   if (provider === 'custom') return 'custom';
-  const normalized = apiUrl.trim().replace(/\/+$/, '').toLowerCase();
-  if (normalized && normalized !== DEEPSEEK_API_URL.toLowerCase()) return 'custom';
+  const normalized = normalizeModelApiUrlBase(apiUrl);
+  if (normalized && normalized !== normalizeModelApiUrlBase(DEEPSEEK_API_URL)) return 'custom';
   return 'deepseek';
 }
 
 export function apiUrlForProvider(provider: ModelProvider, currentUrl: string): string {
   if (provider === 'deepseek') return DEEPSEEK_API_URL;
-  return currentUrl.trim().replace(/\/+$/, '').toLowerCase() === DEEPSEEK_API_URL.toLowerCase()
+  return normalizeModelApiUrlBase(currentUrl) === normalizeModelApiUrlBase(DEEPSEEK_API_URL)
     ? ''
     : currentUrl;
 }

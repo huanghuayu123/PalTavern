@@ -8,7 +8,7 @@ import type { AppState } from '../core/types';
 import { isRecord } from '../core/utils';
 
 interface BackupEnvelope {
-  app: 'Tavern Social';
+  app: 'PalTavern';
   schema: 'tavern-social-backup-v1';
   exportedAt: string;
   state: AppState;
@@ -28,12 +28,21 @@ export function backupDownloadFolderHint(): string {
   return '系统默认下载文件夹（通常是“下载/Downloads”）';
 }
 
+export function createBackupState(): AppState {
+  const backupState = JSON.parse(JSON.stringify(state)) as AppState;
+  backupState.modelConfig = {
+    ...backupState.modelConfig,
+    apiKey: '',
+  };
+  return backupState;
+}
+
 export function createBackupText(): string {
   const envelope: BackupEnvelope = {
-    app: 'Tavern Social',
+    app: 'PalTavern',
     schema: 'tavern-social-backup-v1',
     exportedAt: new Date().toISOString(),
-    state,
+    state: createBackupState(),
   };
   return JSON.stringify(envelope, null, 2);
 }

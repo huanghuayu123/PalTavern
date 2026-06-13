@@ -11,6 +11,11 @@ export interface ParsedChatPart {
   stickerId?: string;
 }
 
+const MODEL_THINKING_PATTERN = /[<＜]thinking[>＞][\s\S]*?[<＜]\/thinking[>＞]/gi;
+const MODEL_STICKER_TOKEN_PATTERN = /[<＜]sticker[：:][^>＞]+[>＞]/gi;
+const MODEL_CONTROL_TAG_PATTERN = /[<＜]\/?msg[>＞]/gi;
+const MODEL_OUTPUT_TOKEN_PATTERN = /[<＜]msg[>＞]([\s\S]*?)[<＜]\/msg[>＞]|[<＜]sticker[：:]([^>＞]+)[>＞]/gi;
+
 function splitLongText(value: string): string[] {
   const compact = value.trim();
   if (compact.length <= 220) return compact ? [compact] : [];
@@ -46,7 +51,8 @@ export function stickerUsageContext(character: CharacterProfile): string {
   return stickers.length > 0
     ? `角色专属表情包：${roleStickers.map(stickerLabel).join('、') || '无'}。
 通用表情包：${commonStickers.map(stickerLabel).join('、') || '无'}。
-需要使用时单独输出 <sticker:表情包名称>。同名时优先角色专属，不要编造列表外名称。`
+需要使用时单独输出 <sticker:表情包名称>。同名时优先角色专属，不要编造列表外名称。
+只有确实要发送已列出的表情包时才输出 sticker 标签；不要输出 xxx、表情包名称或其他占位符，不确定时直接发送普通文字。`
     : '当前没有可用表情包，不要输出 sticker 标签。';
 }
 
@@ -57,11 +63,18 @@ export function chatStylePreset(character: CharacterProfile): string {
   ].join('\n');
 }
 
+export function cleanModelChatFallback(raw: string): string {
+  return raw
+    .replace(MODEL_THINKING_PATTERN, '')
+    .replace(MODEL_STICKER_TOKEN_PATTERN, '')
+    .replace(MODEL_CONTROL_TAG_PATTERN, '')
+    .trim();
+}
+
 export function parseModelChatOutput(raw: string, character: CharacterProfile): ParsedChatPart[] {
-  const cleaned = raw.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
+  const cleaned = raw.replace(MODEL_THINKING_PATTERN, '').trim();
   const tagged: ParsedChatPart[] = [];
-  const tokenPattern = /<msg>([\s\S]*?)<\/msg>|<sticker:([^>]+)>/gi;
-  for (const match of cleaned.matchAll(tokenPattern)) {
+  for (const match of cleaned.matchAll(MODEL_OUTPUT_TOKEN_PATTERN)) {
     if (match[1]?.trim()) {
       tagged.push(...splitLongText(match[1]).map(content => ({ content })));
     } else if (match[2]) {
@@ -71,7 +84,7 @@ export function parseModelChatOutput(raw: string, character: CharacterProfile): 
   }
   if (tagged.length > 0) return tagged.slice(0, 8);
 
-  const fallback = cleaned
+  const fallback = cleanModelChatFallback(cleaned)
     .split(/\n\s*\n+/)
     .flatMap(splitLongText)
     .filter(Boolean)

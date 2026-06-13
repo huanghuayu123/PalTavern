@@ -3839,15 +3839,13 @@ textarea::placeholder {
   border-radius: 11px;
   box-shadow: none;
   touch-action: pan-y;
-  transform: translateX(var(--message-swipe-x, 0));
-  will-change: transform;
 }
 
-.message.is-swiping {
+.message-row.is-swiping {
   transition: none;
 }
 
-.message.is-returning {
+.message-row.is-returning {
   transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -3880,6 +3878,16 @@ textarea::placeholder {
   font-size: 11px;
   font-weight: 760;
   line-height: 1.25;
+}
+
+.message-row.is-authored-character .message.user {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-raised));
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
+}
+
+.message-row.is-authored-character .message-speaker-label {
+  color: var(--accent-strong);
 }
 
 .message-quote {
@@ -6856,7 +6864,7 @@ textarea::placeholder {
 .moments-tutorial-overlay {
   position: fixed;
   inset: 0;
-  z-index: var(--z-modal);
+  z-index: calc(var(--z-modal) + 30);
   display: grid;
   padding: 20px;
   place-items: center;
@@ -7655,149 +7663,6 @@ textarea::placeholder {
 
 /* 大注释：页面切换动效层只服务用户主动切换页面、详情和浮层的瞬间。
    后台调度和输入框 idle 刷新不挂这里，避免重建 DOM 时把手机键盘和草稿一起打断。 */
-:root {
-  --ui-transition-duration: 180ms;
-  --ui-transition-shift: 18px;
-  --ui-transition-overlay-shift: 10px;
-  --ui-transition-ease: cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.bottom-nav {
-  view-transition-name: paltavern-bottom-nav;
-}
-
-.sidebar {
-  view-transition-name: paltavern-sidebar;
-}
-
-::view-transition-old(root),
-::view-transition-new(root) {
-  animation-duration: var(--ui-transition-duration);
-  animation-timing-function: var(--ui-transition-ease);
-  animation-fill-mode: both;
-  mix-blend-mode: normal;
-}
-
-html[data-ui-transition="main-forward"]::view-transition-old(root),
-html[data-ui-transition="detail-in"]::view-transition-old(root) {
-  animation-name: paltavern-page-exit-forward;
-}
-
-html[data-ui-transition="main-forward"]::view-transition-new(root),
-html[data-ui-transition="detail-in"]::view-transition-new(root) {
-  animation-name: paltavern-page-enter-forward;
-}
-
-html[data-ui-transition="main-back"]::view-transition-old(root),
-html[data-ui-transition="detail-out"]::view-transition-old(root) {
-  animation-name: paltavern-page-exit-back;
-}
-
-html[data-ui-transition="main-back"]::view-transition-new(root),
-html[data-ui-transition="detail-out"]::view-transition-new(root) {
-  animation-name: paltavern-page-enter-back;
-}
-
-html[data-ui-transition="overlay-in"]::view-transition-old(root),
-html[data-ui-transition="overlay-out"]::view-transition-old(root) {
-  animation-name: paltavern-overlay-old;
-}
-
-html[data-ui-transition="overlay-in"]::view-transition-new(root),
-html[data-ui-transition="overlay-out"]::view-transition-new(root) {
-  animation-name: paltavern-overlay-new;
-}
-
-.ui-fallback-transition[data-ui-transition="main-forward"] .mobile-page,
-.ui-fallback-transition[data-ui-transition="detail-in"] .mobile-page,
-.ui-fallback-transition[data-ui-transition="main-forward"] .desktop-shell > :not(.sidebar):not(.group-settings-panel),
-.ui-fallback-transition[data-ui-transition="detail-in"] .desktop-shell > :not(.sidebar):not(.group-settings-panel) {
-  animation: paltavern-page-enter-forward var(--ui-transition-duration) var(--ui-transition-ease) both;
-}
-
-.ui-fallback-transition[data-ui-transition="main-back"] .mobile-page,
-.ui-fallback-transition[data-ui-transition="detail-out"] .mobile-page,
-.ui-fallback-transition[data-ui-transition="main-back"] .desktop-shell > :not(.sidebar):not(.group-settings-panel),
-.ui-fallback-transition[data-ui-transition="detail-out"] .desktop-shell > :not(.sidebar):not(.group-settings-panel) {
-  animation: paltavern-page-enter-back var(--ui-transition-duration) var(--ui-transition-ease) both;
-}
-
-.ui-fallback-transition[data-ui-transition="overlay-in"] [role="dialog"],
-.ui-fallback-transition[data-ui-transition="overlay-out"] [role="dialog"] {
-  animation: paltavern-overlay-new 160ms var(--ui-transition-ease) both;
-}
-
-@keyframes paltavern-page-enter-forward {
-  from {
-    opacity: 0;
-    transform: translate3d(var(--ui-transition-shift), 0, 0);
-  }
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
-}
-
-@keyframes paltavern-page-exit-forward {
-  from {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
-  to {
-    opacity: 0;
-    transform: translate3d(calc(var(--ui-transition-shift) * -0.55), 0, 0);
-  }
-}
-
-@keyframes paltavern-page-enter-back {
-  from {
-    opacity: 0;
-    transform: translate3d(calc(var(--ui-transition-shift) * -1), 0, 0);
-  }
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
-}
-
-@keyframes paltavern-page-exit-back {
-  from {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
-  to {
-    opacity: 0;
-    transform: translate3d(calc(var(--ui-transition-shift) * 0.55), 0, 0);
-  }
-}
-
-@keyframes paltavern-overlay-old {
-  from { opacity: 1; }
-  to { opacity: 0.92; }
-}
-
-@keyframes paltavern-overlay-new {
-  from {
-    opacity: 0;
-    transform: translate3d(0, var(--ui-transition-overlay-shift), 0) scale(0.985);
-  }
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html[data-ui-transition]::view-transition-old(root),
-  html[data-ui-transition]::view-transition-new(root),
-  .ui-fallback-transition[data-ui-transition] .mobile-page,
-  .ui-fallback-transition[data-ui-transition] .desktop-shell > :not(.sidebar):not(.group-settings-panel),
-  .ui-fallback-transition[data-ui-transition] [role="dialog"] {
-    animation-duration: 0.01ms !important;
-    transform: none !important;
-  }
-}
-
 /* Final interface pass: cleaner mobile surfaces and quieter controls. */
 :root {
   --accent: #087f72;
@@ -10687,6 +10552,8 @@ body,
   gap: 8px;
   align-items: end;
   padding-inline: var(--message-row-edge-gap);
+  transform: translateX(var(--message-swipe-x, 0));
+  will-change: transform;
 }
 
 .message-row.user {
@@ -13072,24 +12939,21 @@ body,
 }
 
 .narrative-card {
-  background: transparent;
-  border: 0;
-  border-left: 3px solid color-mix(in srgb, var(--accent) 54%, var(--line));
-  border-radius: 0;
+  background: color-mix(in srgb, var(--surface-solid) 36%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
+  border-radius: 12px;
 }
 
 .world-scene-note {
   color: var(--text-soft);
   background: color-mix(in srgb, var(--surface-solid) 54%, transparent);
   border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
-  border-left: 3px solid color-mix(in srgb, var(--accent) 54%, var(--line));
   border-radius: 12px;
 }
 
 .world-event-narration {
   background: color-mix(in srgb, var(--accent-soft) 54%, var(--surface-solid));
-  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line));
-  border-left: 3px solid var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
   border-radius: 12px;
 }
 
@@ -14930,6 +14794,14 @@ summary:focus-visible {
   line-height: 1.35;
 }
 
+.character-panel-danger-actions {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+  margin-top: 2px;
+  border-top: 1px solid var(--line);
+}
+
 .character-settings-shell .character-worldbook-editor {
   flex: 0 0 auto;
 }
@@ -15005,5 +14877,797 @@ summary:focus-visible {
   .mobile-shell > .character-page > .character-panel-page {
     width: 100%;
     padding: 14px 16px calc(24px + env(safe-area-inset-bottom));
+  }
+}
+
+/* Reference APK motion pass: stagger content blocks, keep chrome fixed, and reveal private chat from the avatar anchor. */
+:root {
+  --fade-dur: 160ms;
+  --fade-out-dur: 80ms;
+  --block-gap: 8ms;
+  --fade-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --enter-x: 0px;
+  --exit-x: 0px;
+  --enter-y: 8px;
+  --exit-y: -4px;
+}
+
+[data-tab-dir="right"] {
+  --enter-x: 10px;
+  --exit-x: -6px;
+  --enter-y: 4px;
+  --exit-y: 0px;
+}
+
+[data-tab-dir="left"] {
+  --enter-x: -10px;
+  --exit-x: 6px;
+  --enter-y: 4px;
+  --exit-y: 0px;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes referencePageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(var(--enter-y)) translateX(var(--enter-x)) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) translateX(0) scale(1);
+  }
+}
+
+@keyframes referencePageExit {
+  from {
+    opacity: 1;
+    transform: translateY(0) translateX(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(var(--exit-y)) translateX(var(--exit-x)) scale(0.995);
+  }
+}
+
+@keyframes slideUpIn {
+  from {
+    opacity: 0;
+    transform: translateY(40px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideDownOut {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+}
+
+.ui-fallback-transition[data-ui-transition] .mobile-page,
+.ui-fallback-transition[data-ui-transition] .mobile-list-page,
+.ui-fallback-transition[data-ui-transition] .mobile-chat-detail,
+.ui-fallback-transition[data-ui-transition] .moments-page,
+.ui-fallback-transition[data-ui-transition] .events-page,
+.ui-fallback-transition[data-ui-transition] .timeline-page,
+.ui-fallback-transition[data-ui-transition] .group-list-page,
+.ui-fallback-transition[data-ui-transition] .chat,
+.ui-fallback-transition[data-ui-transition] .desktop-settings-page,
+.ui-fallback-transition[data-ui-transition] .character-page,
+.ui-fallback-transition[data-ui-transition] .desktop-shell > :not(.sidebar):not(.group-settings-panel) {
+  animation: none !important;
+}
+
+.ui-fallback-transition[data-ui-transition-phase="enter"] .sidebar:not(.is-exiting) > *,
+.ui-fallback-transition[data-ui-transition-phase="enter"] .mobile-page:not(.is-exiting) > *:not(.bottom-nav):not(.moment-compose-fab),
+.ui-fallback-transition[data-ui-transition-phase="enter"] .mobile-list-page:not(.is-exiting) > *:not(.bottom-nav):not(.moment-compose-fab),
+.ui-fallback-transition[data-ui-transition-phase="enter"] .moments-page:not(.is-exiting) > *:not(.bottom-nav):not(.moment-compose-fab),
+.ui-fallback-transition[data-ui-transition-phase="enter"] .events-page:not(.is-exiting) > *,
+.ui-fallback-transition[data-ui-transition-phase="enter"] .timeline-page:not(.is-exiting) > *,
+.ui-fallback-transition[data-ui-transition-phase="enter"] .group-list-page:not(.is-exiting) > *,
+.ui-fallback-transition[data-ui-transition-phase="enter"] .chat:not(.is-exiting) > *:not(.bottom-nav):not(.moment-compose-fab),
+.ui-fallback-transition[data-ui-transition-phase="enter"] .desktop-settings-page:not(.is-exiting) > *,
+.ui-fallback-transition[data-ui-transition-phase="enter"] .character-page:not(.is-exiting) > * {
+  animation: referencePageEnter var(--fade-dur) var(--fade-ease) backwards;
+  animation-delay: var(--anim-delay, 0ms);
+  will-change: transform, opacity;
+}
+
+.ui-fallback-transition[data-ui-transition] .mobile-page > *:nth-child(1),
+.ui-fallback-transition[data-ui-transition] .mobile-list-page > *:nth-child(1),
+.ui-fallback-transition[data-ui-transition] .moments-page > *:nth-child(1),
+.ui-fallback-transition[data-ui-transition] .events-page > *:nth-child(1),
+.ui-fallback-transition[data-ui-transition] .timeline-page > *:nth-child(1),
+.ui-fallback-transition[data-ui-transition] .group-list-page > *:nth-child(1),
+.ui-fallback-transition[data-ui-transition] .chat > *:nth-child(1),
+.ui-fallback-transition[data-ui-transition] .desktop-settings-page > *:nth-child(1),
+.ui-fallback-transition[data-ui-transition] .character-page > *:nth-child(1),
+.ui-fallback-transition[data-ui-transition] .sidebar > *:nth-child(1) {
+  --anim-delay: 0ms;
+}
+
+.ui-fallback-transition[data-ui-transition] .mobile-page > *:nth-child(2),
+.ui-fallback-transition[data-ui-transition] .mobile-list-page > *:nth-child(2),
+.ui-fallback-transition[data-ui-transition] .moments-page > *:nth-child(2),
+.ui-fallback-transition[data-ui-transition] .events-page > *:nth-child(2),
+.ui-fallback-transition[data-ui-transition] .timeline-page > *:nth-child(2),
+.ui-fallback-transition[data-ui-transition] .group-list-page > *:nth-child(2),
+.ui-fallback-transition[data-ui-transition] .chat > *:nth-child(2),
+.ui-fallback-transition[data-ui-transition] .desktop-settings-page > *:nth-child(2),
+.ui-fallback-transition[data-ui-transition] .character-page > *:nth-child(2),
+.ui-fallback-transition[data-ui-transition] .sidebar > *:nth-child(2) {
+  --anim-delay: var(--block-gap);
+}
+
+.ui-fallback-transition[data-ui-transition] .mobile-page > *:nth-child(3),
+.ui-fallback-transition[data-ui-transition] .mobile-list-page > *:nth-child(3),
+.ui-fallback-transition[data-ui-transition] .moments-page > *:nth-child(3),
+.ui-fallback-transition[data-ui-transition] .events-page > *:nth-child(3),
+.ui-fallback-transition[data-ui-transition] .timeline-page > *:nth-child(3),
+.ui-fallback-transition[data-ui-transition] .group-list-page > *:nth-child(3),
+.ui-fallback-transition[data-ui-transition] .chat > *:nth-child(3),
+.ui-fallback-transition[data-ui-transition] .desktop-settings-page > *:nth-child(3),
+.ui-fallback-transition[data-ui-transition] .character-page > *:nth-child(3),
+.ui-fallback-transition[data-ui-transition] .sidebar > *:nth-child(3) {
+  --anim-delay: calc(var(--block-gap) * 2);
+}
+
+.ui-fallback-transition[data-ui-transition] .mobile-page > *:nth-child(4),
+.ui-fallback-transition[data-ui-transition] .mobile-list-page > *:nth-child(4),
+.ui-fallback-transition[data-ui-transition] .moments-page > *:nth-child(4),
+.ui-fallback-transition[data-ui-transition] .events-page > *:nth-child(4),
+.ui-fallback-transition[data-ui-transition] .timeline-page > *:nth-child(4),
+.ui-fallback-transition[data-ui-transition] .group-list-page > *:nth-child(4),
+.ui-fallback-transition[data-ui-transition] .chat > *:nth-child(4),
+.ui-fallback-transition[data-ui-transition] .desktop-settings-page > *:nth-child(4),
+.ui-fallback-transition[data-ui-transition] .character-page > *:nth-child(4),
+.ui-fallback-transition[data-ui-transition] .sidebar > *:nth-child(4) {
+  --anim-delay: calc(var(--block-gap) * 3);
+}
+
+.ui-fallback-transition[data-ui-transition] .mobile-page > *:nth-child(n + 5),
+.ui-fallback-transition[data-ui-transition] .mobile-list-page > *:nth-child(n + 5),
+.ui-fallback-transition[data-ui-transition] .moments-page > *:nth-child(n + 5),
+.ui-fallback-transition[data-ui-transition] .events-page > *:nth-child(n + 5),
+.ui-fallback-transition[data-ui-transition] .timeline-page > *:nth-child(n + 5),
+.ui-fallback-transition[data-ui-transition] .group-list-page > *:nth-child(n + 5),
+.ui-fallback-transition[data-ui-transition] .chat > *:nth-child(n + 5),
+.ui-fallback-transition[data-ui-transition] .desktop-settings-page > *:nth-child(n + 5),
+.ui-fallback-transition[data-ui-transition] .character-page > *:nth-child(n + 5),
+.ui-fallback-transition[data-ui-transition] .sidebar > *:nth-child(n + 5) {
+  --anim-delay: calc(var(--block-gap) * 4);
+}
+
+.ui-fallback-transition[data-ui-transition-phase="exit"] .is-exiting.mobile-page > *:not(.bottom-nav):not(.moment-compose-fab),
+.ui-fallback-transition[data-ui-transition-phase="exit"] .is-exiting.mobile-list-page > *:not(.bottom-nav):not(.moment-compose-fab),
+.ui-fallback-transition[data-ui-transition-phase="exit"] .is-exiting.moments-page > *:not(.bottom-nav):not(.moment-compose-fab),
+.ui-fallback-transition[data-ui-transition-phase="exit"] .is-exiting.events-page > *,
+.ui-fallback-transition[data-ui-transition-phase="exit"] .is-exiting.timeline-page > *,
+.ui-fallback-transition[data-ui-transition-phase="exit"] .is-exiting.group-list-page > *,
+.ui-fallback-transition[data-ui-transition-phase="exit"] .is-exiting.chat > *:not(.bottom-nav):not(.moment-compose-fab),
+.ui-fallback-transition[data-ui-transition-phase="exit"] .is-exiting.desktop-settings-page > *,
+.ui-fallback-transition[data-ui-transition-phase="exit"] .is-exiting.character-page > *,
+.ui-fallback-transition[data-ui-transition-phase="exit"] .is-exiting.sidebar > * {
+  animation: referencePageExit var(--fade-out-dur) ease-in forwards;
+  animation-delay: var(--anim-delay, 0ms);
+  will-change: transform, opacity;
+}
+
+.mobile-chat-detail > *,
+.mobile-chat-detail .messages,
+.mobile-chat-detail .message-row,
+.mobile-chat-detail .message,
+.is-exiting.mobile-chat-detail > * {
+  animation: none !important;
+  transition: none !important;
+}
+
+.event-composer-dialog,
+.character-panel,
+.group-settings-panel,
+.card-recognition-dialog,
+.message-edit-dialog,
+.message-choice-dialog,
+.sticker-import-dialog,
+.settings-window,
+.settings-dialog,
+.moments-tutorial-sheet {
+  animation: slideUpIn 180ms ease-out backwards;
+}
+
+.event-composer-dialog.is-exiting,
+.character-panel.is-exiting,
+.group-settings-panel.is-exiting,
+.card-recognition-dialog.is-exiting,
+.message-edit-dialog.is-exiting,
+.message-choice-dialog.is-exiting,
+.sticker-import-dialog.is-exiting,
+.settings-window.is-exiting,
+.settings-dialog.is-exiting,
+.moments-tutorial-sheet.is-exiting {
+  animation: slideDownOut 120ms ease-in forwards;
+}
+
+.moment-compose-fab,
+.moment-compose-fab *,
+.bottom-nav,
+.bottom-nav * {
+  animation: none !important;
+}
+
+html[data-ui-transition] .moment-compose-fab {
+  animation: none !important;
+  transition: none !important;
+  transform: none !important;
+  will-change: auto;
+}
+
+.bottom-nav button:active {
+  transform: scale(0.88) !important;
+  transition: transform 100ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+
+.moments-scroll,
+.events-scroll,
+.timeline-scroll,
+.contact-list,
+.mobile-conversation-list {
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
+}
+
+.pt-chat-reveal-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483646;
+  overflow: hidden;
+  pointer-events: auto;
+  touch-action: none;
+  contain: layout paint style;
+}
+
+.pt-chat-reveal-snapshot {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--page);
+  will-change: opacity, mask-image, -webkit-mask-image;
+}
+
+.pt-chat-reveal-snapshot,
+.pt-chat-reveal-snapshot * {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+
+.pt-chat-reveal-snapshot > * {
+  width: 100%;
+  min-height: 100vh;
+  pointer-events: none !important;
+}
+
+.pt-chat-reveal-ring {
+  position: absolute;
+  left: var(--reveal-x, 50vw);
+  top: var(--reveal-y, 50vh);
+  width: 56px;
+  height: 56px;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, rgb(255 255 255 / 86%));
+  border-radius: 999px;
+  background: radial-gradient(circle, rgb(255 255 255 / 14%) 0%, rgb(255 255 255 / 5%) 58%, rgb(255 255 255 / 0%) 72%);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent-soft) 70%, transparent) inset,
+    0 0 30px color-mix(in srgb, var(--accent) 24%, transparent);
+  opacity: 0.72;
+  transform: translate(-50%, -50%) scale(var(--reveal-scale, 1));
+  transform-origin: center;
+  will-change: transform, opacity;
+}
+
+.pt-chat-reveal-layer.is-exit .pt-chat-reveal-ring {
+  border-color: color-mix(in srgb, var(--accent) 20%, rgb(255 255 255 / 72%));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--surface-solid) 80%, transparent) inset,
+    0 0 20px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-fallback-transition[data-ui-transition] .mobile-page > *,
+  .ui-fallback-transition[data-ui-transition] .mobile-list-page > *,
+  .ui-fallback-transition[data-ui-transition] .moments-page > *,
+  .ui-fallback-transition[data-ui-transition] .events-page > *,
+  .ui-fallback-transition[data-ui-transition] .timeline-page > *,
+  .ui-fallback-transition[data-ui-transition] .group-list-page > *,
+  .ui-fallback-transition[data-ui-transition] .chat > *,
+  .event-composer-dialog,
+  .character-panel,
+  .group-settings-panel,
+  .card-recognition-dialog,
+  .message-edit-dialog,
+  .message-choice-dialog,
+  .sticker-import-dialog,
+  .settings-window,
+  .settings-dialog,
+  .moments-tutorial-sheet {
+    animation-duration: 0.01ms !important;
+    transform: none !important;
+  }
+
+  .pt-chat-reveal-layer {
+    display: none !important;
+  }
+}
+
+/* Memory suggestion V1: light continuation strip and drawer vault. */
+.world-continue-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 94%, var(--accent-soft));
+}
+
+.world-continue-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.world-continue-main strong,
+.world-continue-main p {
+  overflow-wrap: anywhere;
+}
+
+.world-continue-main p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.world-continue-main footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.world-continue-panel > button {
+  flex: 0 0 auto;
+  min-height: 40px;
+}
+
+.memory-vault-section {
+  display: grid;
+  gap: 12px;
+}
+
+.memory-vault-group,
+.memory-vault-list {
+  display: grid;
+  gap: 10px;
+}
+
+.memory-vault-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.memory-suggestion-item,
+.memory-vault-row {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.memory-suggestion-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.memory-suggestion-copy p,
+.memory-vault-row p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.memory-suggestion-copy footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.memory-context-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.memory-suggestion-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.memory-vault-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.memory-vault-row small {
+  color: var(--muted);
+}
+
+.memory-vault-row.is-revoked {
+  opacity: 0.72;
+}
+
+.memory-vault-empty {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px dashed color-mix(in srgb, var(--border) 86%, transparent);
+  border-radius: 10px;
+  color: var(--muted);
+}
+
+@media (max-width: 720px) {
+  .world-continue-panel,
+  .memory-vault-row {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .world-continue-panel {
+    align-items: stretch;
+  }
+
+  .memory-suggestion-actions,
+  .world-continue-panel > button {
+    width: 100%;
+  }
+
+  .memory-suggestion-actions > button,
+  .world-continue-panel > button {
+    flex: 1 1 0;
+  }
+}
+
+/* Today V1 experience upgrade: first run, safer moments, world continuity, and previews. */
+.first-run-guide,
+.world-chapter-panel,
+.relationship-map-panel,
+.memory-inbox-panel,
+.context-preview-panel,
+.card-import-diagnostics {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 96%, var(--accent-soft));
+}
+
+.first-run-guide header,
+.world-chapter-panel header,
+.relationship-map-panel header,
+.memory-inbox-panel header,
+.context-preview-panel header,
+.card-import-diagnostics header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.first-run-guide h3,
+.world-chapter-panel h3,
+.relationship-map-panel h3,
+.memory-inbox-panel h3,
+.context-preview-panel h3,
+.card-import-diagnostics h3 {
+  margin: 0;
+  font-size: 0.98rem;
+  line-height: 1.25;
+}
+
+.first-run-guide p,
+.world-chapter-panel p,
+.relationship-map-panel p,
+.memory-inbox-panel p,
+.context-preview-panel p,
+.card-import-diagnostics p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.first-run-steps,
+.world-chapter-actions,
+.world-chapter-list,
+.world-scene-list,
+.relationship-map-list,
+.memory-inbox-list,
+.context-preview-list,
+.card-import-diagnostic-list {
+  display: grid;
+  gap: 8px;
+}
+
+.first-run-steps {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.first-run-step,
+.world-chapter-chip,
+.world-scene-chip,
+.relationship-map-row,
+.context-preview-row,
+.card-import-diagnostic-row {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.first-run-step {
+  display: grid;
+  gap: 6px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.first-run-step.is-done {
+  border-color: color-mix(in srgb, var(--success, #2f9e44) 42%, var(--border));
+  background: color-mix(in srgb, var(--surface) 92%, var(--success, #2f9e44) 8%);
+}
+
+.first-run-step strong,
+.world-chapter-chip strong,
+.world-scene-chip strong,
+.relationship-map-row strong,
+.context-preview-row strong,
+.card-import-diagnostic-row strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.first-run-step small,
+.world-chapter-chip small,
+.world-scene-chip small,
+.relationship-map-row small,
+.context-preview-row small,
+.card-import-diagnostic-row small {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.moment-undo-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent-soft) 42%, var(--surface));
+}
+
+.moment-undo-banner span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.moment-undo-banner button {
+  flex: 0 0 auto;
+}
+
+.moment-header-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.moment-detail-link {
+  width: fit-content;
+  min-height: 34px;
+  padding: 0;
+  color: var(--accent);
+  background: transparent;
+  border: 0;
+}
+
+.world-chapter-actions {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.world-chapter-list,
+.world-scene-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.world-chapter-chip,
+.world-scene-chip {
+  display: grid;
+  gap: 5px;
+  text-align: left;
+}
+
+.world-chapter-chip.is-active,
+.world-scene-chip.is-active {
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent) inset;
+}
+
+.world-chapter-chip.is-ended,
+.world-scene-chip.is-ended {
+  opacity: 0.68;
+}
+
+.relationship-map-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.relationship-map-row .badge,
+.card-import-diagnostic-row .badge {
+  justify-self: start;
+}
+
+.memory-inbox-panel .memory-suggestion-item {
+  background: color-mix(in srgb, var(--surface) 97%, var(--accent-soft));
+}
+
+.chat-status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.context-preview-panel {
+  margin: 10px 0;
+}
+
+.context-preview-panel header button {
+  flex: 0 0 auto;
+}
+
+.context-preview-row {
+  display: grid;
+  gap: 4px;
+}
+
+.context-preview-row.is-empty,
+.card-import-diagnostic-row.is-ok {
+  border-style: dashed;
+}
+
+.card-import-diagnostic-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.card-import-diagnostic-row {
+  display: grid;
+  gap: 6px;
+}
+
+@media (max-width: 880px) {
+  .first-run-steps,
+  .world-chapter-actions,
+  .world-chapter-list,
+  .world-scene-list,
+  .card-import-diagnostic-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .first-run-guide,
+  .world-chapter-panel,
+  .relationship-map-panel,
+  .memory-inbox-panel,
+  .context-preview-panel,
+  .card-import-diagnostics {
+    padding: 10px;
+    border-radius: 10px;
+  }
+
+  .first-run-guide.is-compact .first-run-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .moment-undo-banner,
+  .relationship-map-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .moment-header-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .moment-undo-banner button,
+  .world-chapter-actions button,
+  .moment-detail-link {
+    width: 100%;
+  }
+
+  .authoring-progress {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    overflow: visible;
+    padding: 10px;
+  }
+
+  .authoring-progress button {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    justify-content: flex-start;
+    padding: 8px 9px;
+  }
+
+  .authoring-progress button:not(:last-child)::after {
+    display: none;
+  }
+
+  .authoring-progress button > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .authoring-progress button small {
+    display: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .authoring-progress {
+    grid-template-columns: 1fr;
   }
 }

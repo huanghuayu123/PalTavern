@@ -2,7 +2,7 @@
  * 大注释：Group chat module.
  * Owns group messages, routed speakers, multi-character generation, and group state changes.
  */
-import { parseModelChatOutput, stickerUsageContext } from './format';
+import { cleanModelChatFallback, parseModelChatOutput, stickerUsageContext } from './format';
 import { groupRelationshipContextFor } from '../characters/relationships';
 import { setStatusText } from './private-chat';
 import { callAuthoringModel } from '../model/client';
@@ -791,7 +791,8 @@ function parsedGroupReplyParts(
 ): { content: string; stickerId?: string }[] {
   if (isSkippedGroupReplyPart(raw)) return [];
   const parts = parseModelChatOutput(raw, speaker);
-  const fallback = parts.length > 0 ? parts : [{ content: raw.replace(/<[^>]+>/g, '').trim(), stickerId: undefined }];
+  const fallbackText = cleanModelChatFallback(raw);
+  const fallback = parts.length > 0 ? parts : fallbackText ? [{ content: fallbackText, stickerId: undefined }] : [];
   return fallback
     .filter(part => part.content.trim() && !isSkippedGroupReplyPart(part.content))
     .slice(0, Math.max(0, maxParts));

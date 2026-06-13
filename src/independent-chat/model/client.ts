@@ -185,11 +185,15 @@ export async function testModelConnection(input: ModelConnectionTestInput): Prom
   return { preview: compactText(content, 80) };
 }
 
-function embeddedWorldBookContext(character: CharacterProfile, includeAll = false): string {
+function embeddedWorldBookContext(
+  character: CharacterProfile,
+  contextMessages: ChatMessage[] = [],
+  includeAll = false,
+): string {
   if (!isRecord(character.characterBook) || !Array.isArray(character.characterBook.entries)) {
     return '';
   }
-  const recentText = messagesFor(character.id)
+  const recentText = contextMessages
     .filter(message => !message.impactRevokedAt)
     .slice(-12)
     .map(message => message.content)
@@ -376,6 +380,7 @@ function presetMarkerContent(
   identifier: string,
   character: CharacterProfile,
   includeAllWorldBook: boolean,
+  contextMessages: ChatMessage[],
 ): string {
   const relationship = character.relationship;
   const userPersona = userPersonaFor(character);
@@ -415,7 +420,7 @@ function presetMarkerContent(
     case 'worldInfoBefore':
       return [
         worldLoreContext(world),
-        embeddedWorldBookContext(character, includeAllWorldBook),
+        embeddedWorldBookContext(character, contextMessages, includeAllWorldBook),
       ].filter(Boolean).join('\n\n');
     case 'worldInfoAfter':
       return enhancedWorldInfoAfterContext(character);
@@ -476,7 +481,7 @@ function buildPresetModelMessages(
         messages.push(...contextAsModelMessages(contextMessages));
         continue;
       }
-      const markerContent = presetMarkerContent(prompt.identifier, character, includeAllWorldBook);
+      const markerContent = presetMarkerContent(prompt.identifier, character, includeAllWorldBook, contextMessages);
       if (markerContent.trim()) messages.push({ role: 'system', content: markerContent });
       continue;
     }
@@ -532,7 +537,7 @@ export function buildModelMessages(
           : '',
         relationship.summary ? `关系摘要：${relationship.summary}` : '',
         characterRelationshipContextFor(character, 8),
-        embeddedWorldBookContext(character, includeAllWorldBook),
+        embeddedWorldBookContext(character, contextMessages, includeAllWorldBook),
         recentEventContext(character),
         privateMemorySummaryContextFor(character),
         characterReplyStrategyContext(character),

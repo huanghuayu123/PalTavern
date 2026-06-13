@@ -433,6 +433,27 @@ if (authoringLikePrompt.includes('预设规则')) {
   throw new Error('Non-chat prompt path unexpectedly used the chat preset.');
 }
 
+if (typeof replyStrategy.buildCharacterReplyStrategyMessages !== 'function') {
+  throw new Error('Character reply strategy generation should expose an AI prompt builder.');
+}
+const generatedReplyStrategyMessages = replyStrategy.buildCharacterReplyStrategyMessages(character);
+const generatedReplyStrategyText = generatedReplyStrategyMessages
+  .map((message: { content: string }) => message.content)
+  .join('\n');
+if (
+  generatedReplyStrategyMessages.length < 2
+  || !generatedReplyStrategyText.includes('为角色生成专属回复策略')
+  || !generatedReplyStrategyText.includes('角色描述正文')
+  || !generatedReplyStrategyText.includes('角色性格正文')
+  || !generatedReplyStrategyText.includes('当前场景正文')
+  || !generatedReplyStrategyText.includes('角色世界书正文')
+  || !generatedReplyStrategyText.includes('关系摘要测试')
+  || !generatedReplyStrategyText.includes('不要输出通用模板')
+  || generatedReplyStrategyText.includes('今晚还去海边吗')
+) {
+  throw new Error('Character reply strategy AI prompt should be grounded in profile data, not private chat history.');
+}
+
 console.log(JSON.stringify({
   importPreset: true,
   defaultPreset: true,
@@ -446,4 +467,5 @@ console.log(JSON.stringify({
   promptBuild: true,
   toggle: true,
   scopeIsolation: true,
+  characterReplyStrategyGeneration: true,
 }));

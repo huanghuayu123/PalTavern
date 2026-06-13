@@ -236,11 +236,23 @@ stateModule.state.dailyBriefs.push({
 });
 stateModule.state.companionTimeMode = 'virtual';
 stateModule.state.virtualTimeMinutes = 6 * 60 + 30;
+stateModule.state.modelConfig.apiUrl = 'https://api.example.test/v1';
+stateModule.state.modelConfig.apiKey = 'SECRET_SHOULD_NOT_LEAVE_DEVICE';
+stateModule.state.modelConfig.model = 'backup-model';
 
 const text = backup.createBackupText();
 const envelope = JSON.parse(text);
 if (envelope.schema !== 'tavern-social-backup-v1') {
   throw new Error('Backup schema marker is missing.');
+}
+if (text.includes('SECRET_SHOULD_NOT_LEAVE_DEVICE') || envelope.state.modelConfig.apiKey !== '') {
+  throw new Error('Backup export leaked the model API key.');
+}
+if (
+  envelope.state.modelConfig.apiUrl !== 'https://api.example.test/v1'
+  || envelope.state.modelConfig.model !== 'backup-model'
+) {
+  throw new Error('Backup export should keep non-secret model connection metadata.');
 }
 if (!backup.backupFileName().startsWith('tavern-social-backup-') || !backup.backupFileName().endsWith('.json')) {
   throw new Error('Backup file name is not user-readable.');

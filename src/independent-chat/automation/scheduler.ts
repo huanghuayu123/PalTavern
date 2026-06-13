@@ -458,7 +458,11 @@ async function attemptCharacter(character: CharacterProfile): Promise<boolean> {
       `用户可编辑的主动消息节奏策略：\n${pacingStrategyFor(character)}`,
       `当前未回复次数：${schedule.unansweredCount}；当前节奏状态：${schedule.currentPacingState}；当前节奏说明：${schedule.pacingReason}。`,
       '如果用户之前没有回复，要体现当前的试探、等待、降频或沉默后重新开口的节奏。',
-    ].join('\n'), false, true, undefined, { countBudget: true, useChatPreset: true });
+    ].join('\n'), false, true, undefined, {
+      contextMessages: messagesFor(character.id, 'user'),
+      countBudget: true,
+      useChatPreset: true,
+    });
   } catch (error) {
     scheduleNextAttempt(character);
     schedule.pacingReason = `本次主动消息生成失败，已延后：${error instanceof Error ? error.message : String(error)}`;

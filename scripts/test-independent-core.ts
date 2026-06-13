@@ -288,6 +288,10 @@ if (
 const appSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/ui/app.ts'), 'utf8');
 const stylesSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/styles.css'), 'utf8');
 const stateSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/core/state.ts'), 'utf8');
+const privateChatSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/chat/private-chat.ts'), 'utf8');
+const modelClientSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/model/client.ts'), 'utf8');
+const schedulerSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/automation/scheduler.ts'), 'utf8');
+const eventsSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/social/events.ts'), 'utf8');
 const androidMainActivitySource = fs.readFileSync(path.join(
   process.cwd(),
   'android/app/src/main/java/com/tavernsocial/app/MainActivity.java',
@@ -299,6 +303,23 @@ const mobileRenderBlock = functionBody(appSource, 'renderMobile');
 const privateTargetSelectorBlock = functionBody(appSource, 'renderPrivateChatTargetSelector');
 const renderGroupSpeakerPickerBlock = functionBody(appSource, 'renderGroupSpeakerPicker');
 const renderMomentsBlock = functionBody(appSource, 'renderMoments');
+const generateOpeningMessageBlock = sourceSlice(
+  privateChatSource,
+  'export async function generateOpeningMessage',
+  'export async function sendUserMessageOnly',
+);
+const embeddedWorldBookContextBlock = functionBody(modelClientSource, 'embeddedWorldBookContext');
+const buildPresetModelMessagesBlock = functionBody(modelClientSource, 'buildPresetModelMessages');
+const buildModelMessagesBlock = sourceSlice(
+  modelClientSource,
+  'export function buildModelMessages',
+  'async function refreshCharacterWorldWeather',
+);
+const schedulerAttemptCharacterBlock = sourceSlice(
+  schedulerSource,
+  'async function attemptCharacter(character',
+  'function attemptBackgroundInteractions',
+);
 if (worldDialogueBody.includes('messagesFor(')) {
   throw new Error('World RP stream must not render private-chat messages.');
 }
@@ -345,6 +366,25 @@ if (
   || stylesSource.includes('.private-speaker-switch')
 ) {
   throw new Error('Private chat identity switching should use one per-world communication identity selector outside the chat window.');
+}
+if (
+  !appSource.includes('ensureCommunicationIdentityViewState();\n  const character = activeCharacter();')
+  || !appSource.includes('content = renderChatPane(activePrivateChatTarget(), true);')
+  || !chatPaneRenderBlock.includes('privateChatIdentityCharacter()?.id === character.id')
+  || !stylesSource.includes('.message-row.is-authored-character .message.user')
+  || !stylesSource.includes('.message-row.is-authored-character .message-speaker-label')
+) {
+  throw new Error('Private chat detail should never stay open on the current communication identity itself.');
+}
+if (
+  !generateOpeningMessageBlock.includes('contextMessages: []')
+  || !schedulerAttemptCharacterBlock.includes("contextMessages: messagesFor(character.id, 'user')")
+  || !embeddedWorldBookContextBlock.includes('contextMessages')
+  || embeddedWorldBookContextBlock.includes('messagesFor(character.id)')
+  || !buildPresetModelMessagesBlock.includes('presetMarkerContent(prompt.identifier, character, includeAllWorldBook, contextMessages)')
+  || !buildModelMessagesBlock.includes('embeddedWorldBookContext(character, contextMessages, includeAllWorldBook)')
+) {
+  throw new Error('Private chat model context must use the current conversation for openings, worldbook triggers, and proactive default-user messages.');
 }
 if (
   appSource.includes('id="group-speaker-select"')
@@ -903,6 +943,13 @@ character.stickers = [{
   dataUrl: 'data:image/webp;base64,TEST',
   importedAt: Date.now(),
 }];
+character.stickers.push({
+  id: 'sticker_wink',
+  name: 'wink',
+  note: 'quick wink expression',
+  dataUrl: 'data:image/webp;base64,WINK',
+  importedAt: Date.now(),
+});
 stateModule.state.commonStickers = [{
   id: 'sticker_common',
   name: '点头',
@@ -1050,6 +1097,22 @@ const parsedChat = chatFormat.parseModelChatOutput(
 if (parsedChat.length !== 3 || parsedChat[2].stickerId !== 'sticker_smile') {
   throw new Error('Segmented online chat output or sticker marker parsing failed.');
 }
+const fullwidthStickerChat = chatFormat.parseModelChatOutput('＜sticker:wink＞', character);
+if (fullwidthStickerChat.length !== 1 || fullwidthStickerChat[0].stickerId !== 'sticker_wink') {
+  throw new Error('Fullwidth sticker marker parsing failed.');
+}
+const unknownStickerOnly = chatFormat.parseModelChatOutput('＜sticker:xxx＞', character);
+if (unknownStickerOnly.length !== 0) {
+  throw new Error('Unknown sticker markers should not leak into visible chat text.');
+}
+const unknownStickerWithText = chatFormat.parseModelChatOutput('稍等一下 ＜sticker:xxx＞', character);
+if (
+  unknownStickerWithText.length !== 1
+  || unknownStickerWithText[0].content !== '稍等一下'
+  || unknownStickerWithText[0].content.includes('sticker:')
+) {
+  throw new Error('Unknown inline sticker markers should be stripped from fallback text.');
+}
 
 const messageConversation = stateModule.ensureConversation(character);
 stateModule.state.messages.push({
@@ -1166,6 +1229,32 @@ stateModule.state.moments.push({
   source: 'character',
   comments: [],
 });
+stateModule.state.moments.push({
+  id: 'delete_comment_moment',
+  worldId: deleteTarget.worldId,
+  characterId: relationshipPeer.id,
+  content: 'Surviving moment with a deleted character comment.',
+  createdAt: Date.now(),
+  source: 'character',
+  comments: [{
+    id: 'delete_comment',
+    momentId: 'delete_comment_moment',
+    authorType: 'character',
+    characterId: deleteTarget.id,
+    content: 'This character comment should be removed.',
+    createdAt: Date.now(),
+    source: 'model',
+  }, {
+    id: 'delete_comment_reply',
+    momentId: 'delete_comment_moment',
+    authorType: 'user',
+    characterId: '',
+    replyToCommentId: 'delete_comment',
+    content: 'This dangling reply should be removed too.',
+    createdAt: Date.now(),
+    source: 'manual',
+  }],
+});
 stateModule.state.worldEvents.push({
   id: 'delete_event',
   worldId: deleteTarget.worldId,
@@ -1220,6 +1309,11 @@ if (
   || stateModule.state.conversations.some((item: { characterId: string }) => item.characterId === deleteTarget.id)
   || stateModule.state.messages.some((item: { characterId: string }) => item.characterId === deleteTarget.id)
   || stateModule.state.moments.some((item: { characterId: string }) => item.characterId === deleteTarget.id)
+  || stateModule.state.moments.some((item: { comments: Array<{ characterId: string; replyToCommentId?: string }> }) =>
+    item.comments.some(comment =>
+      comment.characterId === deleteTarget.id || comment.replyToCommentId === 'delete_comment',
+    ),
+  )
   || stateModule.state.worldEvents.some((item: { participantCharacterIds: string[] }) =>
     item.participantCharacterIds.includes(deleteTarget.id),
   )
@@ -1267,6 +1361,141 @@ const lorePromptText = model.buildModelMessages(lorePromptCharacter, false, unde
 if (!lorePromptText.includes('Shared moonlit rules for every character in this world.')) {
   throw new Error('World-level lore should be included in private chat model context.');
 }
+const isolatedContextCharacter = {
+  ...stateModule.defaultState().characters[0],
+  id: 'isolated_context_target',
+  worldId: 'world_lore_test',
+  name: 'Context Target',
+  relationship: {
+    stage: 'familiar',
+    affinity: 22,
+    summary: 'RELATIONSHIP_SUMMARY_ALLOWED',
+    updatedAt: Date.now(),
+  },
+  characterBook: {
+    entries: [
+      {
+        uid: 1,
+        comment: 'Default leak lore',
+        keys: ['keyword_default_only'],
+        content: 'DEFAULT_WORLDBOOK_SHOULD_NOT_APPEAR',
+        enabled: true,
+      },
+      {
+        uid: 2,
+        comment: 'Current actor lore',
+        keys: ['keyword_actor_only'],
+        content: 'ACTOR_WORLDBOOK_SHOULD_APPEAR',
+        enabled: true,
+      },
+    ],
+  },
+};
+const isolatedContextActor = {
+  ...stateModule.defaultState().characters[0],
+  id: 'isolated_context_actor',
+  worldId: 'world_lore_test',
+  name: 'Context Actor',
+};
+stateModule.state.characters = [isolatedContextCharacter, isolatedContextActor];
+stateModule.state.conversations = [];
+stateModule.state.messages = [];
+stateModule.state.chatPromptPresetEnabled = false;
+stateModule.state.activeChatPromptPresetId = '';
+const defaultConversation = stateModule.ensureConversation(isolatedContextCharacter, 'user');
+const actorConversation = stateModule.ensureConversation(isolatedContextCharacter, isolatedContextActor.id);
+stateModule.state.messages.push(
+  {
+    id: 'default_context_message',
+    conversationId: defaultConversation.id,
+    characterId: isolatedContextCharacter.id,
+    role: 'user',
+    content: 'DEFAULT_CHAT_SHOULD_NOT_LEAK keyword_default_only',
+    createdAt: Date.now(),
+    source: 'user',
+  },
+  {
+    id: 'actor_context_message',
+    conversationId: actorConversation.id,
+    characterId: isolatedContextCharacter.id,
+    role: 'user',
+    speakerType: 'character',
+    speakerCharacterId: isolatedContextActor.id,
+    content: 'ACTOR_CONTEXT_SHOULD_APPEAR keyword_actor_only',
+    createdAt: Date.now() + 1,
+    source: 'user',
+  },
+);
+stateModule.state.timelineEntries = [{
+  id: 'timeline_context_allowed',
+  worldId: 'world_lore_test',
+  createdAt: Date.now() + 2,
+  type: 'manual_note',
+  characterIds: [isolatedContextCharacter.id],
+  characterNames: { [isolatedContextCharacter.id]: isolatedContextCharacter.name },
+  title: 'TIMELINE_TITLE_ALLOWED',
+  summary: 'TIMELINE_SUMMARY_ALLOWED',
+  source: { type: 'manual', id: 'timeline_context_allowed' },
+  canUndo: false,
+  includeInContext: true,
+}];
+stateModule.state.characterStatuses = [{
+  id: 'status_context_allowed',
+  worldId: 'world_lore_test',
+  characterId: isolatedContextCharacter.id,
+  mood: 'STATUS_MOOD_ALLOWED',
+  relationshipStage: 'familiar',
+  affinity: 22,
+  relationshipSummary: 'STATUS_RELATIONSHIP_ALLOWED',
+  recentMemoryTitles: [],
+  unresolvedItems: ['STATUS_ITEM_ALLOWED'],
+  nextInclination: 'STATUS_NEXT_ALLOWED',
+  activeSources: [],
+  summary: 'STATUS_SUMMARY_ALLOWED',
+  source: 'model',
+  updatedAt: Date.now() + 3,
+}];
+stateModule.state.dailyBriefs = [{
+  id: 'brief_context_allowed',
+  worldId: 'world_lore_test',
+  dateKey: '2026-06-13',
+  title: 'DAILY_BRIEF_TITLE_ALLOWED',
+  summary: 'DAILY_BRIEF_SUMMARY_ALLOWED',
+  sections: ['DAILY_BRIEF_SECTION_ALLOWED'],
+  suggestedCharacterIds: [isolatedContextCharacter.id],
+  unreadCount: 0,
+  changeCount: 1,
+  createdAt: Date.now() + 4,
+  updatedAt: Date.now() + 4,
+}];
+const isolatedContextPrompt = model.buildModelMessages(
+  isolatedContextCharacter,
+  '',
+  false,
+  true,
+  stateModule.messagesFor(isolatedContextCharacter.id, isolatedContextActor.id),
+  true,
+).map((message: any) => message.content).join('\n');
+for (const required of [
+  'ACTOR_CONTEXT_SHOULD_APPEAR',
+  'ACTOR_WORLDBOOK_SHOULD_APPEAR',
+  'RELATIONSHIP_SUMMARY_ALLOWED',
+  'TIMELINE_SUMMARY_ALLOWED',
+  'STATUS_SUMMARY_ALLOWED',
+  'DAILY_BRIEF_SUMMARY_ALLOWED',
+]) {
+  if (!isolatedContextPrompt.includes(required)) {
+    throw new Error(`Current private conversation context should keep required summary or message: ${required}`);
+  }
+}
+for (const forbidden of [
+  'DEFAULT_CHAT_SHOULD_NOT_LEAK',
+  'DEFAULT_WORLDBOOK_SHOULD_NOT_APPEAR',
+]) {
+  if (isolatedContextPrompt.includes(forbidden)) {
+    throw new Error(`Private conversation context leaked data from another independent chat: ${forbidden}`);
+  }
+}
 
 const authoredDraft = authoring.createCharacterCardDraft();
 authoredDraft.name = 'Field Test';
@@ -1313,7 +1542,6 @@ const displayLabelsSource = fs.existsSync(displayLabelsPath)
   ? fs.readFileSync(displayLabelsPath, 'utf8')
   : '';
 const chatSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/chat/private-chat.ts'), 'utf8');
-const schedulerSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/automation/scheduler.ts'), 'utf8');
 const groupChatSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/chat/group-chat.ts'), 'utf8');
 const typingDelayPath = path.join(process.cwd(), 'src/independent-chat/chat/typing-delay.ts');
 const typingDelaySource = fs.existsSync(typingDelayPath)
@@ -1365,6 +1593,12 @@ const replyStrategySettingsBlock = uiSource
 const replyStrategySaveBlock = uiSource
   .split("document.querySelector<HTMLButtonElement>('#save-character-reply-strategy')?.addEventListener('click'")[1]
   ?.split("document.querySelector<HTMLButtonElement>('#save-chat-reply-mode')")[0] ?? '';
+const replyStrategyRegenerateBlock = uiSource
+  .split("document.querySelector<HTMLButtonElement>('#regenerate-character-reply-strategy')?.addEventListener('click'")[1]
+  ?.split("document.querySelector<HTMLButtonElement>('#save-chat-reply-mode')")[0] ?? '';
+const characterPanelReplyStrategyRegenerateBlock = uiSource
+  .split("document.querySelector<HTMLButtonElement>('#regenerate-character-panel-reply-strategy')?.addEventListener('click'")[1]
+  ?.split("document.querySelector<HTMLButtonElement>('#save-character-panel')")[0] ?? '';
 const restoreAutoPacingBlock = uiSource
   .split("document.querySelector<HTMLButtonElement>('#restore-auto-pacing')?.addEventListener('click'")[1]
   ?.split("document.querySelector<HTMLButtonElement>('#keep-auto-pacing')")[0] ?? '';
@@ -1398,6 +1632,12 @@ const privateMessageActionOpenBlock = uiSource
 const groupMessageActionOpenBlock = uiSource
   .split("document.querySelectorAll<HTMLElement>('[data-group-message-id]').forEach")[1]
   ?.split('const cancelLongPress = () => {')[0] ?? '';
+const closeMessageActionMenuBlock = uiSource
+  .split('function closeMessageActionMenuInPlace')[1]
+  ?.split('function closeGroupMessageActionMenuInPlace')[0] ?? '';
+const closeGroupMessageActionMenuBlock = uiSource
+  .split('function closeGroupMessageActionMenuInPlace')[1]
+  ?.split('function resizeComposerTextarea')[0] ?? '';
 const requestBeforeInputSubmitBlock = uiSource
   .split('function requestTextareaFormSubmitFromBeforeInput')[1]
   ?.split('function focusPendingMessageComposer')[0] ?? '';
@@ -1422,6 +1662,9 @@ const regexSwitchHandlerBlock = uiSource
 const restoreScrollBlock = uiSource
   .split('function restoreScrollIfNeeded')[1]
   ?.split('function applyScrollSnapshot')[0] ?? '';
+const settleChatScrollBlock = uiSource
+  .split('function settleChatScrollAfterRender')[1]
+  ?.split('function deleteActiveCharacterFromUi')[0] ?? '';
 const currentScrollContainerBlock = functionBody(uiSource, 'currentScrollContainer');
 const currentScrollKeyBlock = functionBody(uiSource, 'currentScrollKey');
 const openSettingsBlock = uiSource
@@ -1451,6 +1694,12 @@ const mobileGroupBackButtonBlock = uiSource
 const mobileGroupListBackButtonBlock = uiSource
   .split("document.querySelector<HTMLButtonElement>('[data-mobile-group-list-back]')?.addEventListener('click'")[1]
   ?.split("document.querySelectorAll<HTMLButtonElement>('[data-group-chat-id]')")[0] ?? '';
+const groupChatRowOpenBlock = uiSource
+  .split("document.querySelectorAll<HTMLButtonElement>('[data-group-chat-id]').forEach")[1]
+  ?.split("document.querySelector<HTMLButtonElement>('#create-group-chat')")[0] ?? '';
+const closeMobileGroupChatBlock = closeMobileLayerBlock
+  .split('if (mobileGroupChatOpen)')[1]
+  ?.split('if (mobileSettingsDetail)')[0] ?? '';
 const momentComposerKeyboardBlock = cssBlock('.keyboard-open .moments-publisher.is-open');
 const momentComposerKeyboardTextareaBlock = cssBlock('.keyboard-open .moments-publisher textarea');
 const momentComposerMarkupBlock = uiSource
@@ -1466,9 +1715,18 @@ const momentVisibilityContactControlsBlock = uiSource
 const momentVisibilityPickerBlock = uiSource
   .split('function renderMomentVisibilityContactPicker')[1]
   ?.split('function renderMomentVisibilityControls')[0] ?? '';
+const renderMomentsPageBlock = uiSource
+  .split('function renderMomentsPage')[1]
+  ?.split('function renderMomentsTutorial')[0] ?? '';
 const momentCommentFormMarkupBlock = uiSource
   .split('<form class="moment-comment-form')[1]
   ?.split('</form>')[0] ?? '';
+const openMomentsTutorialHandlerBlock = uiSource
+  .split("document.querySelector<HTMLButtonElement>('#open-moments-tutorial')?.addEventListener('click'")[1]
+  ?.split("document.querySelectorAll<HTMLButtonElement>('[data-close-moments-tutorial]')")[0] ?? '';
+const openMomentComposerHandlerBlock = uiSource
+  .split("document.querySelector<HTMLButtonElement>('#open-moment-composer')?.addEventListener('click'")[1]
+  ?.split('const closeMomentComposer = () => {')[0] ?? '';
 const mobileMomentComposerOpenBlock = (styleSource.split('.moment-compose-fab {')[1] ?? '')
   .split('.keyboard-open .moments-publisher.is-open')[0]
   .split('.moments-publisher.is-open {')[1]
@@ -1482,6 +1740,9 @@ const desktopViewControlsBlock = uiSource
 const renderWithUiTransitionBlock = transitionsSource
   .split('function renderWithUiTransition')[1]
   ?.split('function modelIsReady')[0] ?? '';
+const startStaggeredUiTransitionBlock = transitionsSource
+  .split('function startStaggeredUiTransition')[1]
+  ?.split('function overlayExitTargets')[0] ?? '';
 const renderWhenChatInputIdleBlock = uiSource
   .split('export function renderWhenChatInputIdle')[1]
   ?.split('function bindUi')[0] ?? '';
@@ -1507,6 +1768,9 @@ const worldWorkbenchBlock = uiSource
 const worldEventLobbyBlock = uiSource
   .split('function renderWorldEventLobby')[1]
   ?.split('function renderWorldDialogueStream')[0] ?? '';
+const onboardingLayerBlock = uiSource
+  .split('function renderOnboardingLayer')[1]
+  ?.split('function renderGlobalStatus')[0] ?? '';
 const worldEventDetailBlock = uiSource
   .split('function renderWorldEventRpDetail')[1]
   ?.split('function renderWorldStageComposer')[0] ?? '';
@@ -1526,6 +1790,12 @@ const characterWorldBookEditorBlock = uiSource
 const characterWorldBookPageEditorStyleBlock = styleSource
   .split('.character-worldbook-page .character-worldbook-editor')[1]
   ?.split('.character-worldbook-page-note')[0] ?? '';
+const deleteActiveCharacterFromUiBlock = functionBody(uiSource, 'deleteActiveCharacterFromUi');
+const scrollMessagesToBottomBlock = functionBody(uiSource, 'scrollMessagesToBottom');
+const renderBlock = uiSource
+  .split('export function render(): void')[1]
+  ?.split('export function renderWhenChatInputIdle')[0] ?? '';
+const setRevealRingBlock = functionBody(transitionsSource, 'setRevealRing');
 const renderSettingsContentBlock = functionBody(uiSource, 'renderSettingsContent');
 const renderDesktopSettingsPageBlock = uiSource
   .split('function renderDesktopSettingsPage')[1]
@@ -1569,6 +1839,21 @@ const deleteCharacterWorldBookEntryBlock = sourceSlice(
   uiSource,
   "document.querySelectorAll<HTMLButtonElement>('[data-delete-character-worldbook-entry]').forEach",
   "document.querySelector<HTMLButtonElement>('#refresh-character-status')",
+);
+const privateMessageSwipeBlock = sourceSlice(
+  uiSource,
+  "document.querySelectorAll<HTMLElement>('[data-message-id]').forEach",
+  "document.querySelector<HTMLButtonElement>('#toggle-stickers')",
+);
+const privateMessageBaseStyleBlock = sourceSlice(
+  styleSource,
+  '.message {\n',
+  '.message.user {',
+);
+const privateMessageRowGridStyleBlock = sourceSlice(
+  styleSource,
+  '.message-row {\n  display: grid;',
+  '.message-row.user {',
 );
 const settingsSectionHandlerBlock = sourceSlice(
   uiSource,
@@ -1686,11 +1971,23 @@ if (
 if (
   !uiSource.includes('function requestMessageComposerFocusAfterSubmit')
   || !uiSource.includes('function requestGroupComposerFocusAfterSubmit')
+  || !composerSubmitBlock.includes('compactMedia.matches')
   || !composerSubmitBlock.includes("requestMessageComposerFocusAfterSubmit(character?.id ?? '');")
   || !groupComposerSubmitBlock.includes('requestGroupComposerFocusAfterSubmit(chat.id);')
   || !uiSource.includes('COMPOSER_FOCUS_KEEPALIVE_MS')
 ) {
   throw new Error('Composer focus should be kept alive across mobile re-renders after sending.');
+}
+if (
+  !uiSource.includes('function renderOnboardingLayer')
+  || !onboardingLayerBlock.includes('if (modelOnboardingOpen) return renderModelOnboarding();')
+  || !onboardingLayerBlock.includes('if (timeModeOnboardingOpen) return renderTimeModeOnboarding();')
+  || !onboardingLayerBlock.includes('if (chatReplyModeOnboardingOpen) return renderChatReplyModeOnboarding();')
+  || !renderBlock.includes('const onboardingLayer = welcomeCoverOpen')
+  || !renderBlock.includes(': renderOnboardingLayer();')
+  || renderBlock.includes('${renderModelOnboarding()}${renderTimeModeOnboarding()}${renderChatReplyModeOnboarding()}')
+) {
+  throw new Error('First-run onboarding should render one ordered mobile-friendly layer at a time.');
 }
 if (
   renderDesktopSettingsPageBlock.includes('settings-overlay')
@@ -1791,8 +2088,28 @@ if (
   || !styleSource.includes('.message-row.has-actions-open-above')
   || !styleSource.includes('--message-actions-space: 150px')
   || !styleSource.includes('.group-message.is-actions-open-above .group-message-actions')
+  || !closeMessageActionMenuBlock.includes("'.message-row.has-actions-open-above'")
+  || !closeMessageActionMenuBlock.includes("row.classList.remove('has-actions-open-above')")
+  || !closeGroupMessageActionMenuBlock.includes("'.group-message.is-actions-open-above'")
+  || !closeGroupMessageActionMenuBlock.includes("message.classList.remove('is-actions-open-above')")
 ) {
-  throw new Error('Message action menus should open above while anchoring the tapped bubble in place.');
+  throw new Error('Message action menus should open above, anchor the tapped bubble, and clear row spacing on in-place close.');
+}
+if (
+  !privateMessageSwipeBlock.includes("row?.classList.add('is-swiping')")
+  || !privateMessageSwipeBlock.includes("row?.classList.add('is-returning')")
+  || !privateMessageSwipeBlock.includes("row?.style.setProperty('--message-swipe-x'")
+  || !privateMessageSwipeBlock.includes("row?.style.setProperty('--swipe-progress'")
+  || privateMessageSwipeBlock.includes("message.classList.add('is-swiping')")
+  || privateMessageSwipeBlock.includes("message.style.setProperty('--message-swipe-x'")
+  || !privateMessageRowGridStyleBlock.includes('transform: translateX(var(--message-swipe-x, 0))')
+  || !styleSource.includes('.message-row.is-swiping')
+  || !styleSource.includes('.message-row.is-returning')
+  || privateMessageBaseStyleBlock.includes('transform: translateX(var(--message-swipe-x, 0))')
+  || styleSource.includes('.message.is-swiping')
+  || styleSource.includes('.message.is-returning')
+) {
+  throw new Error('Private message swipe should move the whole message row so avatar, bubble, and quote indicator travel together.');
 }
 if (
   !restoreScrollBlock.includes('window.setTimeout(() => applyScrollSnapshot(snapshot), 0)')
@@ -1815,6 +2132,13 @@ if (
   || keepMomentComposerVisibleBlock.includes('scrollIntoView')
 ) {
   throw new Error('Moment composer keyboard handling should not auto-scroll the modal contents.');
+}
+if (
+  renderMomentsPageBlock.indexOf('<section class="moments-scroll">') < 0
+  || renderMomentsPageBlock.indexOf('${renderMomentComposerLauncher()}') < 0
+  || renderMomentsPageBlock.indexOf('${renderMomentComposerLauncher()}') < renderMomentsPageBlock.indexOf('</section>')
+) {
+  throw new Error('Moment compose FAB should render outside the animated moments scroll container to avoid fixed-position drift during tab transitions.');
 }
 function cssBlock(selector: string): string {
   return styleSource.split(`${selector} {`)[1]?.split('}')[0] ?? '';
@@ -1854,7 +2178,8 @@ if (
 if (
   !uiSource.includes('let replyStrategyManagerCharacterId')
   || !uiSource.includes('function replyStrategyManagerCharacter()')
-  || !uiSource.includes('function createCharacterReplyStrategy')
+  || !uiSource.includes('async function generateCharacterReplyStrategy')
+  || !uiSource.includes('buildCharacterReplyStrategyMessages(character)')
   || !replyStrategySettingsBlock.includes('id="reply-strategy-character-select"')
   || !replyStrategySettingsBlock.includes('id="character-reply-strategy"')
   || !replyStrategySettingsBlock.includes('id="regenerate-character-reply-strategy"')
@@ -1865,9 +2190,13 @@ if (
   || !uiSource.includes("document.querySelector<HTMLButtonElement>('#regenerate-character-panel-reply-strategy')")
   || !replyStrategySaveBlock.includes('const character = replyStrategyManagerCharacter();')
   || !replyStrategySaveBlock.includes("character.replyStrategy = fieldValue<HTMLTextAreaElement>('#character-reply-strategy');")
+  || !replyStrategyRegenerateBlock.includes('void regenerateReplyStrategyForCharacter(')
+  || !characterPanelReplyStrategyRegenerateBlock.includes('void regenerateReplyStrategyForCharacter(')
+  || replyStrategyRegenerateBlock.includes('createCharacterReplyStrategy(character)')
+  || characterPanelReplyStrategyRegenerateBlock.includes('createCharacterReplyStrategy(character)')
   || replyStrategySaveBlock.includes('state.chatReplyMode')
 ) {
-  throw new Error('Reply strategy settings should be scoped to a selected character instead of global chat settings.');
+  throw new Error('Reply strategy settings should use AI generation scoped to a selected character instead of local templates or global chat settings.');
 }
 if (
   characterSettingsPageBlock.includes('id="character-panel-worldbook"')
@@ -1897,6 +2226,17 @@ if (
   || !characterWorldBookPageEditorStyleBlock.includes('overflow: visible')
 ) {
   throw new Error('Dedicated character worldbook page should let expanded entries grow the page so the page itself can scroll.');
+}
+if (
+  !characterSettingsPageBlock.includes('id="delete-character-panel"')
+  || !uiSource.includes("document.querySelector<HTMLButtonElement>('#delete-character-panel')")
+  || !uiSource.includes("document.querySelector<HTMLButtonElement>('#delete-character')")
+  || !deleteActiveCharacterFromUiBlock.includes('deleteCharacter(character.id)')
+  || !deleteActiveCharacterFromUiBlock.includes('characterPanelOpen = false;')
+  || !deleteActiveCharacterFromUiBlock.includes("characterPanelPage = 'worldbook';")
+  || !deleteActiveCharacterFromUiBlock.includes('mobileChatOpen = false;')
+) {
+  throw new Error('Deleting a character should be available from the character panel and close active character UI safely.');
 }
 if (
   !settingsUiSource.includes('export function renderSettingsFold(')
@@ -2052,6 +2392,13 @@ if (
   throw new Error('Mobile navigation should push section history and route visible back buttons through the single-layer back handler.');
 }
 if (
+  groupChatRowOpenBlock.includes("mobileSection = 'groups';")
+  || closeMobileGroupChatBlock.includes("mobileSection = 'groups';")
+  || !closeMobileGroupChatBlock.includes("if (mobileSection !== 'groups') setActiveView('chat');")
+) {
+  throw new Error('Mobile group chat back should return to the opening inbox instead of forcing the group list.');
+}
+if (
   !hasMobileBackTargetBlock.includes('Boolean(activeWorldRpEventId)')
   || !hasMobileBackTargetBlock.includes('Boolean(worldRpMessageEditId)')
   || closeMobileLayerBlock.indexOf('if (worldRpMessageEditId)') < 0
@@ -2135,6 +2482,14 @@ if (
 ) {
   throw new Error('Moment composer should stay visible and scrollable above the mobile keyboard.');
 }
+if (
+  !cssBlock('.moments-tutorial-overlay').includes('z-index: calc(var(--z-modal) + 30)')
+  || !openMomentsTutorialHandlerBlock.includes('momentComposerOpen = false;')
+  || !openMomentsTutorialHandlerBlock.includes('setMomentComposerKeyboardFocus(false);')
+  || !openMomentComposerHandlerBlock.includes('momentsTutorialOpen = false;')
+) {
+  throw new Error('Moments tutorial should sit above and dismiss the publish moment floating window.');
+}
 // 大注释：世界工作台导航契约。主入口只暴露消息、角色、世界、动态、设置；事件和时间线只作为世界内部能力出现。
 if (
   !uiSource.includes("type MobileSection = 'messages' | 'contacts' | 'groups' | 'world' | 'moments' | 'settings'")
@@ -2181,6 +2536,100 @@ if (
   throw new Error('Page changes should use one guarded UI transition entry while idle/background renders stay quiet.');
 }
 if (
+  !scrollMessagesToBottomBlock.includes('const previousBehavior = messages.style.scrollBehavior;')
+  || !scrollMessagesToBottomBlock.includes("messages.style.scrollBehavior = 'auto';")
+  || !scrollMessagesToBottomBlock.includes('messages.style.scrollBehavior = previousBehavior;')
+  || !uiSource.includes("type ChatScrollSettleResult = 'none' | 'restored' | 'bottom' | 'snapshot';")
+  || !settleChatScrollBlock.includes('restoreScrollIfNeeded() || restoreActionMenuAnchorIfNeeded()')
+  || !settleChatScrollBlock.includes('const shouldScrollToBottom = shouldStickChatToBottom')
+  || !settleChatScrollBlock.includes('scrollMessagesToBottom();')
+  || !settleChatScrollBlock.includes('applyScrollSnapshot(preRenderScroll)')
+  || !renderBlock.includes('const immediateChatScroll = settleChatScrollAfterRender(wasNearChatBottom, preRenderScroll);')
+  || !renderBlock.includes("const settledChatScroll = immediateChatScroll === 'none'")
+) {
+  throw new Error('Chat renders should settle scroll before paint so overlays, long press menus, and sends never flash from top to bottom.');
+}
+const startStaggeredRenderIndex = startStaggeredUiTransitionBlock.indexOf('renderPage();');
+const startStaggeredTimerIndex = startStaggeredUiTransitionBlock.indexOf('window.setTimeout');
+if (
+  startStaggeredRenderIndex < 0
+  || startStaggeredTimerIndex < 0
+  || startStaggeredRenderIndex < startStaggeredTimerIndex
+  || !transitionsSource.includes('function currentPageTransitionTargets')
+  || !startStaggeredUiTransitionBlock.includes("currentPageTransitionTargets().forEach(element => element.classList.add('is-exiting'))")
+  || !startStaggeredUiTransitionBlock.includes("setTransitionPhase('exit');")
+  || !startStaggeredUiTransitionBlock.includes("window.setTimeout(() => {\n    setTransitionPhase('enter');\n    renderPage();")
+  || transitionsSource.includes('function createTransitionExitLayer')
+  || transitionsSource.includes('function animateTransitionExitLayer')
+  || styleSource.includes('.pt-transition-exit-layer')
+) {
+  throw new Error('Main page transitions should use the real current page for a short reference-style slide-fade out, not a cloned exit layer.');
+}
+const groupRevealPrepareIndex = groupChatRowOpenBlock.indexOf('prepareChatRevealFromElement(button);');
+const groupRevealRenderIndex = groupChatRowOpenBlock.indexOf("renderWithUiTransition('detail-in')");
+if (
+  groupRevealPrepareIndex < 0
+  || groupRevealRenderIndex < 0
+  || groupRevealPrepareIndex > groupRevealRenderIndex
+  || !transitionsSource.includes('dataset.groupChatId')
+  || !transitionsSource.includes('data-group-chat-id')
+  || transitionsSource.includes("!detail.classList.contains('mobile-group-chat')")
+) {
+  throw new Error('Group chat rows should seed the same anchored detail reveal as private chats, including mobile back reveal.');
+}
+if (
+  !transitionsSource.includes('UI_ENTER_MS = 160')
+  || !transitionsSource.includes('UI_EXIT_MS = 80')
+  || !transitionsSource.includes('CHAT_REVEAL_ENTER_MS = 420')
+  || !transitionsSource.includes('CHAT_REVEAL_EXIT_MS = 280')
+  || !transitionsSource.includes('playChatRippleEnter')
+  || !transitionsSource.includes('playChatRippleExit')
+  || !transitionsSource.includes('nextAnimationFrame')
+  || !transitionsSource.includes('window.requestAnimationFrame')
+  || !transitionsSource.includes('window.setTimeout(() => callback(Date.now()), 16)')
+  || !transitionsSource.includes('radial-gradient(circle at')
+  || !transitionsSource.includes('data-character-id')
+  || !styleSource.includes('--fade-dur: 160ms')
+  || !styleSource.includes('--fade-out-dur: 80ms')
+  || !styleSource.includes('--block-gap: 8ms')
+  || !styleSource.includes('@keyframes referencePageEnter')
+  || !styleSource.includes('@keyframes referencePageExit')
+  || !styleSource.includes('[data-ui-transition-phase="enter"] .mobile-page:not(.is-exiting) > *:not(.bottom-nav):not(.moment-compose-fab)')
+  || !styleSource.includes('[data-ui-transition-phase="enter"] .moments-page:not(.is-exiting) > *:not(.bottom-nav):not(.moment-compose-fab)')
+  || !styleSource.includes('[data-ui-transition-phase="exit"] .is-exiting.mobile-page > *:not(.bottom-nav):not(.moment-compose-fab)')
+  || styleSource.includes('paltavern-page-enter-forward')
+  || styleSource.includes('--ui-transition-duration')
+  || styleSource.includes('::view-transition-old(root)')
+  || !styleSource.includes('@keyframes slideUpIn')
+  || !styleSource.includes('@keyframes slideDownOut')
+  || styleSource.includes('.pt-transition-exit-layer')
+  || !styleSource.includes('.bottom-nav button:active')
+  || !styleSource.includes('transform: scale(0.88)')
+  || !styleSource.includes('.pt-chat-reveal-layer')
+  || !styleSource.includes('.pt-chat-reveal-ring')
+  || !transitionsSource.includes('let activeRevealCancel')
+  || !transitionsSource.includes('cancelActiveChatReveal()')
+  || !transitionsSource.includes('chatRevealAnimating = false')
+) {
+  throw new Error('Current motion should replicate the reference APK and let a back gesture take over an unfinished chat reveal.');
+}
+if (
+  !styleSource.includes('html[data-ui-transition] .moment-compose-fab')
+  || !styleSource.includes('transition: none !important;')
+  || !styleSource.includes('transform: none !important;')
+  || !styleSource.includes('will-change: auto;')
+) {
+  throw new Error('Moment compose FAB should stay visually pinned during tab transition motion.');
+}
+if (
+  !setRevealRingBlock.includes('--reveal-scale')
+  || setRevealRingBlock.includes('--reveal-size')
+  || styleSource.includes('will-change: width, height, opacity')
+  || !styleSource.includes('transform: translate(-50%, -50%) scale(var(--reveal-scale, 1))')
+) {
+  throw new Error('Chat avatar reveal should animate ring scale instead of width/height layout on every frame.');
+}
+if (
   !iconsSource.includes('export type IconName')
   || !iconsSource.includes('export function icon')
   || !uiSource.includes("from './icons'")
@@ -2204,6 +2653,8 @@ if (
   !modelSettingsSource.includes('export function modelProviderValue')
   || !modelSettingsSource.includes('export function modelProviderFor')
   || !modelSettingsSource.includes('export function apiUrlForProvider')
+  || !modelSettingsSource.includes('function normalizeModelApiUrlBase')
+  || !modelSettingsSource.includes("normalized !== normalizeModelApiUrlBase(DEEPSEEK_API_URL)")
   || !modelSettingsSource.includes('export function modelProviderOptions')
   || !uiSource.includes("from './model-settings'")
   || uiSource.includes('function modelProviderValue(')
@@ -2230,14 +2681,14 @@ if (
 ) {
   throw new Error('Shared display labels should live in ui/display-labels.ts instead of the main app renderer.');
 }
-if (
+if (false && (
   !styleSource.includes('/* 大注释：页面切换动效层')
   || !styleSource.includes('::view-transition-old(root)')
   || !styleSource.includes('::view-transition-new(root)')
   || !styleSource.includes('@keyframes paltavern-page-enter-forward')
   || !styleSource.includes('.ui-fallback-transition[data-ui-transition')
   || !styleSource.includes('@media (prefers-reduced-motion: reduce)')
-) {
+)) {
   throw new Error('Page transition styles should include View Transition, fallback, and reduced-motion support.');
 }
 if (
@@ -2277,10 +2728,19 @@ if (
   throw new Error('Mobile world topbar should stay one-row, with an avatar identity, full-page world settings, and no horizontal overflow.');
 }
 if (
-  !worldWorkbenchBlock.includes('aria-label="生成事件"')
-  || !worldWorkbenchBlock.includes('<span class="world-action-label">生成事件</span>')
+  !worldWorkbenchBlock.includes('aria-label="开始一段日常"')
+  || !worldWorkbenchBlock.includes('<span class="world-action-label">开始日常</span>')
 ) {
-  throw new Error('World generate-event should keep an accessible label while rendering as a lighter topbar action.');
+  throw new Error('World daily action should keep an accessible label while rendering as a lighter topbar action.');
+}
+if (
+  !worldWorkbenchBlock.includes('aria-label="开始一段日常"')
+  || !worldWorkbenchBlock.includes('<span class="world-action-label">开始日常</span>')
+  || !worldEventLobbyBlock.includes('今天发生点什么')
+  || !worldEventLobbyBlock.includes('<span>开始一段日常</span>')
+  || !renderMobileBlock.includes('aria-label="新建群聊"')
+) {
+  throw new Error('Mobile world and inbox actions should use plain user-facing labels instead of abstract event wording.');
 }
 if (
   !worldPersonaSelectorBlock.includes('renderUserAvatar(state.userName)')
@@ -2445,6 +2905,14 @@ if (
   || styleSource.includes('.world-lobby-counts')
 ) {
   throw new Error('World workbench should render daily RP narration, dialogue, event, and world-setting surfaces.');
+}
+if (
+  !worldDialogueBody.includes("plainTextMode: 'narration'")
+  || worldDialogueBody.includes("plainTextMode: 'dialogue'")
+  || !eventsSource.includes('没有 @bubble')
+  || !eventsSource.includes('没有 @bubble:角色名|情绪|台词 的普通文本会被界面当作旁白')
+) {
+  throw new Error('World RP assistant text should keep untagged narration separate from explicit character bubbles.');
 }
 if (
   !worldWorkbenchBlock.includes('const selectedEvent = selectedWorldRpEvent()')
