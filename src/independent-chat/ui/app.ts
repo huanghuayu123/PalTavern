@@ -236,6 +236,8 @@ import { findStickerById } from '../media/stickers';
 import { clampVirtualTimeMinutes, companionTimeModeLabel, formatClockMinutes, formatCompanionDateTime } from '../core/time';
 import { compactText, escapeHtml, nowId } from '../core/utils';
 import { markWelcomeCoverSeen, renderWelcomeCover, shouldShowWelcomeCover } from './welcome-cover';
+import { renderCardImportDiagnostics } from './card-import-diagnostics';
+import { renderFirstRunGuide, type FirstRunGuideState } from './first-run-guide';
 import {
   refreshWorldWeather,
   searchWeatherLocations,
@@ -5508,23 +5510,6 @@ function cardCandidateSourceLabel(source: CharacterCardCandidate['source']): str
   return labels[source];
 }
 
-function renderCardImportDiagnostics(character: CharacterProfile, candidates: CharacterCardCandidate[]): string {
-  const missing = [
-    character.description?.trim() ? '' : '描述',
-    character.personality?.trim() ? '' : '性格',
-    character.firstMessage?.trim() ? '' : '开场白',
-    character.importInfo.worldBookEntryCount > 0 ? '' : '世界书',
-  ].filter(Boolean);
-  const confidence = candidates.length > 1 ? '检测到多个候选角色，建议只勾选你真的想拆出来的人。' : '识别结果比较明确。';
-  return `
-    <section class="card-import-diagnostics" aria-label="导入体检">
-      <div><strong>识别结果</strong><span>${candidates.length} 个候选角色，原卡格式 ${escapeHtml(character.importInfo.spec || '未知')}</span></div>
-      <div><strong>缺项提醒</strong><span>${missing.length > 0 ? missing.join('、') : '关键字段齐全'}</span></div>
-      <div><strong>建议下一步</strong><span>${confidence}</span></div>
-    </section>
-  `;
-}
-
 function renderCardRecognitionDialog(): string {
   if (!pendingCardRecognition || pendingCardRecognition.candidates.length <= 1) return '';
   const { character, candidates } = pendingCardRecognition;
@@ -5618,44 +5603,18 @@ function updatePendingStickerImportDraftFromDom(): void {
   }));
 }
 
-function shouldShowFirstRunGuide(): boolean {
-  const hasWorldCharacter = state.characters.some(character => character.worldId === activeWorld().id);
-  const hasUserContent = state.messages.length > 0
-    || state.groupMessages.length > 0
-    || state.moments.length > 0
-    || state.worldEvents.length > 0;
-  return !modelIsReady() || !hasWorldCharacter || !hasUserContent;
-}
-
-function renderFirstRunGuide(compact = false): string {
-  if (!shouldShowFirstRunGuide()) return '';
-  const modelDone = modelIsReady();
+function firstRunGuideState(compact = false): FirstRunGuideState {
   const characterDone = state.characters.some(character => character.worldId === activeWorld().id);
   const contentDone = state.messages.length > 0
     || state.groupMessages.length > 0
     || state.moments.length > 0
     || state.worldEvents.length > 0;
-  const steps = [
-    ['model', '连接模型', modelDone, '填写 API 地址、Key 和模型名称。'],
-    ['character', '准备角色', characterDone, '导入角色卡，或直接写一张新卡。'],
-    ['chat', '开始相处', contentDone, '进入私聊、世界或动态，留下第一段记录。'],
-  ] as const;
-  return `
-    <section class="first-run-guide ${compact ? 'is-compact' : ''}" aria-label="新手上手路径">
-      <header>
-        <span>开始使用 PalTavern</span>
-        <strong>三步就能跑起来</strong>
-      </header>
-      <div class="first-run-steps">
-        ${steps.map(([id, title, done, copy], index) => `
-          <button class="first-run-step ${done ? 'is-done' : ''}" data-first-run-step="${id}" type="button">
-            <b>${done ? '✓' : index + 1}</b>
-            <span><strong>${title}</strong><small>${copy}</small></span>
-          </button>
-        `).join('')}
-      </div>
-    </section>
-  `;
+  return {
+    modelDone: modelIsReady(),
+    characterDone,
+    contentDone,
+    compact,
+  };
 }
 
 function renderDesktop(character?: CharacterProfile): string {
@@ -5685,7 +5644,7 @@ function renderDesktop(character?: CharacterProfile): string {
         <label class="contact-search">${icon('search')}<input id="contact-search" value="${escapeHtml(contactQuery)}" placeholder="搜索角色" /></label>
         ${renderPrivateChatTargetSelector()}
         ${renderDailyBriefBanner()}
-        ${renderFirstRunGuide(true)}
+        ${renderFirstRunGuide(firstRunGuideState(true))}
         <div class="sidebar-actions">
           <button class="primary compact-file-button" data-open-authoring>写角色卡</button>
           <label class="file-button compact-file-button card-import-button">${icon('import')}<span>导入角色卡</span><input class="card-import" type="file" accept="${CARD_IMPORT_ACCEPT}" /></label>
@@ -5761,7 +5720,7 @@ function renderMobile(character?: CharacterProfile): string {
             <button class="icon-button inbox-create-group" data-open-groups type="button" aria-label="新建群聊">${icon('add')}</button>
           </div>
         </header>
-        ${renderFirstRunGuide()}
+        ${renderFirstRunGuide(firstRunGuideState())}
         ${renderMobileCharacterStoryStrip()}
         <section class="mobile-inbox-panel mobile-inbox-private-panel">
           <div class="mobile-section-label">

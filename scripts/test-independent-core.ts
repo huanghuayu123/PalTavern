@@ -292,6 +292,8 @@ const privateChatSource = fs.readFileSync(path.join(process.cwd(), 'src/independ
 const modelClientSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/model/client.ts'), 'utf8');
 const schedulerSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/automation/scheduler.ts'), 'utf8');
 const eventsSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/social/events.ts'), 'utf8');
+const firstRunGuideSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/ui/first-run-guide.ts'), 'utf8');
+const cardImportDiagnosticsSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/ui/card-import-diagnostics.ts'), 'utf8');
 const androidMainActivitySource = fs.readFileSync(path.join(
   process.cwd(),
   'android/app/src/main/java/com/tavernsocial/app/MainActivity.java',
@@ -2319,6 +2321,17 @@ if (
   || uiSource.includes('<div class="brand"><h1>Tavern Social</h1>')
 ) {
   throw new Error('Visible app shell branding should use PalTavern instead of Tavern Social.');
+}
+if (
+  !appSource.includes("from './first-run-guide'")
+  || !appSource.includes("from './card-import-diagnostics'")
+  || appSource.includes('function renderFirstRunGuide(')
+  || appSource.includes('function renderCardImportDiagnostics(')
+  || !firstRunGuideSource.includes('export function renderFirstRunGuide')
+  || !firstRunGuideSource.includes('export function shouldShowFirstRunGuide')
+  || !cardImportDiagnosticsSource.includes('export function renderCardImportDiagnostics')
+) {
+  throw new Error('V1 first-run and import diagnostics render helpers should live outside app.ts.');
 }
 if (
   !uiSource.includes('id="force-restart-services"')
