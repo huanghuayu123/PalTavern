@@ -285,6 +285,13 @@ import {
   timelineSourceLabel,
   timelineTypeLabel,
 } from './display-labels';
+import {
+  bindAppDialog,
+  openAppAlert,
+  openAppConfirm,
+  openAppPrompt,
+  renderAppDialog,
+} from './app-dialogs';
 
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) {
@@ -5767,6 +5774,18 @@ function renderWithUiTransition(kind: UiTransitionKind): void {
   runUiTransition(kind, render);
 }
 
+function openConfirmDialog(options: Parameters<typeof openAppConfirm>[0]): void {
+  openAppConfirm(options, () => renderWithUiTransition('overlay-in'));
+}
+
+function openAlertDialog(options: Parameters<typeof openAppAlert>[0]): void {
+  openAppAlert(options, () => renderWithUiTransition('overlay-in'));
+}
+
+function openPromptDialog(options: Parameters<typeof openAppPrompt>[0]): void {
+  openAppPrompt(options, () => renderWithUiTransition('overlay-in'));
+}
+
 function modelIsReady(): boolean {
   return Boolean(state.modelConfig.apiUrl.trim() && state.modelConfig.model.trim());
 }
@@ -6065,31 +6084,39 @@ function settleChatScrollAfterRender(
 
 function deleteActiveCharacterFromUi(): void {
   const character = activeCharacter();
-  if (!character || !window.confirm(`确定删除角色“${character.name}”及其全部聊天记录吗？`)) return;
-  const deleted = deleteCharacter(character.id);
-  if (!deleted) return;
-  quotedMessageId = '';
-  messageActionId = '';
-  groupMessageActionId = '';
-  stickerPickerOpen = false;
-  stickerManagerCharacterId = '';
-  relationshipManagerCharacterId = '';
-  relationshipPairACharacterId = '';
-  relationshipPairBCharacterId = '';
-  proactiveManagerCharacterId = '';
-  replyStrategyManagerCharacterId = '';
-  characterPanelOpen = false;
-  characterPanelPage = 'worldbook';
-  scrollCharacterPanelToTopAfterRender = false;
-  closeMessageProfilePopover();
-  if (compactMedia.matches) {
-    mobileChatOpen = false;
-    mobileGroupChatOpen = false;
-    groupSettingsOpen = false;
-    mobileSection = state.characters.some(item => item.worldId === activeWorld().id) ? 'contacts' : 'settings';
-  }
-  setStatusText(`已删除角色：${deleted.name}`);
-  render();
+  if (!character) return;
+  openConfirmDialog({
+    title: '删除角色卡',
+    message: `确定删除角色“${character.name}”及其全部聊天记录吗？`,
+    confirmLabel: '删除角色',
+    cancelLabel: '保留',
+    tone: 'danger',
+    onConfirm: () => {
+      const deleted = deleteCharacter(character.id);
+      if (!deleted) return;
+      quotedMessageId = '';
+      messageActionId = '';
+      groupMessageActionId = '';
+      stickerPickerOpen = false;
+      stickerManagerCharacterId = '';
+      relationshipManagerCharacterId = '';
+      relationshipPairACharacterId = '';
+      relationshipPairBCharacterId = '';
+      proactiveManagerCharacterId = '';
+      replyStrategyManagerCharacterId = '';
+      characterPanelOpen = false;
+      characterPanelPage = 'worldbook';
+      scrollCharacterPanelToTopAfterRender = false;
+      closeMessageProfilePopover();
+      if (compactMedia.matches) {
+        mobileChatOpen = false;
+        mobileGroupChatOpen = false;
+        groupSettingsOpen = false;
+        mobileSection = state.characters.some(item => item.worldId === activeWorld().id) ? 'contacts' : 'settings';
+      }
+      setStatusText(`已删除角色：${deleted.name}`);
+    },
+  });
 }
 
 function preserveScrollForNextRender(): void {
@@ -6351,8 +6378,9 @@ export function render(): void {
   const wasNearChatBottom = isChatScrollNearBottom();
   const preRenderScroll = captureScrollSnapshot();
   if (isAuthoringOpen()) {
-    appRoot.innerHTML = renderAuthoringScreen();
+    appRoot.innerHTML = `${renderAuthoringScreen()}${renderAppDialog()}`;
     bindAuthoringUi(render);
+    bindAppDialog(() => renderWithUiTransition('overlay-out'));
     return;
   }
   ensureGroupChatForSpeaker();
@@ -6365,9 +6393,10 @@ export function render(): void {
   const onboardingLayer = welcomeCoverOpen
     ? renderWelcomeCover()
     : renderOnboardingLayer();
-  appRoot.innerHTML = `${compactMedia.matches ? renderMobile(character) : renderDesktop(character)}${renderGlobalStatus()}${onboardingLayer}${renderCardRecognitionDialog()}${renderStickerImportDialog()}`;
+  appRoot.innerHTML = `${compactMedia.matches ? renderMobile(character) : renderDesktop(character)}${renderGlobalStatus()}${onboardingLayer}${renderCardRecognitionDialog()}${renderStickerImportDialog()}${renderAppDialog()}`;
   applyCharacterAccent(character);
   bindUi();
+  bindAppDialog(() => renderWithUiTransition('overlay-out'));
   installVisualViewportListener();
   installUiSessionPersistence();
   const immediateForcedMessageFocus = focusPendingMessageComposer();
@@ -6434,7 +6463,7 @@ export function renderWhenChatInputIdle(): void {
   const active = document.activeElement;
   const input = active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement ? active : null;
   const protectedUnsavedForm = input?.closest(
-    '.authoring-screen, .sticker-import-dialog, .settings-dialog, .settings-content, .mobile-settings-content, .world-gear-panel, .world-persona-select, .event-composer-dialog, .message-edit-dialog, .event-manual-result, .timeline-note-form, .group-settings-panel, .character-panel',
+    '.authoring-screen, .app-dialog, .sticker-import-dialog, .settings-dialog, .settings-content, .mobile-settings-content, .world-gear-panel, .world-persona-select, .event-composer-dialog, .message-edit-dialog, .event-manual-result, .timeline-note-form, .group-settings-panel, .character-panel',
   );
   const isProtectedInput = input
     && (
@@ -7414,13 +7443,20 @@ function bindUi(): void {
       render();
       return;
     }
-    if (!window.confirm(`确定清空“${chat.title}”的 ${messageCount} 条聊天记录吗？群聊和成员会保留。`)) return;
-    const result = clearGroupMessages(chat.id);
-    saveUiSessionSnapshot();
-    setVisibleStatus(result.ok
-      ? `已清空“${chat.title}”的聊天记录。`
-      : result.reason ?? '清空聊天记录失败。');
-    render();
+    openConfirmDialog({
+      title: '清空群聊记录',
+      message: `确定清空“${chat.title}”的 ${messageCount} 条聊天记录吗？群聊和成员会保留。`,
+      confirmLabel: '清空记录',
+      cancelLabel: '保留',
+      tone: 'danger',
+      onConfirm: () => {
+        const result = clearGroupMessages(chat.id);
+        saveUiSessionSnapshot();
+        setVisibleStatus(result.ok
+          ? `已清空“${chat.title}”的聊天记录。`
+          : result.reason ?? '清空聊天记录失败。');
+      },
+    });
   });
   document.querySelector<HTMLButtonElement>('#delete-group-chat')?.addEventListener('click', () => {
     const chat = activeGroupChat();
@@ -7430,23 +7466,30 @@ function bindUi(): void {
     const detail = messageCount > 0
       ? `会删除 ${messageCount} 条聊天记录，并让这些记录不再进入后续 AI 上下文。`
       : '这个群还没有聊天记录。';
-    if (!window.confirm(`确定解散“${title}”吗？${detail}角色卡不会被删除。`)) return;
-    const result = deleteGroupChat(chat.id);
-    setGroupMessageDraft(chat, '');
-    if (result.ok) {
-      setActiveView('groups');
-      desktopGroupChatOpen = false;
-      groupSettingsOpen = false;
-      groupSettingsMode = 'create';
-      if (compactMedia.matches) {
-        mobileSection = 'groups';
-        mobileChatOpen = false;
-        mobileGroupChatOpen = false;
-      }
-      saveUiSessionSnapshot({ captureDom: false });
-    }
-    setVisibleStatus(result.ok ? `已解散群聊：${title}` : result.reason ?? '解散群聊失败。');
-    renderWithUiTransition('detail-out');
+    openConfirmDialog({
+      title: '解散群聊',
+      message: `确定解散“${title}”吗？${detail}角色卡不会被删除。`,
+      confirmLabel: '解散群聊',
+      cancelLabel: '保留',
+      tone: 'danger',
+      onConfirm: () => {
+        const result = deleteGroupChat(chat.id);
+        setGroupMessageDraft(chat, '');
+        if (result.ok) {
+          setActiveView('groups');
+          desktopGroupChatOpen = false;
+          groupSettingsOpen = false;
+          groupSettingsMode = 'create';
+          if (compactMedia.matches) {
+            mobileSection = 'groups';
+            mobileChatOpen = false;
+            mobileGroupChatOpen = false;
+          }
+          saveUiSessionSnapshot({ captureDom: false });
+        }
+        setVisibleStatus(result.ok ? `已解散群聊：${title}` : result.reason ?? '解散群聊失败。');
+      },
+    });
   });
   const groupInput = document.querySelector<HTMLTextAreaElement>('#group-message-input');
   if (groupInput) {
@@ -7900,10 +7943,17 @@ function bindUi(): void {
   });
   document.querySelector<HTMLButtonElement>('#delete-world')?.addEventListener('click', () => {
     const world = activeWorld();
-    if (!window.confirm(`确定删除世界“${world.name}”及其中全部数据吗？`)) return;
-    const result = deleteWorld(world.id);
-    setStatusText(result.ok ? `已删除世界：${world.name}` : result.reason ?? '删除失败。');
-    render();
+    openConfirmDialog({
+      title: '删除世界',
+      message: `确定删除世界“${world.name}”及其中全部数据吗？`,
+      confirmLabel: '删除世界',
+      cancelLabel: '保留',
+      tone: 'danger',
+      onConfirm: () => {
+        const result = deleteWorld(world.id);
+        setStatusText(result.ok ? `已删除世界：${world.name}` : result.reason ?? '删除失败。');
+      },
+    });
   });
   document.querySelector<HTMLSelectElement>('#character-manage-select')?.addEventListener('change', event => {
     state.activeCharacterId = (event.currentTarget as HTMLSelectElement).value;
@@ -8060,65 +8110,86 @@ function bindUi(): void {
   });
   document.querySelector<HTMLButtonElement>('#restore-tavern-social-prompt-preset')?.addEventListener('click', () => {
     const existingIndex = state.promptPresets.findIndex(item => item.id === TAVERN_SOCIAL_DEFAULT_PROMPT_PRESET_ID);
-    if (
-      existingIndex >= 0
-      && !window.confirm('这会用 PalTavern 默认内容覆盖当前默认回复策略预设。继续吗？')
-    ) {
+    const restorePreset = () => {
+      const preset = createTavernSocialDefaultPromptPreset();
+      if (existingIndex >= 0) {
+        state.promptPresets.splice(existingIndex, 1, preset);
+      } else {
+        state.promptPresets.push(preset);
+      }
+      state.activeChatPromptPresetId = preset.id;
+      state.chatPromptPresetEnabled = true;
+      editingPromptPresetId = preset.id;
+      saveState();
+      setStatusText('已写入 PalTavern 默认回复策略预设，可以在下方直接编辑“回复策略”。');
+    };
+    if (existingIndex >= 0) {
+      openConfirmDialog({
+        title: '覆盖默认回复策略预设',
+        message: '这会用 PalTavern 默认内容覆盖当前默认回复策略预设。',
+        confirmLabel: '覆盖预设',
+        cancelLabel: '取消',
+        onConfirm: restorePreset,
+      });
       return;
     }
-    const preset = createTavernSocialDefaultPromptPreset();
-    if (existingIndex >= 0) {
-      state.promptPresets.splice(existingIndex, 1, preset);
-    } else {
-      state.promptPresets.push(preset);
-    }
-    state.activeChatPromptPresetId = preset.id;
-    state.chatPromptPresetEnabled = true;
-    editingPromptPresetId = preset.id;
-    saveState();
-    setStatusText('已写入 PalTavern 默认回复策略预设，可以在下方直接编辑“回复策略”。');
+    restorePreset();
     render();
   });
   document.querySelector<HTMLButtonElement>('#restore-tavern-social-group-prompt-preset')?.addEventListener('click', () => {
     const existingIndex = state.promptPresets.findIndex(item => item.id === TAVERN_SOCIAL_DEFAULT_GROUP_PROMPT_PRESET_ID);
-    if (
-      existingIndex >= 0
-      && !window.confirm('这会用 PalTavern 默认内容覆盖当前默认群聊策略预设。继续吗？')
-    ) {
+    const restorePreset = () => {
+      const preset = createTavernSocialDefaultGroupPromptPreset();
+      if (existingIndex >= 0) {
+        state.promptPresets.splice(existingIndex, 1, preset);
+      } else {
+        state.promptPresets.push(preset);
+      }
+      state.activeGroupPromptPresetId = preset.id;
+      state.groupPromptPresetEnabled = true;
+      editingPromptPresetId = preset.id;
+      saveState();
+      setStatusText('已写入 PalTavern 默认群聊策略预设，可以在下方直接编辑群聊规则。');
+    };
+    if (existingIndex >= 0) {
+      openConfirmDialog({
+        title: '覆盖默认群聊策略预设',
+        message: '这会用 PalTavern 默认内容覆盖当前默认群聊策略预设。',
+        confirmLabel: '覆盖预设',
+        cancelLabel: '取消',
+        onConfirm: restorePreset,
+      });
       return;
     }
-    const preset = createTavernSocialDefaultGroupPromptPreset();
-    if (existingIndex >= 0) {
-      state.promptPresets.splice(existingIndex, 1, preset);
-    } else {
-      state.promptPresets.push(preset);
-    }
-    state.activeGroupPromptPresetId = preset.id;
-    state.groupPromptPresetEnabled = true;
-    editingPromptPresetId = preset.id;
-    saveState();
-    setStatusText('已写入 PalTavern 默认群聊策略预设，可以在下方直接编辑群聊规则。');
+    restorePreset();
     render();
   });
   document.querySelector<HTMLButtonElement>('#restore-tavern-social-world-prompt-preset')?.addEventListener('click', () => {
     const existingIndex = state.promptPresets.findIndex(item => item.id === TAVERN_SOCIAL_DEFAULT_WORLD_PROMPT_PRESET_ID);
-    if (
-      existingIndex >= 0
-      && !window.confirm('这会用 PalTavern 默认内容覆盖当前默认世界 RP 预设。继续吗？')
-    ) {
+    const restorePreset = () => {
+      const preset = createTavernSocialDefaultWorldPromptPreset();
+      if (existingIndex >= 0) {
+        state.promptPresets.splice(existingIndex, 1, preset);
+      } else {
+        state.promptPresets.push(preset);
+      }
+      state.activeWorldPromptPresetId = preset.id;
+      state.worldPromptPresetEnabled = true;
+      editingPromptPresetId = preset.id;
+      saveState();
+      setStatusText('已写入 PalTavern 默认世界 RP 预设，可以在下方直接编辑世界舞台规则。');
+    };
+    if (existingIndex >= 0) {
+      openConfirmDialog({
+        title: '覆盖默认世界 RP 预设',
+        message: '这会用 PalTavern 默认内容覆盖当前默认世界 RP 预设。',
+        confirmLabel: '覆盖预设',
+        cancelLabel: '取消',
+        onConfirm: restorePreset,
+      });
       return;
     }
-    const preset = createTavernSocialDefaultWorldPromptPreset();
-    if (existingIndex >= 0) {
-      state.promptPresets.splice(existingIndex, 1, preset);
-    } else {
-      state.promptPresets.push(preset);
-    }
-    state.activeWorldPromptPresetId = preset.id;
-    state.worldPromptPresetEnabled = true;
-    editingPromptPresetId = preset.id;
-    saveState();
-    setStatusText('已写入 PalTavern 默认世界 RP 预设，可以在下方直接编辑世界舞台规则。');
+    restorePreset();
     render();
   });
   document.querySelector<HTMLInputElement>('#chat-prompt-preset-enabled')?.addEventListener('change', event => {
@@ -8316,29 +8387,37 @@ function bindUi(): void {
   });
   document.querySelector<HTMLButtonElement>('#delete-prompt-preset')?.addEventListener('click', () => {
     const preset = activePromptPreset();
-    if (!preset || !window.confirm(`确定删除提示词预设“${preset.name}”吗？`)) return;
-    state.promptPresets = state.promptPresets.filter(item => item.id !== preset.id);
-    if (state.activeChatPromptPresetId === preset.id) {
-      state.activeChatPromptPresetId = state.promptPresets[0]?.id ?? '';
-    }
-    if (state.activeGroupPromptPresetId === preset.id) {
-      state.activeGroupPromptPresetId = state.promptPresets.find(item => item.id === TAVERN_SOCIAL_DEFAULT_GROUP_PROMPT_PRESET_ID)?.id
-        ?? state.promptPresets[0]?.id
-        ?? '';
-    }
-    if (state.activeWorldPromptPresetId === preset.id) {
-      state.activeWorldPromptPresetId = state.promptPresets.find(item => item.id === TAVERN_SOCIAL_DEFAULT_WORLD_PROMPT_PRESET_ID)?.id
-        ?? state.promptPresets[0]?.id
-        ?? '';
-    }
-    editingPromptPresetId = state.promptPresets[0]?.id ?? '';
-    state.chatPromptPresetEnabled = state.chatPromptPresetEnabled && Boolean(state.activeChatPromptPresetId);
-    state.groupPromptPresetEnabled = state.groupPromptPresetEnabled && Boolean(state.activeGroupPromptPresetId);
-    state.worldPromptPresetEnabled = state.worldPromptPresetEnabled && Boolean(state.activeWorldPromptPresetId);
-    saveState();
-    setStatusText(`已删除提示词预设：${preset.name}`);
-    preserveScrollForNextRender();
-    render();
+    if (!preset) return;
+    openConfirmDialog({
+      title: '删除提示词预设',
+      message: `确定删除提示词预设“${preset.name}”吗？`,
+      confirmLabel: '删除预设',
+      cancelLabel: '保留',
+      tone: 'danger',
+      onConfirm: () => {
+        state.promptPresets = state.promptPresets.filter(item => item.id !== preset.id);
+        if (state.activeChatPromptPresetId === preset.id) {
+          state.activeChatPromptPresetId = state.promptPresets[0]?.id ?? '';
+        }
+        if (state.activeGroupPromptPresetId === preset.id) {
+          state.activeGroupPromptPresetId = state.promptPresets.find(item => item.id === TAVERN_SOCIAL_DEFAULT_GROUP_PROMPT_PRESET_ID)?.id
+            ?? state.promptPresets[0]?.id
+            ?? '';
+        }
+        if (state.activeWorldPromptPresetId === preset.id) {
+          state.activeWorldPromptPresetId = state.promptPresets.find(item => item.id === TAVERN_SOCIAL_DEFAULT_WORLD_PROMPT_PRESET_ID)?.id
+            ?? state.promptPresets[0]?.id
+            ?? '';
+        }
+        editingPromptPresetId = state.promptPresets[0]?.id ?? '';
+        state.chatPromptPresetEnabled = state.chatPromptPresetEnabled && Boolean(state.activeChatPromptPresetId);
+        state.groupPromptPresetEnabled = state.groupPromptPresetEnabled && Boolean(state.activeGroupPromptPresetId);
+        state.worldPromptPresetEnabled = state.worldPromptPresetEnabled && Boolean(state.activeWorldPromptPresetId);
+        saveState();
+        setStatusText(`已删除提示词预设：${preset.name}`);
+        preserveScrollForNextRender();
+      },
+    });
   });
   document.querySelector<HTMLButtonElement>('#save-character-reply-strategy')?.addEventListener('click', () => {
     const character = replyStrategyManagerCharacter();
@@ -8541,9 +8620,12 @@ function bindUi(): void {
     void downloadSillyTavernCard(character)
       .then(downloadInfo => {
         const message = `已导出 ${character.name} 的 SillyTavern V3 角色卡。\n文件名：${downloadInfo.fileName}\n保存位置：${downloadInfo.folderHint}`;
-        window.alert(message);
+        openAlertDialog({
+          title: '角色卡已导出',
+          message,
+          confirmLabel: '知道了',
+        });
         setStatusText(message.replace(/\n/g, ' '));
-        render();
       })
       .catch(error => {
         setStatusText(error instanceof DOMException && error.name === 'AbortError'
@@ -8802,43 +8884,69 @@ function bindUi(): void {
     });
   });
   document.querySelector<HTMLButtonElement>('[data-create-world-chapter]')?.addEventListener('click', () => {
-    const title = window.prompt('新章节标题', activeWorld().sceneSummary || '新的长 RP 章节');
-    if (title === null) return;
-    const chapter = createWorldChapter({ title, summary: activeWorld().sceneSummary });
-    setStatusText(`已创建章节：${chapter.title}`);
-    render();
+    openPromptDialog({
+      title: '新章节',
+      message: '给这段长 RP 起一个方便回看的标题。',
+      label: '章节标题',
+      initialValue: activeWorld().sceneSummary || '新的长 RP 章节',
+      confirmLabel: '创建章节',
+      onConfirm: title => {
+        const chapter = createWorldChapter({ title, summary: activeWorld().sceneSummary });
+        setStatusText(`已创建章节：${chapter.title}`);
+      },
+    });
   });
   document.querySelector<HTMLButtonElement>('[data-create-world-scene]')?.addEventListener('click', () => {
     const chapter = activeWorldChapter();
     if (!chapter) return;
-    const title = window.prompt('新场景标题', selectedWorldRpEvent()?.title || '新的场景');
-    if (title === null) return;
-    const scene = createWorldScene(chapter.id, {
-      title,
-      summary: selectedWorldRpEvent()?.description,
-      sourceEventId: selectedWorldRpEvent()?.id,
+    openPromptDialog({
+      title: '新场景',
+      message: '场景会挂在当前章节下，并可以关联正在处理的生活线索。',
+      label: '场景标题',
+      initialValue: selectedWorldRpEvent()?.title || '新的场景',
+      confirmLabel: '进入场景',
+      onConfirm: title => {
+        const scene = createWorldScene(chapter.id, {
+          title,
+          summary: selectedWorldRpEvent()?.description,
+          sourceEventId: selectedWorldRpEvent()?.id,
+        });
+        setStatusText(`已进入场景：${scene.title}`);
+      },
     });
-    setStatusText(`已进入场景：${scene.title}`);
-    render();
   });
   document.querySelector<HTMLButtonElement>('[data-end-world-scene]')?.addEventListener('click', () => {
     const chapter = activeWorldChapter();
     const scene = chapter?.scenes.find(item => item.id === chapter.activeSceneId);
     if (!chapter || !scene) return;
-    const summary = window.prompt('场景结束摘要', scene.summary || selectedWorldRpEvent()?.resultSummary || '');
-    if (summary === null) return;
-    endWorldScene(chapter.id, scene.id, summary);
-    setStatusText(`已结束场景：${scene.title}`);
-    render();
+    openPromptDialog({
+      title: '结束场景',
+      message: `为“${scene.title}”留下一个简短摘要，后续上下文会参考它。`,
+      label: '场景摘要',
+      initialValue: scene.summary || selectedWorldRpEvent()?.resultSummary || '',
+      multiline: true,
+      confirmLabel: '结束场景',
+      onConfirm: summary => {
+        endWorldScene(chapter.id, scene.id, summary);
+        setStatusText(`已结束场景：${scene.title}`);
+      },
+    });
   });
   document.querySelector<HTMLButtonElement>('[data-end-world-chapter]')?.addEventListener('click', () => {
     const chapter = activeWorldChapter();
     if (!chapter) return;
-    const summary = window.prompt('章节结束摘要', chapter.summary || activeWorld().sceneSummary || '');
-    if (summary === null) return;
-    endWorldChapter(chapter.id, summary);
-    setStatusText(`已结束章节：${chapter.title}`);
-    render();
+    openPromptDialog({
+      title: '结束章节',
+      message: `为“${chapter.title}”留下一个章节摘要。`,
+      label: '章节摘要',
+      initialValue: chapter.summary || activeWorld().sceneSummary || '',
+      multiline: true,
+      confirmLabel: '结束章节',
+      onConfirm: summary => {
+        endWorldChapter(chapter.id, summary);
+        setStatusText(`已结束章节：${chapter.title}`);
+      },
+    });
   });
   document.querySelectorAll<HTMLButtonElement>('[data-set-world-chapter]').forEach(button => {
     button.addEventListener('click', () => {
@@ -9704,20 +9812,28 @@ function bindUi(): void {
   document.querySelectorAll<HTMLButtonElement>('[data-moment-id]').forEach(button => {
     button.addEventListener('click', () => {
       const momentId = button.dataset.momentId ?? '';
-      if (!momentId || !window.confirm('确定删除这条动态吗？删除后可以短时间内撤销。')) return;
-      clearMomentDeleteUndo();
-      const snapshot = deleteMomentForUndo(momentId);
-      if (snapshot) {
-        if (activeMomentDetailId === momentId) activeMomentDetailId = '';
-        lastDeletedMomentSnapshot = snapshot;
-        lastDeletedMomentUndoTimer = window.setTimeout(() => {
+      if (!momentId) return;
+      openConfirmDialog({
+        title: '删除动态',
+        message: '确定删除这条动态吗？删除后可以短时间内撤销。',
+        confirmLabel: '删除动态',
+        cancelLabel: '保留',
+        tone: 'danger',
+        onConfirm: () => {
           clearMomentDeleteUndo();
-          renderWhenChatInputIdle();
-        }, 8000);
-        setStatusText('动态已删除，可在列表顶部撤销。');
-      }
-      preserveScrollForNextRender();
-      render();
+          const snapshot = deleteMomentForUndo(momentId);
+          if (snapshot) {
+            if (activeMomentDetailId === momentId) activeMomentDetailId = '';
+            lastDeletedMomentSnapshot = snapshot;
+            lastDeletedMomentUndoTimer = window.setTimeout(() => {
+              clearMomentDeleteUndo();
+              renderWhenChatInputIdle();
+            }, 8000);
+            setStatusText('动态已删除，可在列表顶部撤销。');
+          }
+          preserveScrollForNextRender();
+        },
+      });
     });
   });
   document.querySelectorAll<HTMLButtonElement>('[data-open-moment-detail]').forEach(button => {
@@ -9924,17 +10040,34 @@ function bindUi(): void {
       const eventId = button.dataset.deleteEvent ?? '';
       const hasActiveImpact = recordsForOperation(`event:${eventId}:resolved`).some(record => !record.rolledBackAt);
       const event = state.worldEvents.find(item => item.id === eventId);
-      if (!window.confirm(`确定删除事件“${event?.title ?? '这条事件'}”吗？删除后会从生活线索流移除，时间线会保留一条删除记录。`)) {
-        return;
-      }
-      const rollbackImpact = hasActiveImpact
-        ? window.confirm('这条事件已经影响关系。是否同时撤销这些关系影响？选择“取消”会删除事件，但保留已经发生的关系变化。')
-        : true;
-      if (deleteWorldEvent(eventId, { rollbackImpact })) {
-        setStatusText(rollbackImpact ? '事件已删除，相关影响也已撤销。' : '事件已删除，已保留既有关系影响。');
-      }
-      preserveScrollForNextRender();
-      render();
+      const deleteEventWithImpactChoice = (rollbackImpact: boolean) => {
+        if (deleteWorldEvent(eventId, { rollbackImpact })) {
+          setStatusText(rollbackImpact ? '事件已删除，相关影响也已撤销。' : '事件已删除，已保留既有关系影响。');
+        }
+        preserveScrollForNextRender();
+      };
+      openConfirmDialog({
+        title: '删除事件',
+        message: `确定删除事件“${event?.title ?? '这条事件'}”吗？删除后会从生活线索流移除，时间线会保留一条删除记录。`,
+        confirmLabel: '删除事件',
+        cancelLabel: '保留',
+        tone: 'danger',
+        onConfirm: () => {
+          if (!hasActiveImpact) {
+            deleteEventWithImpactChoice(true);
+            return;
+          }
+          openConfirmDialog({
+            title: '撤销关系影响',
+            message: '这条事件已经影响关系。要同时撤销这些关系影响吗？',
+            confirmLabel: '删除并撤销影响',
+            cancelLabel: '只删除事件',
+            tone: 'danger',
+            onConfirm: () => deleteEventWithImpactChoice(true),
+            onCancel: () => deleteEventWithImpactChoice(false),
+          });
+        },
+      });
     });
   });
 }

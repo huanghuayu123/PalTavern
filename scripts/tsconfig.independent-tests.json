@@ -15,6 +15,7 @@
     "./test-auto-message-runtime.ts",
     "./test-auto-message-failure.ts",
     "./test-independent-backup.ts",
+    "./test-app-dialogs.ts",
     "./test-prompt-suite.ts",
     "./prompt-test-cases.ts",
     "./run-prompt-live-eval.ts",

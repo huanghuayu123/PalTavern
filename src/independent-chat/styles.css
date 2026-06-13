@@ -5140,6 +5140,101 @@ textarea::placeholder {
   border: 0;
 }
 
+.app-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-modal) + 18);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.app-dialog-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.48);
+  border: 0;
+}
+
+.app-dialog {
+  position: relative;
+  display: grid;
+  width: min(430px, 100%);
+  gap: 16px;
+  padding: 22px;
+  color: var(--text);
+  background: var(--surface-solid);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+
+.app-dialog header {
+  display: grid;
+  gap: 7px;
+}
+
+.app-dialog h2 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.app-dialog p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.app-dialog-field {
+  display: grid;
+  gap: 7px;
+}
+
+.app-dialog-field input,
+.app-dialog-field textarea {
+  width: 100%;
+  color: var(--text);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  outline: none;
+}
+
+.app-dialog-field input {
+  min-height: 44px;
+  padding: 0 12px;
+}
+
+.app-dialog-field textarea {
+  min-height: 120px;
+  max-height: min(40dvh, 240px);
+  padding: 12px;
+  resize: vertical;
+}
+
+.app-dialog-field input:focus,
+.app-dialog-field textarea:focus {
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.app-dialog footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.app-dialog footer .primary,
+.app-dialog footer .secondary,
+.app-dialog footer .danger {
+  min-width: 104px;
+}
+
 .card-recognition-overlay {
   position: fixed;
   inset: 0;
@@ -12676,6 +12771,7 @@ body,
 .event-composer-dialog,
 .message-edit-dialog,
 .message-choice-dialog,
+.app-dialog,
 .character-panel,
 .group-settings-panel {
   min-width: 0;
@@ -12755,6 +12851,7 @@ body,
 .event-composer-dialog,
 .message-edit-dialog,
 .message-choice-dialog,
+.app-dialog,
 .character-panel,
 .group-settings-panel,
 .card-recognition-dialog {
@@ -12796,11 +12893,36 @@ body,
   .event-composer-dialog,
   .message-edit-dialog,
   .message-choice-dialog,
+  .app-dialog,
   .character-panel,
   .group-settings-panel,
   .card-recognition-dialog {
     max-width: 100vw;
     max-height: calc(100dvh - max(10px, env(safe-area-inset-top)));
+  }
+
+  .app-dialog-overlay {
+    align-items: end;
+    padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom));
+  }
+
+  .app-dialog {
+    width: 100%;
+    max-height: calc(100dvh - max(24px, env(safe-area-inset-top)));
+    overflow-y: auto;
+    border-radius: 18px 18px 14px 14px;
+  }
+
+  .app-dialog footer {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .app-dialog footer .primary,
+  .app-dialog footer .secondary,
+  .app-dialog footer .danger {
+    width: 100%;
+    min-height: 44px;
   }
 
   .mobile-shell:not(.without-bottom-nav) .mobile-page,
@@ -15084,6 +15206,7 @@ summary:focus-visible {
 .card-recognition-dialog,
 .message-edit-dialog,
 .message-choice-dialog,
+.app-dialog,
 .sticker-import-dialog,
 .settings-window,
 .settings-dialog,
@@ -15097,6 +15220,7 @@ summary:focus-visible {
 .card-recognition-dialog.is-exiting,
 .message-edit-dialog.is-exiting,
 .message-choice-dialog.is-exiting,
+.app-dialog.is-exiting,
 .sticker-import-dialog.is-exiting,
 .settings-window.is-exiting,
 .settings-dialog.is-exiting,
@@ -15202,6 +15326,7 @@ html[data-ui-transition] .moment-compose-fab {
   .card-recognition-dialog,
   .message-edit-dialog,
   .message-choice-dialog,
+  .app-dialog,
   .sticker-import-dialog,
   .settings-window,
   .settings-dialog,

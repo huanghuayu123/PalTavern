@@ -14,6 +14,7 @@ import { state } from '../core/state';
 import { downloadSillyTavernCard } from '../characters/tavern-export';
 import type { CharacterCardDraft, CharacterCardDraftStep } from '../core/types';
 import { compactText, escapeHtml, nowId } from '../core/utils';
+import { openAppAlert, openAppConfirm } from './app-dialogs';
 
 let authoringOpen = false;
 let activeDraftId = '';
@@ -454,7 +455,11 @@ export function bindAuthoringUi(rerender: () => void): void {
         touchDraft(draft);
         const downloadInfo = await downloadSillyTavernCard(character);
         const message = `已导出 ${character.name} 的标准 SillyTavern V3 角色卡。\n文件名：${downloadInfo.fileName}\n保存位置：${downloadInfo.folderHint}`;
-        window.alert(message);
+        openAppAlert({
+          title: '角色卡已导出',
+          message,
+          confirmLabel: '知道了',
+        }, rerender);
         authoringStatus = message.replace(/\n/g, ' ');
         rerender();
       } catch (error) {
@@ -528,9 +533,17 @@ export function bindDraftManager(rerender: () => void): void {
     button.addEventListener('click', () => {
       const id = button.dataset.deleteDraft ?? '';
       const draft = state.characterCardDrafts.find(item => item.id === id);
-      if (!draft || !window.confirm(`确定删除草稿“${draft.name || '未命名角色'}”吗？`)) return;
-      deleteCharacterCardDraft(id);
-      rerenderAuthoringInPlace(rerender);
+      if (!draft) return;
+      openAppConfirm({
+        title: '删除角色卡草稿',
+        message: `确定删除草稿“${draft.name || '未命名角色'}”吗？`,
+        confirmLabel: '删除草稿',
+        cancelLabel: '保留',
+        tone: 'danger',
+        onConfirm: () => {
+          deleteCharacterCardDraft(id);
+        },
+      }, rerender);
     });
   });
 }

@@ -352,6 +352,7 @@ function overlayExitTargets(): HTMLElement[] {
     '.card-recognition-dialog',
     '.message-edit-dialog',
     '.message-choice-dialog',
+    '.app-dialog',
     '.sticker-import-dialog',
     '.settings-window',
     '.settings-dialog',
