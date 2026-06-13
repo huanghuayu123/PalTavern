@@ -97,7 +97,7 @@ const defaultMemoryPrompt = defaultPreset.prompts.find((prompt: { identifier: st
 );
 if (
   defaultPreset.id !== promptPresets.TAVERN_SOCIAL_DEFAULT_PROMPT_PRESET_ID
-  || defaultPreset.name !== 'Tavern Social 默认回复策略'
+  || defaultPreset.name !== 'PalTavern 默认回复策略'
   || defaultPreset.sourceFileName !== 'tavern-social-default-preset.json'
   || !defaultReplyPrompt
   || defaultReplyPrompt.marker
@@ -115,7 +115,7 @@ if (
   || defaultPreset.order.length !== defaultPreset.prompts.length
   || !defaultPreset.raw.prompt_order?.[0]?.order?.every((item: { identifier?: string }) => item.identifier)
 ) {
-  throw new Error('Tavern Social default prompt preset was not created in editable SillyTavern-like shape.');
+  throw new Error('PalTavern default prompt preset was not created in editable SillyTavern-like shape.');
 }
 
 const defaultGroupPreset = promptPresets.createTavernSocialDefaultGroupPromptPreset(2001);
@@ -124,7 +124,7 @@ const defaultGroupStrategy = defaultGroupPreset.prompts.find((prompt: { identifi
 );
 if (
   defaultGroupPreset.id !== promptPresets.TAVERN_SOCIAL_DEFAULT_GROUP_PROMPT_PRESET_ID
-  || defaultGroupPreset.name !== 'Tavern Social 默认群聊策略'
+  || defaultGroupPreset.name !== 'PalTavern 默认群聊策略'
   || defaultGroupPreset.sourceFileName !== 'tavern-social-default-group-preset.json'
   || !defaultGroupStrategy
   || defaultGroupStrategy.marker
@@ -138,7 +138,7 @@ if (
     prompt.identifier === 'groupHistory' && prompt.marker)
   || defaultGroupPreset.order.length !== defaultGroupPreset.prompts.length
 ) {
-  throw new Error('Tavern Social default group prompt preset was not created in editable shape.');
+  throw new Error('PalTavern default group prompt preset was not created in editable shape.');
 }
 
 const defaultWorldPreset = promptPresets.createTavernSocialDefaultWorldPromptPreset(2002);
@@ -153,7 +153,7 @@ if (
     prompt.identifier === 'tavernSocialWorldRpRules' && !prompt.marker)
   || defaultWorldPreset.order.length !== defaultWorldPreset.prompts.length
 ) {
-  throw new Error('Tavern Social default world RP prompt preset was not created in editable SillyTavern-like shape.');
+  throw new Error('PalTavern default world RP prompt preset was not created in editable SillyTavern-like shape.');
 }
 
 const migrated = stateModule.normalizeState({
@@ -169,7 +169,7 @@ if (
   || migrated.activeWorldPromptPresetId !== promptPresets.TAVERN_SOCIAL_DEFAULT_WORLD_PROMPT_PRESET_ID
   || !migrated.worldPromptPresetEnabled
 ) {
-  throw new Error('Legacy state did not install the editable Tavern Social default prompt presets safely.');
+  throw new Error('Legacy state did not install the editable PalTavern default prompt presets safely.');
 }
 
 const legacyDefaultPreset = promptPresets.createTavernSocialDefaultPromptPreset(2100);
@@ -224,7 +224,7 @@ if (
   || !migratedOldNewPrompt.content.includes('不能编造上下文没有提供的事实')
   || !migratedOldNewPrompt.content.includes('最多 4 条')
 ) {
-  throw new Error('Previously installed Tavern Social default chat strategy was not upgraded safely.');
+  throw new Error('Previously installed PalTavern default chat strategy was not upgraded safely.');
 }
 
 const oldGroupPreset = promptPresets.createTavernSocialDefaultGroupPromptPreset(2160);
@@ -253,7 +253,7 @@ if (
   || !migratedGroupPreset.prompts.find((prompt: { identifier: string }) =>
     prompt.identifier === 'tavern_social_group_output_format')?.content.includes('[跳过]')
 ) {
-  throw new Error('Previously installed Tavern Social default group strategy was not upgraded safely.');
+  throw new Error('Previously installed PalTavern default group strategy was not upgraded safely.');
 }
 
 const editedDefaultPreset = promptPresets.createTavernSocialDefaultPromptPreset(2200);
@@ -375,7 +375,7 @@ stateModule.state.activeChatPromptPresetId = promptPresets.TAVERN_SOCIAL_DEFAULT
 const defaultPresetMessages = model.buildModelMessages(character, '', true, true, undefined, true);
 const defaultPresetText = defaultPresetMessages.map((message: { content: string }) => message.content).join('\n');
 if (
-  !defaultPresetText.includes('你正在 Tavern Social 的私聊中扮演 叶昀')
+  !defaultPresetText.includes('你正在 PalTavern 的私聊中扮演 叶昀')
   || !defaultPresetText.includes('真实微信私聊')
   || !defaultPresetText.includes('长期记忆摘要')
   || !defaultPresetText.includes('当前角色状态摘要')
@@ -385,11 +385,11 @@ if (
   || !defaultPresetText.includes('DAILY_BRIEF_FOR_PRESET_SHOULD_APPEAR')
   || !defaultPresetText.includes('关系摘要测试')
   || !defaultPresetText.includes('当前没有可用表情包')
-  || !defaultPresetText.includes('Tavern Social 运行格式保护')
+  || !defaultPresetText.includes('PalTavern 运行格式保护')
   || !defaultPresetText.includes('今晚还去海边吗')
   || defaultPresetText.includes('TIMELINE_FOR_PRESET_SHOULD_NOT_APPEAR')
 ) {
-  throw new Error('Default Tavern Social preset did not build editable reply strategy context.');
+  throw new Error('Default PalTavern preset did not build editable reply strategy context.');
 }
 
 stateModule.state.activeChatPromptPresetId = preset.id;
@@ -403,7 +403,7 @@ if (
   || !presetText.includes('TIMELINE_FOR_PRESET_SHOULD_APPEAR')
   || !presetText.includes('DAILY_BRIEF_FOR_PRESET_SHOULD_APPEAR')
   || !presetText.includes('今晚还去海边吗')
-  || !presetText.includes('Tavern Social 运行格式保护')
+  || !presetText.includes('PalTavern 运行格式保护')
   || !presetText.includes('<msg>内容</msg>')
 ) {
   throw new Error('Enabled chat preset did not build the expected prompt context.');

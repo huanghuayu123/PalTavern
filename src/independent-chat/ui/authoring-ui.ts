@@ -200,7 +200,7 @@ function renderPreview(draft: CharacterCardDraft): string {
           <span>first_mes</span>
           <textarea id="draft-first-message" placeholder="可以手写，也可以让模型根据当前设定生成。">${escapeHtml(draft.firstMessage)}</textarea>
         </label>
-        <p class="muted">开场白会写入导出的 SillyTavern 角色卡。创建为 Tavern Social 联系人时，私聊会根据角色设定重新生成自然开场，不会直接复制这段 first_mes。</p>
+        <p class="muted">开场白会写入导出的 SillyTavern 角色卡。创建为 PalTavern 联系人时，私聊会根据角色设定重新生成自然开场，不会直接复制这段 first_mes。</p>
       </section>
     </div>
   `;

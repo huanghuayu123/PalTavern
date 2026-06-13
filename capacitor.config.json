@@ -1,6 +1,6 @@
 {
   "appId": "com.tavernsocial.app",
-  "appName": "Pal Tavern",
+  "appName": "PalTavern",
   "webDir": "dist/independent-chat",
   "bundledWebRuntime": false,
   "plugins": {

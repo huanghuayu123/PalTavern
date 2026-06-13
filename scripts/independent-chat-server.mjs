@@ -182,7 +182,7 @@ export function startIndependentChatServer({
       const actualPort = typeof address === 'object' && address ? address.port : port;
       const url = `http://${host}:${actualPort}/`;
       if (!quiet) {
-        console.log(`Tavern Social is running at ${url}`);
+        console.log(`PalTavern is running at ${url}`);
       }
       resolve({ server, url, port: actualPort });
     });

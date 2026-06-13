@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Pal Tavern</string>
-    <string name="title_activity_main">Pal Tavern</string>
+    <string name="app_name">PalTavern</string>
+    <string name="title_activity_main">PalTavern</string>
     <string name="package_name">com.tavernsocial.app</string>
     <string name="custom_url_scheme">com.tavernsocial.app</string>
 </resources>

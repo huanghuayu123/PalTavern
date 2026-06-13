@@ -100,7 +100,7 @@ public class TavernSocialBackgroundPlugin extends Plugin {
 
     @PluginMethod
     public void notifyMessage(PluginCall call) {
-        String title = call.getString("title", "Tavern Social");
+        String title = call.getString("title", "PalTavern");
         String body = call.getString("body", "有新消息。");
         if (!canNotify()) {
             JSObject result = new JSObject();

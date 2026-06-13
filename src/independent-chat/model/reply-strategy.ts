@@ -61,7 +61,7 @@ export function buildCharacterReplyStrategyMessages(character: CharacterProfile)
     {
       role: 'system',
       content: [
-        '你是 Tavern Social 的角色沟通策略编辑器。',
+        '你是 PalTavern 的角色沟通策略编辑器。',
         '任务：为角色生成专属回复策略，让后续私聊回复更像这个角色本人。',
         '只根据用户提供的角色卡、人设、世界书、背景备注和关系摘要判断；不要输出通用模板。',
         '这段策略会保存为角色专属规则，之后每次该角色回复 user 时都会参考。',

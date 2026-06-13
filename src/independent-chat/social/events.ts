@@ -614,7 +614,7 @@ export function eventGenerationMessages(
     {
       role: 'system',
       content: [
-        '你是 Tavern Social 的手机生活线索整理器。',
+        '你是 PalTavern 的手机生活线索整理器。',
         '你不扮演任何聊天角色，不写小说场景，不使用角色扮演聊天格式，也不替用户做选择。',
         '你的任务是生成一条适合手机应用记录的轻量生活线索：像角色近况、世界小消息、待观察事项或可回访的小事。',
         '优先真实日常和已有上下文。只有设定或近期记录已经支持时，才写关系变化、求助或轻微问题；不要为了戏剧性制造误会、冲突或让用户线下到场。',
@@ -737,7 +737,7 @@ export function eventOutcomeMessages(event: WorldEvent, choice: WorldEventChoice
     {
       role: 'system',
       content: [
-        '你是 Tavern Social 的手机生活线索结算器。',
+        '你是 PalTavern 的手机生活线索结算器。',
         '你不扮演任何聊天角色，不输出聊天格式，不写小说场景。',
         '根据用户在应用内点下的手机操作，生成一段轻量后续记录，并给出最终关系影响。',
         '严格遵循用户选择：只写这个手机操作带来的后续，不能追加第二个选择，不能替用户继续操作。',

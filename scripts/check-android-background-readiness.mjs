@@ -38,14 +38,14 @@ const checks = [
   },
   {
     name: 'Capacitor app name',
-    ok: capacitorConfig.includes('"appName": "Pal Tavern"'),
-    detail: 'capacitor.config.json appName Pal Tavern',
+    ok: capacitorConfig.includes('"appName": "PalTavern"'),
+    detail: 'capacitor.config.json appName PalTavern',
   },
   {
     name: 'Android launcher label',
-    ok: androidStrings.includes('<string name="app_name">Pal Tavern</string>')
-      && androidStrings.includes('<string name="title_activity_main">Pal Tavern</string>'),
-    detail: 'android/app/src/main/res/values/strings.xml Pal Tavern',
+    ok: androidStrings.includes('<string name="app_name">PalTavern</string>')
+      && androidStrings.includes('<string name="title_activity_main">PalTavern</string>'),
+    detail: 'android/app/src/main/res/values/strings.xml PalTavern',
   },
   {
     name: 'Android version v1.0.8',
@@ -102,7 +102,7 @@ const checks = [
   },
 ];
 
-console.log('Tavern Social Android readiness check');
+console.log('PalTavern Android readiness check');
 for (const check of checks) {
   console.log(`${check.ok ? 'PASS' : 'MISSING'} ${check.name}: ${check.detail}`);
 }

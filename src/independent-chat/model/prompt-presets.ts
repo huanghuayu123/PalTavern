@@ -57,13 +57,13 @@ const PARAMETER_KEYS = [
 ];
 
 export const TAVERN_SOCIAL_DEFAULT_PROMPT_PRESET_ID = 'preset_tavern_social_default_reply';
-export const TAVERN_SOCIAL_DEFAULT_PROMPT_PRESET_NAME = 'Tavern Social 默认回复策略';
+export const TAVERN_SOCIAL_DEFAULT_PROMPT_PRESET_NAME = 'PalTavern 默认回复策略';
 export const TAVERN_SOCIAL_DEFAULT_PROMPT_PRESET_SOURCE = 'tavern-social-default-preset.json';
 export const TAVERN_SOCIAL_DEFAULT_GROUP_PROMPT_PRESET_ID = 'preset_tavern_social_default_group';
-export const TAVERN_SOCIAL_DEFAULT_GROUP_PROMPT_PRESET_NAME = 'Tavern Social 默认群聊策略';
+export const TAVERN_SOCIAL_DEFAULT_GROUP_PROMPT_PRESET_NAME = 'PalTavern 默认群聊策略';
 export const TAVERN_SOCIAL_DEFAULT_GROUP_PROMPT_PRESET_SOURCE = 'tavern-social-default-group-preset.json';
 export const TAVERN_SOCIAL_DEFAULT_WORLD_PROMPT_PRESET_ID = 'preset_tavern_social_default_world';
-export const TAVERN_SOCIAL_DEFAULT_WORLD_PROMPT_PRESET_NAME = 'Tavern Social 默认世界 RP 策略';
+export const TAVERN_SOCIAL_DEFAULT_WORLD_PROMPT_PRESET_NAME = 'PalTavern 默认世界 RP 策略';
 export const TAVERN_SOCIAL_DEFAULT_WORLD_PROMPT_PRESET_SOURCE = 'tavern-social-default-world-preset.json';
 
 type DefaultPromptDefinition = {
@@ -79,10 +79,10 @@ type DefaultPromptDefinition = {
 const TAVERN_SOCIAL_DEFAULT_PROMPTS: DefaultPromptDefinition[] = [
   {
     identifier: 'tavern_social_identity',
-    name: 'Tavern Social 身份',
+    name: 'PalTavern 身份',
     role: 'system',
     content: [
-      '你正在 Tavern Social 的私聊中扮演 {{char}}。',
+      '你正在 PalTavern 的私聊中扮演 {{char}}。',
       '用户名称：{{user}}。',
       '只从角色视角回复当前聊天，不要替用户说话、行动或思考。',
     ].join('\n'),
@@ -183,10 +183,10 @@ const TAVERN_SOCIAL_DEFAULT_PROMPTS: DefaultPromptDefinition[] = [
 const TAVERN_SOCIAL_DEFAULT_GROUP_PROMPTS: DefaultPromptDefinition[] = [
   {
     identifier: 'tavern_social_group_identity',
-    name: 'Tavern Social 群聊身份',
+    name: 'PalTavern 群聊身份',
     role: 'system',
     content: [
-      '你正在 Tavern Social 的手机群聊里扮演当前发言角色。',
+      '你正在 PalTavern 的手机群聊里扮演当前发言角色。',
       '群聊不是私聊，也不是复杂 RP。只写当前发言角色真正会发到群里的文字。',
       '不要替其他角色或用户说话、行动或解释规则。',
     ].join('\n'),
@@ -267,7 +267,7 @@ const TAVERN_SOCIAL_DEFAULT_GROUP_PROMPTS: DefaultPromptDefinition[] = [
 const TAVERN_SOCIAL_DEFAULT_WORLD_PROMPTS: DefaultPromptDefinition[] = [
   {
     identifier: 'tavernSocialWorldIdentity',
-    name: 'Tavern Social 世界 RP 身份',
+    name: 'PalTavern 世界 RP 身份',
     role: 'system',
     content: [
       '你正在续写 PalTavern 的世界 RP 舞台。',

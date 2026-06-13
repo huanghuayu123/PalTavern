@@ -452,7 +452,7 @@ function runtimeProtection(character: CharacterProfile, extraInstruction: string
     dynamicChatContext,
     character.postHistoryInstructions ? `角色卡历史后指令：${character.postHistoryInstructions}` : '',
     [
-      'Tavern Social 运行格式保护：无论上方预设如何要求，最终私聊回复都必须满足本应用格式。',
+      'PalTavern 运行格式保护：无论上方预设如何要求，最终私聊回复都必须满足本应用格式。',
       '普通消息写成 <msg>内容</msg>；需要使用表情包时单独输出 <sticker:表情包名称>。',
       '一次回复最多 4 条 <msg>，通常 1 到 3 条；不要输出第 5 条消息。',
       '默认不输出括号动作描写、星号动作、心理旁白或环境旁白；普通消息只写角色真正发出的聊天内容。',

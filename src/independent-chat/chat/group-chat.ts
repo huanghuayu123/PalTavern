@@ -497,7 +497,7 @@ function renderGroupPresetMacros(content: string, chat: GroupChatProfile, speake
 
 function groupRuntimeProtection(mode: GroupGenerationMode): string {
   return [
-    'Tavern Social 群聊运行格式保护：最终群聊回复必须满足本应用格式。',
+    'PalTavern 群聊运行格式保护：最终群聊回复必须满足本应用格式。',
     '普通消息写成 <msg>内容</msg>；需要使用表情包时单独输出 <sticker:表情包名称>。',
     `一轮群聊总共最多 ${MAX_GROUP_TURN_MESSAGES} 个气泡；当前角色通常只发 1 条，最多 ${MAX_GROUP_SPEAKER_MESSAGES} 条。`,
     '如果当前角色没有必要发言，只输出 [跳过]，本应用会让这轮保持沉默。',
@@ -550,7 +550,7 @@ function buildGroupPrompt(
     {
       role: 'system',
       content: [
-        `你正在 Tavern Social 的群聊「${chat.title}」中扮演角色「${speaker.name}」。`,
+        `你正在 PalTavern 的群聊「${chat.title}」中扮演角色「${speaker.name}」。`,
         `当前世界：${world.name}`,
         world.description ? `世界说明：${world.description}` : '',
         `用户名称：${state.userName || '我'}`,
@@ -626,7 +626,7 @@ function buildGroupSpeakerRoutePrompt(
     {
       role: 'system',
       content: [
-        '你是 Tavern Social 群聊的回复意愿判断器，只判断谁愿意接上一条消息，不写聊天正文。',
+        '你是 PalTavern 群聊的回复意愿判断器，只判断谁愿意接上一条消息，不写聊天正文。',
         '判断对象永远是上一条消息。上一条可以来自 user，也可以来自某个角色。',
         `最多选择 ${MAX_ROUTED_GROUP_SPEAKERS} 个最自然会接话的角色；如果没人想接，返回空数组。`,
         '不要为了热闹强行选择角色。真实群聊可以冷场、停顿或没人回复。',

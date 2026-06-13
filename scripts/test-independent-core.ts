@@ -2312,7 +2312,7 @@ if (
   throw new Error('Generated moment drafts should not be overwritten by stale textarea DOM snapshots.');
 }
 if (
-  !indexHtmlSource.includes('<title>Pal Tavern</title>')
+  !indexHtmlSource.includes('<title>PalTavern</title>')
   || !uiSource.includes('<div class="brand"><h1>PalTavern</h1>')
   || !uiSource.includes('<span class="settings-kicker">PalTavern</span><h1>设置中心</h1>')
   || !uiSource.includes('<span class="eyebrow">PalTavern</span><h1>设置</h1>')

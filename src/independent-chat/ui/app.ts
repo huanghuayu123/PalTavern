@@ -8103,7 +8103,7 @@ function bindUi(): void {
     const existingIndex = state.promptPresets.findIndex(item => item.id === TAVERN_SOCIAL_DEFAULT_PROMPT_PRESET_ID);
     if (
       existingIndex >= 0
-      && !window.confirm('这会用 Tavern Social 默认内容覆盖当前默认回复策略预设。继续吗？')
+      && !window.confirm('这会用 PalTavern 默认内容覆盖当前默认回复策略预设。继续吗？')
     ) {
       return;
     }
@@ -8117,14 +8117,14 @@ function bindUi(): void {
     state.chatPromptPresetEnabled = true;
     editingPromptPresetId = preset.id;
     saveState();
-    setStatusText('已写入 Tavern Social 默认回复策略预设，可以在下方直接编辑“回复策略”。');
+    setStatusText('已写入 PalTavern 默认回复策略预设，可以在下方直接编辑“回复策略”。');
     render();
   });
   document.querySelector<HTMLButtonElement>('#restore-tavern-social-group-prompt-preset')?.addEventListener('click', () => {
     const existingIndex = state.promptPresets.findIndex(item => item.id === TAVERN_SOCIAL_DEFAULT_GROUP_PROMPT_PRESET_ID);
     if (
       existingIndex >= 0
-      && !window.confirm('这会用 Tavern Social 默认内容覆盖当前默认群聊策略预设。继续吗？')
+      && !window.confirm('这会用 PalTavern 默认内容覆盖当前默认群聊策略预设。继续吗？')
     ) {
       return;
     }
@@ -8138,14 +8138,14 @@ function bindUi(): void {
     state.groupPromptPresetEnabled = true;
     editingPromptPresetId = preset.id;
     saveState();
-    setStatusText('已写入 Tavern Social 默认群聊策略预设，可以在下方直接编辑群聊规则。');
+    setStatusText('已写入 PalTavern 默认群聊策略预设，可以在下方直接编辑群聊规则。');
     render();
   });
   document.querySelector<HTMLButtonElement>('#restore-tavern-social-world-prompt-preset')?.addEventListener('click', () => {
     const existingIndex = state.promptPresets.findIndex(item => item.id === TAVERN_SOCIAL_DEFAULT_WORLD_PROMPT_PRESET_ID);
     if (
       existingIndex >= 0
-      && !window.confirm('这会用 Tavern Social 默认内容覆盖当前默认世界 RP 预设。继续吗？')
+      && !window.confirm('这会用 PalTavern 默认内容覆盖当前默认世界 RP 预设。继续吗？')
     ) {
       return;
     }
@@ -8159,7 +8159,7 @@ function bindUi(): void {
     state.worldPromptPresetEnabled = true;
     editingPromptPresetId = preset.id;
     saveState();
-    setStatusText('已写入 Tavern Social 默认世界 RP 预设，可以在下方直接编辑世界舞台规则。');
+    setStatusText('已写入 PalTavern 默认世界 RP 预设，可以在下方直接编辑世界舞台规则。');
     render();
   });
   document.querySelector<HTMLInputElement>('#chat-prompt-preset-enabled')?.addEventListener('change', event => {
