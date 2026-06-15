@@ -4,8 +4,20 @@
  */
 import { activeWorld, saveState, state } from '../core/state';
 import { canCharacterViewMomentSource } from '../social/moment-visibility';
-import type { CharacterProfile, ChatMessage, MomentComment, MomentEntry, TimelineEntry, WorldEvent } from '../core/types';
+import type {
+  CharacterProfile,
+  ChatMessage,
+  ConversationProfile,
+  GroupChatMessage,
+  GroupChatProfile,
+  MomentComment,
+  MomentEntry,
+  TimelineEntry,
+  WorldEvent,
+  WorldEventRpMessage,
+} from '../core/types';
 import { compactText, nowId } from '../core/utils';
+import { refreshSummariesForTimelineEntry } from './summaries';
 
 type TimelineEntryInput = {
   worldId?: string;
@@ -17,6 +29,12 @@ type TimelineEntryInput = {
   canUndo?: boolean;
   includeInContext?: boolean;
   createdAt?: number;
+};
+
+export type TimelineEntryFilter = {
+  type?: TimelineEntry['type'] | 'all';
+  query?: string;
+  characterId?: string;
 };
 
 function characterNameMap(characterIds: string[]): Record<string, string> {
@@ -66,6 +84,7 @@ export function addTimelineEntry(input: TimelineEntryInput): TimelineEntry {
     includeInContext: input.includeInContext !== false,
   };
   state.timelineEntries.push(entry);
+  refreshSummariesForTimelineEntry(entry);
   saveState();
   return entry;
 }
@@ -75,6 +94,237 @@ export function timelineForActiveWorld(): TimelineEntry[] {
   return state.timelineEntries
     .filter(entry => entry.worldId === worldId)
     .sort((left, right) => right.createdAt - left.createdAt);
+}
+
+export function filterTimelineEntries<T extends TimelineEntry>(
+  entries: readonly T[],
+  filter: TimelineEntryFilter = {},
+): T[] {
+  const type = filter.type ?? 'all';
+  const query = filter.query?.trim().toLocaleLowerCase() ?? '';
+  const characterId = filter.characterId?.trim() ?? '';
+  return entries.filter(entry => {
+    if (type !== 'all' && entry.type !== type) return false;
+    if (characterId && !entry.characterIds.includes(characterId)) return false;
+    if (!query) return true;
+    const characterText = Object.values(entry.characterNames ?? {}).join(' ');
+    return [
+      entry.title,
+      entry.summary,
+      timelineSourceText(entry),
+      characterText,
+    ].join(' ').toLocaleLowerCase().includes(query);
+  });
+}
+
+function timelineSourceText(entry: TimelineEntry): string {
+  return `${entry.source.type} ${entry.source.id}`;
+}
+
+function worldRpTimelineSourceId(eventId: string, messageId: string): string {
+  return `${eventId}:rp:${messageId}`;
+}
+
+export function groupChatSegmentTimelineSourceId(chatId: string, anchorMessageId: string): string {
+  return `${chatId}:segment:${anchorMessageId}`;
+}
+
+export function privateChatSegmentTimelineSourceId(conversationId: string, anchorMessageId: string): string {
+  return `${conversationId}:private:${anchorMessageId}`;
+}
+
+function groupChatSpeakerName(message: GroupChatMessage): string {
+  if (message.speakerType === 'user') return state.userName || '我';
+  if (message.speakerType === 'system') return '系统';
+  return state.characters.find(character => character.id === message.speakerCharacterId)?.name ?? '已删除角色';
+}
+
+function privateChatSpeakerName(character: CharacterProfile, message: ChatMessage): string {
+  if (message.role === 'assistant') return character.name;
+  if (message.speakerType === 'character' && message.speakerCharacterId) {
+    return state.characters.find(item => item.id === message.speakerCharacterId)?.name ?? '已删除角色';
+  }
+  return state.userName.trim() || '我';
+}
+
+function privateChatParticipantIds(character: CharacterProfile, messages: readonly ChatMessage[]): string[] {
+  return Array.from(new Set([
+    character.id,
+    ...messages
+      .filter(message => message.speakerType === 'character' && message.speakerCharacterId)
+      .map(message => message.speakerCharacterId as string),
+  ]));
+}
+
+export function upsertPrivateChatSegmentTimelineEntry(
+  character: CharacterProfile,
+  conversation: ConversationProfile,
+  messages: readonly ChatMessage[],
+): TimelineEntry | undefined {
+  const segmentMessages = messages
+    .filter(message =>
+      message.characterId === character.id
+      && message.conversationId === conversation.id
+      && !message.recalledAt
+      && message.content.trim(),
+    )
+    .sort((left, right) => left.createdAt - right.createdAt);
+  const anchor = segmentMessages[0];
+  if (!anchor) return undefined;
+  const sourceId = privateChatSegmentTimelineSourceId(conversation.id, anchor.id);
+  const characterIds = privateChatParticipantIds(character, segmentMessages);
+  const lines = segmentMessages.map(message =>
+    `${privateChatSpeakerName(character, message)}：${message.content.trim()}`,
+  );
+  const title = `${character.name} 的一段私聊`;
+  const summary = compactText(`私聊自动总结（${segmentMessages.length} 条）\n${lines.join('\n')}`, 620);
+  const createdAt = segmentMessages[segmentMessages.length - 1]?.createdAt ?? anchor.createdAt;
+  const existing = state.timelineEntries.find(entry =>
+    entry.worldId === character.worldId
+    && entry.type === 'chat'
+    && entry.source.type === 'message'
+    && entry.source.id === sourceId,
+  );
+  if (existing) {
+    existing.characterIds = characterIds;
+    existing.characterNames = characterNameMap(characterIds);
+    existing.title = title;
+    existing.summary = summary;
+    existing.createdAt = createdAt;
+    if (existing.includeInContext && !existing.revokedAt) {
+      refreshSummariesForTimelineEntry(existing);
+    }
+    saveState();
+    return existing;
+  }
+  return addTimelineEntry({
+    worldId: character.worldId,
+    type: 'chat',
+    characterIds,
+    title,
+    summary,
+    source: { type: 'message', id: sourceId },
+    canUndo: false,
+    includeInContext: true,
+    createdAt,
+  });
+}
+
+export function removePrivateChatSegmentTimelineEntries(conversationId: string): number {
+  const prefix = `${conversationId}:private:`;
+  const before = state.timelineEntries.length;
+  state.timelineEntries = state.timelineEntries.filter(entry =>
+    entry.source.type !== 'message' || !entry.source.id.startsWith(prefix),
+  );
+  const removed = before - state.timelineEntries.length;
+  if (removed > 0) saveState();
+  return removed;
+}
+
+export function upsertGroupChatSegmentTimelineEntry(
+  chat: GroupChatProfile,
+  messages: readonly GroupChatMessage[],
+): TimelineEntry | undefined {
+  const segmentMessages = messages
+    .filter(message => message.groupChatId === chat.id && message.worldId === chat.worldId && !message.recalledAt)
+    .sort((left, right) => left.createdAt - right.createdAt);
+  const anchor = segmentMessages[0];
+  if (!anchor) return undefined;
+  const sourceId = groupChatSegmentTimelineSourceId(chat.id, anchor.id);
+  const title = `${chat.title} 里的一段群聊`;
+  const lines = segmentMessages.map(message =>
+    `${groupChatSpeakerName(message)}：${message.content.trim()}`,
+  );
+  const summary = compactText(`群聊片段（${segmentMessages.length} 条）\n${lines.join('\n')}`, 520);
+  const characterIds = Array.from(new Set(chat.participantCharacterIds));
+  const createdAt = segmentMessages[segmentMessages.length - 1]?.createdAt ?? anchor.createdAt;
+  const existing = state.timelineEntries.find(entry =>
+    entry.worldId === chat.worldId
+    && entry.type === 'group_chat'
+    && entry.source.type === 'group_message'
+    && entry.source.id === sourceId,
+  );
+  if (existing) {
+    existing.characterIds = characterIds;
+    existing.characterNames = characterNameMap(characterIds);
+    existing.title = title;
+    existing.summary = summary;
+    existing.createdAt = createdAt;
+    if (existing.includeInContext && !existing.revokedAt) {
+      refreshSummariesForTimelineEntry(existing);
+    }
+    saveState();
+    return existing;
+  }
+  return addTimelineEntry({
+    worldId: chat.worldId,
+    type: 'group_chat',
+    characterIds,
+    title,
+    summary,
+    source: { type: 'group_message', id: sourceId },
+    canUndo: false,
+    includeInContext: true,
+    createdAt,
+  });
+}
+
+function worldRpSpeakerName(message: WorldEventRpMessage): string {
+  if (message.speaker?.trim()) return message.speaker.trim();
+  if (message.characterId) {
+    return state.characters.find(character => character.id === message.characterId)?.name ?? '角色';
+  }
+  return message.role === 'user' ? state.userName : '世界 RP';
+}
+
+export function upsertWorldRpTimelineEntry(event: WorldEvent, message: WorldEventRpMessage): TimelineEntry {
+  const sourceId = worldRpTimelineSourceId(event.id, message.id);
+  const characterIds = Array.from(new Set([
+    ...event.participantCharacterIds,
+    ...(message.characterId ? [message.characterId] : []),
+  ]));
+  const title = `世界 RP：${event.title}`;
+  const summary = compactText(`${worldRpSpeakerName(message)}：${message.content}`, 240);
+  const existing = state.timelineEntries.find(entry =>
+    entry.worldId === event.worldId
+    && entry.source.type === 'event'
+    && entry.source.id === sourceId,
+  );
+  if (existing) {
+    existing.characterIds = characterIds;
+    existing.characterNames = characterNameMap(characterIds);
+    existing.title = title;
+    existing.summary = summary;
+    existing.createdAt = message.createdAt;
+    refreshSummariesForTimelineEntry(existing);
+    saveState();
+    return existing;
+  }
+  return addTimelineEntry({
+    worldId: event.worldId,
+    type: 'event',
+    characterIds,
+    title,
+    summary,
+    source: { type: 'event', id: sourceId },
+    canUndo: false,
+    includeInContext: true,
+    createdAt: message.createdAt,
+  });
+}
+
+export function revokeWorldRpTimelineEntriesForEvent(eventId: string): void {
+  const prefix = `${eventId}:rp:`;
+  const now = Date.now();
+  let changed = false;
+  for (const entry of state.timelineEntries) {
+    if (entry.source.type === 'event' && entry.source.id.startsWith(prefix) && !entry.revokedAt) {
+      entry.revokedAt = now;
+      entry.includeInContext = false;
+      changed = true;
+    }
+  }
+  if (changed) saveState();
 }
 
 export function addManualTimelineNote(content: string): TimelineEntry {

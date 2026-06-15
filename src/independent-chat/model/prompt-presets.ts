@@ -263,7 +263,7 @@ const TAVERN_SOCIAL_DEFAULT_GROUP_PROMPTS: DefaultPromptDefinition[] = [
 ];
 
 // 大注释：世界 RP 预设复用 SillyTavern 风格的 prompts/prompt_order。
-// 它只读取当前世界事件和事件自己的 RP 记录，不能把私聊内容混入世界舞台。
+// 它只读取当前世界事件、事件自己的 RP 记录和已确认共同长期记忆，不能把原始私聊内容混入世界舞台。
 const TAVERN_SOCIAL_DEFAULT_WORLD_PROMPTS: DefaultPromptDefinition[] = [
   {
     identifier: 'tavernSocialWorldIdentity',
@@ -271,7 +271,7 @@ const TAVERN_SOCIAL_DEFAULT_WORLD_PROMPTS: DefaultPromptDefinition[] = [
     role: 'system',
     content: [
       '你正在续写 PalTavern 的世界 RP 舞台。',
-      '只围绕当前世界、当前事件和事件内 RP 记录写，不读取或复述任何私聊记录。',
+      '只围绕当前世界、当前事件、事件内 RP 记录和共同长期记忆写，不读取原始私聊记录。',
       '体验目标是日常对话感：像打开一个酒馆式聊天场景，旁白和角色台词自然交替。',
     ].join('\n'),
     systemPrompt: true,

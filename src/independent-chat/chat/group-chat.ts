@@ -19,7 +19,7 @@ import {
   saveState,
   state,
 } from '../core/state';
-import { addTimelineEntry } from '../memory/timeline';
+import { groupChatSegmentTimelineSourceId, upsertGroupChatSegmentTimelineEntry } from '../memory/timeline';
 import { waitForModelTyping } from './typing-delay';
 import type { CharacterProfile, GroupChatMessage, GroupChatProfile, ModelMessage, PromptPreset } from '../core/types';
 import { compactText, firstString, isRecord, nowId } from '../core/utils';
@@ -99,6 +99,7 @@ export function updateGroupChat(
   const chat = state.groupChats.find(item => item.id === chatId && item.worldId === activeWorld().id);
   if (!chat) return undefined;
   const previousTitle = chat.title;
+  const previousParticipantIds = chat.participantCharacterIds.join('\0');
   if (typeof input.title === 'string') chat.title = input.title.trim() || chat.title;
   if (input.participantCharacterIds) {
     const validIds = new Set(worldCharacters().map(character => character.id));
@@ -121,7 +122,8 @@ export function updateGroupChat(
   if (chat.selectedSpeakerId !== 'user' && !chat.participantCharacterIds.includes(chat.selectedSpeakerId)) {
     chat.selectedSpeakerId = 'user';
   }
-  if (chat.title !== previousTitle) {
+  if (chat.title !== previousTitle || chat.participantCharacterIds.join('\0') !== previousParticipantIds) {
+    rebuildGroupChatSegmentTimeline(chat);
     const groupMessageIds = new Set(
       state.groupMessages
         .filter(message => message.groupChatId === chat.id && message.worldId === chat.worldId)
@@ -146,11 +148,29 @@ function allStoredGroupMessageIds(chat: GroupChatProfile): Set<string> {
   );
 }
 
-function removeGroupMessageTimelineEntries(messageIds: Set<string>): number {
+function groupTimelineEntryBelongsToChat(chat: GroupChatProfile, messageIds: Set<string>, sourceId: string): boolean {
+  return messageIds.has(sourceId) || sourceId.startsWith(`${chat.id}:segment:`);
+}
+
+function removeGroupMessageTimelineEntries(chat: GroupChatProfile, messageIds: Set<string>): number {
   if (messageIds.size === 0) return 0;
   const before = state.timelineEntries.length;
   state.timelineEntries = state.timelineEntries.filter(entry =>
-    entry.source.type !== 'group_message' || !messageIds.has(entry.source.id),
+    entry.worldId !== chat.worldId
+    || entry.source.type !== 'group_message'
+    || !groupTimelineEntryBelongsToChat(chat, messageIds, entry.source.id),
+  );
+  return before - state.timelineEntries.length;
+}
+
+function removeLegacyGroupMessageTimelineEntries(chat: GroupChatProfile): number {
+  const messageIds = allStoredGroupMessageIds(chat);
+  if (messageIds.size === 0) return 0;
+  const before = state.timelineEntries.length;
+  state.timelineEntries = state.timelineEntries.filter(entry =>
+    entry.worldId !== chat.worldId
+    || entry.source.type !== 'group_message'
+    || !messageIds.has(entry.source.id),
   );
   return before - state.timelineEntries.length;
 }
@@ -172,7 +192,7 @@ export function clearGroupMessages(chatId: string): GroupChatMutationResult {
     message.groupChatId !== chat.id || message.worldId !== chat.worldId,
   );
   const deletedMessages = before - state.groupMessages.length;
-  const deletedTimelineEntries = removeGroupMessageTimelineEntries(messageIds);
+  const deletedTimelineEntries = removeGroupMessageTimelineEntries(chat, messageIds);
   chat.updatedAt = Date.now();
   saveState();
   return { ok: true, deletedMessages, deletedTimelineEntries };
@@ -191,7 +211,7 @@ export function deleteGroupChat(chatId: string): GroupChatMutationResult {
     message.groupChatId !== chat.id || message.worldId !== chat.worldId,
   );
   const deletedMessages = beforeMessages - state.groupMessages.length;
-  const deletedTimelineEntries = removeGroupMessageTimelineEntries(messageIds);
+  const deletedTimelineEntries = removeGroupMessageTimelineEntries(chat, messageIds);
   if (state.activeGroupChatId === chat.id) {
     state.activeGroupChatId = nextActiveGroupChatId(worldId);
   }
@@ -228,6 +248,56 @@ function traceHumanAnchor(chat: GroupChatProfile, message: GroupChatMessage): Gr
     current = groupMessageById(chat, current.replyToId);
   }
   return undefined;
+}
+
+function groupSegmentAnchor(chat: GroupChatProfile, message: GroupChatMessage): GroupChatMessage {
+  const seen = new Set<string>();
+  let current: GroupChatMessage | undefined = message;
+  let oldest = message;
+  while (current && !seen.has(current.id)) {
+    oldest = current;
+    if (isHumanAuthoredGroupMessage(current)) return current;
+    seen.add(current.id);
+    current = groupMessageById(chat, current.replyToId);
+  }
+  return oldest;
+}
+
+function groupSegmentMessages(chat: GroupChatProfile, anchor: GroupChatMessage): GroupChatMessage[] {
+  return groupMessagesFor(chat.id)
+    .filter(message =>
+      message.worldId === chat.worldId
+      && !message.recalledAt
+      && groupSegmentAnchor(chat, message).id === anchor.id,
+    )
+    .sort((left, right) => left.createdAt - right.createdAt);
+}
+
+function syncGroupSegmentTimeline(chat: GroupChatProfile, message: GroupChatMessage): void {
+  removeLegacyGroupMessageTimelineEntries(chat);
+  const anchor = groupSegmentAnchor(chat, message);
+  upsertGroupChatSegmentTimelineEntry(chat, groupSegmentMessages(chat, anchor));
+}
+
+function rebuildGroupChatSegmentTimeline(chat: GroupChatProfile): void {
+  const messageIds = allStoredGroupMessageIds(chat);
+  state.timelineEntries = state.timelineEntries.filter(entry =>
+    entry.worldId !== chat.worldId
+    || entry.source.type !== 'group_message'
+    || !groupTimelineEntryBelongsToChat(chat, messageIds, entry.source.id),
+  );
+  const activeMessages = groupMessagesFor(chat.id)
+    .filter(message => message.worldId === chat.worldId && !message.recalledAt)
+    .sort((left, right) => left.createdAt - right.createdAt);
+  const syncedSourceIds = new Set<string>();
+  for (const message of activeMessages) {
+    const anchor = groupSegmentAnchor(chat, message);
+    const sourceId = groupChatSegmentTimelineSourceId(chat.id, anchor.id);
+    if (syncedSourceIds.has(sourceId)) continue;
+    upsertGroupChatSegmentTimelineEntry(chat, groupSegmentMessages(chat, anchor));
+    syncedSourceIds.add(sourceId);
+  }
+  saveState();
 }
 
 function modelChainDepthFromHumanAnchor(chat: GroupChatProfile, message: GroupChatMessage): number {
@@ -323,7 +393,8 @@ function appendGroupMessage(
   };
   state.groupMessages.push(message);
   chat.updatedAt = message.createdAt;
-  addTimelineEntry({
+  syncGroupSegmentTimeline(chat, message);
+  void ({
     worldId: chat.worldId,
     type: 'group_chat',
     characterIds: chat.participantCharacterIds,
@@ -366,9 +437,14 @@ export function sendGroupUserMessage(content: string, chatId?: string): GroupCha
 }
 
 export function deleteGroupMessage(messageId: string): boolean {
+  const target = state.groupMessages.find(item => item.id === messageId);
+  const chat = target
+    ? state.groupChats.find(item => item.id === target.groupChatId && item.worldId === target.worldId)
+    : undefined;
   const before = state.groupMessages.length;
   state.groupMessages = state.groupMessages.filter(message => message.id !== messageId);
   if (state.groupMessages.length === before) return false;
+  if (chat) rebuildGroupChatSegmentTimeline(chat);
   saveState();
   setStatusText('群聊消息已删除。');
   return true;
@@ -377,7 +453,9 @@ export function deleteGroupMessage(messageId: string): boolean {
 export function recallGroupMessage(messageId: string): boolean {
   const message = state.groupMessages.find(item => item.id === messageId);
   if (!message || message.recalledAt) return false;
+  const chat = state.groupChats.find(item => item.id === message.groupChatId && item.worldId === message.worldId);
   message.recalledAt = Date.now();
+  if (chat) rebuildGroupChatSegmentTimeline(chat);
   saveState();
   setStatusText('群聊消息已撤回。');
   return true;

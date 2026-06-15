@@ -3,6 +3,7 @@
  * Coordinates proactive messages, auto moments, and world events without letting the UI own timer state.
  */
 import { appendAssistantReply, setStatusText } from '../chat/private-chat';
+import { runBackgroundCharacterDirectDialogue } from '../chat/character-direct-chat';
 import { pacingStrategyFor, pacingStyleFor } from '../chat/auto-message-strategy';
 import {
   backgroundInteractionReadiness,
@@ -316,7 +317,13 @@ async function attemptWorldInteraction(): Promise<boolean> {
     }
     const result = await runBackgroundCharacterInteraction(worldId, { countBudget: true, now });
     state.worldInteractionStatusReason = result.reason;
-    if (result.ok) break;
+    let changed = result.ok;
+    if (state.worldInteractionHighSimulation) {
+      const directResult = await runBackgroundCharacterDirectDialogue(worldId, { countBudget: true, now });
+      if (directResult.ok) state.worldInteractionStatusReason = directResult.reason;
+      changed = changed || directResult.ok;
+    }
+    if (changed) break;
   }
   scheduleNextBackgroundInteraction(now);
   return true;

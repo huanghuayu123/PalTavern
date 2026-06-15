@@ -202,14 +202,32 @@ function mockModelResponses(responses: string[]) {
   }
 
   const messages = stateModule.groupMessagesFor(created.id);
+  const createdGroupMessageIds = new Set(messages.map((message: any) => message.id));
   const groupTimelineEntries = stateModule.state.timelineEntries.filter((entry: any) =>
     entry.type === 'group_chat'
     && entry.source.type === 'group_message'
     && entry.characterIds.includes('group_character_a')
     && entry.characterIds.includes('group_character_b'),
   );
-  if (messages.length !== 4 || groupTimelineEntries.length !== 4) {
-    throw new Error('Group messages were not stored or mirrored into the timeline.');
+  const createdSegmentEntries = groupTimelineEntries.filter((entry: any) =>
+    String(entry.source.id).startsWith(`${created.id}:segment:`),
+  );
+  const authoredSegment = createdSegmentEntries.find((entry: any) =>
+    entry.summary.includes(messages[0]?.content ?? ''),
+  );
+  const conversationSegment = createdSegmentEntries.find((entry: any) =>
+    entry.summary.includes(userMessage.content)
+    && specifiedReplies.every((reply: any) => entry.summary.includes(reply.content))
+    && activeReplies.every((reply: any) => entry.summary.includes(reply.content)),
+  );
+  if (
+    messages.length !== 4
+    || createdSegmentEntries.length !== 2
+    || groupTimelineEntries.some((entry: any) => createdGroupMessageIds.has(entry.source.id))
+    || !authoredSegment
+    || !conversationSegment
+  ) {
+    throw new Error('Group messages should be mirrored into the timeline as conversation segments, not one entry per message.');
   }
 
   const participatingCharacter = stateModule.state.characters.find((character: any) =>
@@ -220,14 +238,9 @@ function mockModelResponses(responses: string[]) {
     throw new Error('Group chat timeline context was not visible to participating characters.');
   }
 
-  const createdGroupMessageIds = new Set(
-    stateModule.state.groupMessages
-      .filter((message: any) => message.groupChatId === created.id)
-      .map((message: any) => message.id),
-  );
   groupChat.updateGroupChat(created.id, { title: '午休改名群' });
   if (!stateModule.state.timelineEntries
-    .filter((entry: any) => entry.source.type === 'group_message' && createdGroupMessageIds.has(entry.source.id))
+    .filter((entry: any) => entry.source.type === 'group_message' && String(entry.source.id).startsWith(`${created.id}:segment:`))
     .every((entry: any) => entry.title.includes('午休改名群'))) {
     throw new Error('Renaming a group chat did not update its timeline entry titles.');
   }
@@ -360,9 +373,11 @@ function mockModelResponses(responses: string[]) {
     !managedFirstMessage
     || clearMessageIds.length !== 1
     || !stateModule.state.timelineEntries.some((entry: any) =>
-      entry.source.type === 'group_message' && entry.source.id === managedFirstMessage.id)
+      entry.source.type === 'group_message'
+      && String(entry.source.id).startsWith(`${managedGroup.id}:segment:`)
+      && entry.summary.includes(managedFirstMessage.content))
   ) {
-    throw new Error('Group management setup did not create a message and timeline entry.');
+    throw new Error('Group management setup did not create a message segment timeline entry.');
   }
   const clearResult = groupChat.clearGroupMessages(managedGroup.id);
   const clearedGroup = stateModule.state.groupChats.find((chat: any) => chat.id === managedGroup.id);
@@ -373,7 +388,8 @@ function mockModelResponses(responses: string[]) {
     || clearedGroup.participantCharacterIds.length !== 2
     || stateModule.groupMessagesFor(managedGroup.id).length !== 0
     || stateModule.state.timelineEntries.some((entry: any) =>
-      entry.source.type === 'group_message' && clearMessageIds.includes(entry.source.id))
+      entry.source.type === 'group_message'
+      && (clearMessageIds.includes(entry.source.id) || String(entry.source.id).startsWith(`${managedGroup.id}:segment:`)))
   ) {
     throw new Error('Clearing group messages did not preserve the group while removing message context.');
   }
@@ -390,7 +406,8 @@ function mockModelResponses(responses: string[]) {
     || stateModule.state.groupChats.some((chat: any) => chat.id === managedGroup.id)
     || stateModule.state.groupMessages.some((message: any) => message.groupChatId === managedGroup.id)
     || stateModule.state.timelineEntries.some((entry: any) =>
-      entry.source.type === 'group_message' && deleteMessageIds.includes(entry.source.id))
+      entry.source.type === 'group_message'
+      && (deleteMessageIds.includes(entry.source.id) || String(entry.source.id).startsWith(`${managedGroup.id}:segment:`)))
     || stateModule.state.activeGroupChatId === managedGroup.id
   ) {
     throw new Error('Deleting a group chat did not remove the group, records, timeline context, or active selection.');

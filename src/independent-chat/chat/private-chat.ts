@@ -11,6 +11,7 @@ import {
 } from '../characters/relationships';
 import { findUserStickerById } from '../media/stickers';
 import { callModel } from '../model/client';
+import { detectPrivateChatEventSuggestion } from '../social/events';
 import {
   activeCharacter,
   communicationActorId,
@@ -21,7 +22,12 @@ import {
   saveState,
   state,
 } from '../core/state';
-import { addRelationshipTimelineEntry } from '../memory/timeline';
+import {
+  addRelationshipTimelineEntry,
+  privateChatSegmentTimelineSourceId,
+  removePrivateChatSegmentTimelineEntries,
+  upsertPrivateChatSegmentTimelineEntry,
+} from '../memory/timeline';
 import { waitForModelTyping } from './typing-delay';
 import { nowId } from '../core/utils';
 
@@ -72,6 +78,60 @@ function conversationActorId(conversation: ConversationProfile): string {
   return conversation.ownerCharacterId ?? 'user';
 }
 
+function privateChatSpeakerNameForMessage(character: CharacterProfile, message: ChatMessage): string {
+  if (message.role === 'assistant') return character.name;
+  if (message.speakerType === 'character' && message.speakerCharacterId) {
+    return state.characters.find(item => item.id === message.speakerCharacterId)?.name ?? '已删除角色';
+  }
+  return state.userName.trim() || '我';
+}
+
+function participantIdsForPrivateChatEvent(character: CharacterProfile, message: ChatMessage): string[] {
+  return [...new Set([
+    character.id,
+    message.speakerType === 'character' ? message.speakerCharacterId : undefined,
+  ].filter((id): id is string => Boolean(id)))];
+}
+
+async function detectPrivateChatEventForMessage(
+  character: CharacterProfile,
+  conversation: ConversationProfile,
+  message: ChatMessage,
+): Promise<void> {
+  if (message.recalledAt || !message.content.trim()) return;
+  const actorId = conversationActorId(conversation);
+  const recentMessages = messagesFor(character.id, actorId)
+    .slice(-5)
+    .map(item => ({
+      speaker: privateChatSpeakerNameForMessage(character, item),
+      role: item.role === 'assistant' ? 'assistant' as const : 'user' as const,
+      content: item.content,
+    }));
+  const leadActor = message.role === 'assistant'
+    ? { type: 'character' as const, id: character.id, characterId: character.id, name: character.name }
+    : message.speakerType === 'character' && message.speakerCharacterId
+      ? {
+        type: 'character' as const,
+        id: message.speakerCharacterId,
+        characterId: message.speakerCharacterId,
+        name: state.characters.find(item => item.id === message.speakerCharacterId)?.name ?? '角色',
+      }
+      : { type: 'user' as const, id: 'user', name: state.userName.trim() || '我' };
+  await detectPrivateChatEventSuggestion({
+    worldId: character.worldId,
+    sourceKind: 'private_chat',
+    threadId: conversation.id,
+    messageId: message.id,
+    sourceMessageRole: message.role === 'assistant' ? 'assistant' : 'user',
+    content: message.content,
+    speakerName: privateChatSpeakerNameForMessage(character, message),
+    triggerCharacterId: message.role === 'assistant' ? character.id : message.speakerCharacterId,
+    participantCharacterIds: participantIdsForPrivateChatEvent(character, message),
+    leadActor,
+    recentMessages,
+  });
+}
+
 function abortReply(status: string, finalStatus = status): boolean {
   const controller = replyController;
   if (!controller) return false;
@@ -94,7 +154,10 @@ export function resetReplyState(status = '已停止未完成的回复，输入�
 export function recallMessage(messageId: string): boolean {
   const message = state.messages.find(item => item.id === messageId);
   if (!message || message.recalledAt) return false;
+  const character = state.characters.find(item => item.id === message.characterId);
+  const conversation = state.conversations.find(item => item.id === message.conversationId);
   message.recalledAt = Date.now();
+  if (character && conversation) rebuildPrivateChatAutoMemory(character, conversation);
   saveState();
   return true;
 }
@@ -103,6 +166,8 @@ export function deleteMessage(messageId: string): boolean {
   const index = state.messages.findIndex(item => item.id === messageId);
   if (index < 0) return false;
   const target = state.messages[index];
+  const character = state.characters.find(item => item.id === target.characterId);
+  const conversation = state.conversations.find(item => item.id === target.conversationId);
   const deleteIds = new Set<string>([messageId]);
   if (target.role === 'user') {
     for (const message of state.messages) {
@@ -119,6 +184,7 @@ export function deleteMessage(messageId: string): boolean {
   for (const message of state.messages) {
     if (message.replyToId && deleteIds.has(message.replyToId)) message.replyToId = undefined;
   }
+  if (character && conversation) rebuildPrivateChatAutoMemory(character, conversation);
   saveState();
   return true;
 }
@@ -222,6 +288,7 @@ export async function editUserMessageAndRegenerate(
   const conversation = state.conversations.find(item => item.id === message.conversationId)
     ?? ensureConversation(character);
   conversation.updatedAt = Date.now();
+  rebuildPrivateChatAutoMemory(character, conversation);
   saveState();
   await generateModelReply(character, conversation, onChange);
 }
@@ -277,6 +344,7 @@ export async function regenerateAssistantMessage(messageId: string, onChange: ()
     }
     appendMessageVariant(message, next.content, next.stickerId);
     conversation.updatedAt = Date.now();
+    rebuildPrivateChatAutoMemory(character, conversation);
     statusText = '已重新生成，可用下方版本切换查看旧回复。';
     saveState();
   } catch (error) {
@@ -294,10 +362,14 @@ export async function regenerateAssistantMessage(messageId: string, onChange: ()
 export function removeSingleMessage(messageId: string): boolean {
   const index = state.messages.findIndex(item => item.id === messageId);
   if (index < 0) return false;
+  const target = state.messages[index];
+  const character = state.characters.find(item => item.id === target.characterId);
+  const conversation = state.conversations.find(item => item.id === target.conversationId);
   state.messages.splice(index, 1);
   for (const message of state.messages) {
     if (message.replyToId === messageId) message.replyToId = undefined;
   }
+  if (character && conversation) rebuildPrivateChatAutoMemory(character, conversation);
   saveState();
   return true;
 }
@@ -376,17 +448,64 @@ function noteUserActivity(
   conversation.updatedAt = createdAt;
 }
 
+function privateChatMemorySegmentIsWorthKeeping(messages: ChatMessage[]): boolean {
+  const text = messages.map(message => message.content).join('\n').trim();
+  if (!text) return false;
+  if (text.length >= 18) return true;
+  return /表白|喜欢|愛|爱|线下|見面|见面|约|約|明天|后天|今晚|地址|地点|计划|承诺|答应|拒绝|分手|恋人|关系|亲吻|牵手/.test(text);
+}
+
+function privateChatMemorySegments(character: CharacterProfile, conversation: ConversationProfile): ChatMessage[][] {
+  const messages = messagesFor(character.id, conversationActorId(conversation))
+    .filter(message => !message.recalledAt && message.content.trim())
+    .sort((left, right) => left.createdAt - right.createdAt);
+  const segments: ChatMessage[][] = [];
+  let current: ChatMessage[] = [];
+  for (const message of messages) {
+    if (message.role === 'user' && current.some(item => item.role === 'assistant')) {
+      if (privateChatMemorySegmentIsWorthKeeping(current)) segments.push(current);
+      current = [];
+    }
+    current.push(message);
+  }
+  if (privateChatMemorySegmentIsWorthKeeping(current)) segments.push(current);
+  return segments;
+}
+
+function rebuildPrivateChatAutoMemory(character: CharacterProfile, conversation: ConversationProfile): void {
+  removePrivateChatSegmentTimelineEntries(conversation.id);
+  for (const segment of privateChatMemorySegments(character, conversation)) {
+    const sourceId = privateChatSegmentTimelineSourceId(conversation.id, segment[0].id);
+    if (state.timelineEntries.some(entry => entry.source.type === 'message' && entry.source.id === sourceId)) {
+      continue;
+    }
+    upsertPrivateChatSegmentTimelineEntry(character, conversation, segment);
+  }
+}
+
+export function rebuildPrivateChatAutoMemoryForCharacter(characterId: string): number {
+  const character = state.characters.find(item => item.id === characterId);
+  if (!character) return 0;
+  const conversations = state.conversations.filter(conversation =>
+    conversation.characterId === character.id && conversation.worldId === character.worldId,
+  );
+  for (const conversation of conversations) {
+    rebuildPrivateChatAutoMemory(character, conversation);
+  }
+  return conversations.length;
+}
+
 function appendUserMessage(
   character: CharacterProfile,
   conversation: ConversationProfile,
   content: string,
   replyToId?: string,
   speaker: PrivateChatSpeaker = { speakerType: 'user' },
-): void {
+): ChatMessage {
   const createdAt = Date.now();
   // Big comment: the message stays in the current private chat; this only records the selected speaking identity.
   const speakerType = speaker.speakerType === 'character' && speaker.speakerCharacterId ? 'character' : 'user';
-  state.messages.push({
+  const message: ChatMessage = {
     id: nowId('msg'),
     conversationId: conversation.id,
     characterId: character.id,
@@ -403,9 +522,12 @@ function appendUserMessage(
     activeVariantIndex: 0,
     createdAt,
     source: 'user',
-  });
+  };
+  state.messages.push(message);
   noteUserActivity(character, conversation, createdAt, speaker);
+  rebuildPrivateChatAutoMemory(character, conversation);
   saveState();
+  return message;
 }
 
 function hasPendingUserInput(character: CharacterProfile, actorId = 'user'): boolean {
@@ -447,7 +569,10 @@ async function generateModelReply(
       statusText = '已停止回复。';
       return;
     }
-    appendAssistantReply(character, conversation, reply, 'model_reply');
+    const messages = appendAssistantReply(character, conversation, reply, 'model_reply');
+    for (const message of messages) {
+      await detectPrivateChatEventForMessage(character, conversation, message);
+    }
     if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
       markConversationRead(character.id, Date.now(), conversationActorId(conversation));
     }
@@ -496,6 +621,7 @@ export function appendAssistantReply(
   });
   state.messages.push(...messages);
   conversation.updatedAt = messages.at(-1)?.createdAt ?? baseTime;
+  rebuildPrivateChatAutoMemory(character, conversation);
   return messages;
 }
 
@@ -565,7 +691,8 @@ export async function sendUserMessageOnly(
   }
   const actorId = actorIdFromSpeaker(character, speaker);
   const conversation = ensureConversation(character, actorId);
-  appendUserMessage(character, conversation, text, replyToId, speaker);
+  const message = appendUserMessage(character, conversation, text, replyToId, speaker);
+  await detectPrivateChatEventForMessage(character, conversation, message);
   statusText = '已发送。可以继续发短消息，或点生成回复。';
   onChange();
 }
@@ -610,7 +737,8 @@ export async function sendMessage(
   }
   const actorId = actorIdFromSpeaker(character, speaker);
   const conversation = ensureConversation(character, actorId);
-  appendUserMessage(character, conversation, text, replyToId, speaker);
+  const message = appendUserMessage(character, conversation, text, replyToId, speaker);
+  await detectPrivateChatEventForMessage(character, conversation, message);
   await generateModelReply(character, conversation, onChange);
 }
 

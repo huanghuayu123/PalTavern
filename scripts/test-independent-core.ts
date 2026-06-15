@@ -292,6 +292,7 @@ const privateChatSource = fs.readFileSync(path.join(process.cwd(), 'src/independ
 const modelClientSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/model/client.ts'), 'utf8');
 const schedulerSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/automation/scheduler.ts'), 'utf8');
 const eventsSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/social/events.ts'), 'utf8');
+const directChatSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/chat/character-direct-chat.ts'), 'utf8');
 const firstRunGuideSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/ui/first-run-guide.ts'), 'utf8');
 const cardImportDiagnosticsSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/ui/card-import-diagnostics.ts'), 'utf8');
 const androidMainActivitySource = fs.readFileSync(path.join(
@@ -317,6 +318,18 @@ const buildModelMessagesBlock = sourceSlice(
   'export function buildModelMessages',
   'async function refreshCharacterWorldWeather',
 );
+const worldMemoryContextForEventBlock = sourceSlice(
+  eventsSource,
+  'export function worldMemoryContextForEvent',
+  'function worldPresetMarkerContent',
+);
+const appendWorldEventRpMessageBlock = functionBody(eventsSource, 'appendWorldEventRpMessage');
+const editWorldEventRpMessageBlock = functionBody(eventsSource, 'editWorldEventRpMessage');
+const detectPrivateChatEventSuggestionBlock = sourceSlice(
+  eventsSource,
+  'function privateEventDetectionMessages',
+  'export function pendingPrivateChatEventSuggestionsForThread',
+);
 const schedulerAttemptCharacterBlock = sourceSlice(
   schedulerSource,
   'async function attemptCharacter(character',
@@ -324,6 +337,41 @@ const schedulerAttemptCharacterBlock = sourceSlice(
 );
 if (worldDialogueBody.includes('messagesFor(')) {
   throw new Error('World RP stream must not render private-chat messages.');
+}
+if (
+  !eventsSource.includes('contextMemorySummariesFor')
+  || !eventsSource.includes('worldMemoryContextForEvent')
+  || !eventsSource.includes('upsertWorldRpTimelineEntry')
+  || !eventsSource.includes('revokeWorldRpTimelineEntriesForEvent')
+  || !worldMemoryContextForEventBlock.includes('contextMemorySummariesFor')
+  || worldMemoryContextForEventBlock.includes('messagesFor(')
+  || !worldMemoryContextForEventBlock.includes('共同长期记忆')
+  || !appendWorldEventRpMessageBlock.includes('upsertWorldRpTimelineEntry')
+  || !editWorldEventRpMessageBlock.includes('upsertWorldRpTimelineEntry')
+  || !eventsSource.includes('revokeWorldRpTimelineEntriesForEvent(event.id)')
+  || !eventsSource.includes('不读取原始私聊记录')
+  || !eventsSource.includes('已进入世界记录/三层总结')
+) {
+  throw new Error('World RP should share approved long-term memory summaries without reading raw private chat history.');
+}
+if (
+  !eventsSource.includes('PrivateChatEventSuggestion')
+  || !eventsSource.includes('callAuthoringModel')
+  || !eventsSource.includes('detectPrivateChatEventSuggestion')
+  || !eventsSource.includes('createWorldEventFromPrivateChatSuggestion')
+  || !eventsSource.includes('dismissPrivateChatEventSuggestion')
+  || !eventsSource.includes('markPrivateChatEventSuggestionAccepted')
+  || !detectPrivateChatEventSuggestionBlock.includes('只输出 JSON')
+  || !detectPrivateChatEventSuggestionBlock.includes('接受前不得进入世界记录/世界上下文')
+  || detectPrivateChatEventSuggestionBlock.includes('callModel(')
+  || !privateChatSource.includes('detectPrivateChatEventSuggestion')
+  || !directChatSource.includes('detectPrivateChatEventSuggestion')
+  || !appSource.includes('renderPrivateChatEventSuggestionCard')
+  || !appSource.includes('data-create-private-event-suggestion')
+  || !appSource.includes('data-edit-private-event-suggestion')
+  || !appSource.includes('data-dismiss-private-event-suggestion')
+) {
+  throw new Error('Private chat event suggestions should use the authoring JSON detector, stay out of world context until accepted, and expose confirmation actions.');
 }
 if (worldComposerBindingBody.includes('void sendMessage(content, render);')) {
   throw new Error('World RP composer must not submit through the private-chat sender.');
@@ -1518,6 +1566,7 @@ if (
 }
 
 const uiSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/ui/app.ts'), 'utf8');
+const coreTypesSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/core/types.ts'), 'utf8');
 const authoringUiSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/ui/authoring-ui.ts'), 'utf8');
 const transitionsPath = path.join(process.cwd(), 'src/independent-chat/ui/transitions.ts');
 const transitionsSource = fs.existsSync(transitionsPath)
@@ -1539,6 +1588,7 @@ const settingsUiPath = path.join(process.cwd(), 'src/independent-chat/ui/setting
 const settingsUiSource = fs.existsSync(settingsUiPath)
   ? fs.readFileSync(settingsUiPath, 'utf8')
   : '';
+const packageSource = fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8');
 const displayLabelsPath = path.join(process.cwd(), 'src/independent-chat/ui/display-labels.ts');
 const displayLabelsSource = fs.existsSync(displayLabelsPath)
   ? fs.readFileSync(displayLabelsPath, 'utf8')
@@ -1547,8 +1597,15 @@ const worldWorkbenchPanelsPath = path.join(process.cwd(), 'src/independent-chat/
 const worldWorkbenchPanelsSource = fs.existsSync(worldWorkbenchPanelsPath)
   ? fs.readFileSync(worldWorkbenchPanelsPath, 'utf8')
   : '';
+const deletedWorldFeaturePaths = [
+  'src/independent-chat/memory/suggestions.ts',
+  'src/independent-chat/world/chapters.ts',
+  'scripts/test-memory-suggestions.ts',
+  'scripts/test-world-chapters.ts',
+].map(relativePath => path.join(process.cwd(), relativePath));
 const chatSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/chat/private-chat.ts'), 'utf8');
 const groupChatSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/chat/group-chat.ts'), 'utf8');
+const timelineMemorySource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/memory/timeline.ts'), 'utf8');
 const typingDelayPath = path.join(process.cwd(), 'src/independent-chat/chat/typing-delay.ts');
 const typingDelaySource = fs.existsSync(typingDelayPath)
   ? fs.readFileSync(typingDelayPath, 'utf8')
@@ -1668,11 +1725,20 @@ const regexSwitchHandlerBlock = uiSource
 const restoreScrollBlock = uiSource
   .split('function restoreScrollIfNeeded')[1]
   ?.split('function applyScrollSnapshot')[0] ?? '';
+const restoreUiSessionSnapshotBlock = functionBody(uiSource, 'restoreUiSessionSnapshot');
+const openPrivateChatByCharacterIdBlock = sourceSlice(
+  uiSource,
+  'function openPrivateChatByCharacterId',
+  'function renderChatStatusShelf',
+);
 const settleChatScrollBlock = uiSource
   .split('function settleChatScrollAfterRender')[1]
   ?.split('function deleteActiveCharacterFromUi')[0] ?? '';
 const currentScrollContainerBlock = functionBody(uiSource, 'currentScrollContainer');
 const currentScrollKeyBlock = functionBody(uiSource, 'currentScrollKey');
+const compactMediaDeclaration = uiSource
+  .split('const compactMedia = window.matchMedia(')[1]
+  ?.split(');')[0] ?? '';
 const openSettingsBlock = uiSource
   .split('const openSettings = () => {')[1]
   ?.split("document.querySelector<HTMLButtonElement>('#open-settings')")[0] ?? '';
@@ -1780,6 +1846,21 @@ const onboardingLayerBlock = uiSource
 const worldEventDetailBlock = uiSource
   .split('function renderWorldEventRpDetail')[1]
   ?.split('function renderWorldStageComposer')[0] ?? '';
+const privateEventSuggestionCardBlock = uiSource
+  .split('function renderPrivateChatEventSuggestionCard')[1]
+  ?.split('function openEventComposerFromPrivateSuggestion')[0] ?? '';
+const memorySummaryCardBlock = uiSource
+  .split('function renderMemorySummaryCard')[1]
+  ?.split('function renderMemorySummaryGroup')[0] ?? '';
+const worldDialogueInPageGuardBlock = styleSource
+  .split('/* World RP dialogue in-page guard. */')[1]
+  ?.split('/* Event choice border cleanup guard. */')[0] ?? '';
+const eventChoiceBorderCleanupBlock = styleSource
+  .split('/* Event choice border cleanup guard. */')[1]
+  ?.split('/*')[0] ?? '';
+const eventDeleteHandlerBlock = uiSource
+  .split("document.querySelectorAll<HTMLButtonElement>('[data-delete-event]').forEach")[1]
+  ?.split('function bindUi')[0] ?? '';
 const worldStageComposerBlock = functionBody(uiSource, 'renderWorldStageComposer');
 const worldSettingsPanelBlock = uiSource
   .split('function renderWorldSettingsPanel')[1]
@@ -1913,7 +1994,7 @@ const momentVisibilityBlockedHandlerBlock = sourceSlice(
 );
 const momentCommentTapHandlerBlock = sourceSlice(
   uiSource,
-  "document.querySelectorAll<HTMLElement>('[data-moment-comment-tap]').forEach",
+  "document.querySelectorAll<HTMLButtonElement>('[data-moment-comment-tap]').forEach",
   "document.querySelectorAll<HTMLButtonElement>('[data-clear-comment-reply]').forEach",
 );
 const authoringStepHandlerBlock = sourceSlice(
@@ -1923,8 +2004,10 @@ const authoringStepHandlerBlock = sourceSlice(
 );
 const privateChatContactCharactersBlock = functionBody(uiSource, 'privateChatContactCharacters');
 const renderGroupConversationRowsBlock = functionBody(uiSource, 'renderGroupConversationRows');
+const appendGroupMessageBlock = sourceSlice(groupChatSource, 'function appendGroupMessage', 'export function sendGroupUserMessage');
 const eventsPageBlock = functionBody(uiSource, 'renderEventsPage');
 const eventComposerDialogBlock = functionBody(uiSource, 'renderEventComposerDialog');
+const worldEventSettingsPreviewBlock = functionBody(uiSource, 'renderWorldEventSettingsPreview');
 const worldEventSettingsPanelBlock = functionBody(uiSource, 'renderWorldEventSettingsPanel');
 const worldPersonaSelectorBlock = functionBody(uiSource, 'renderWorldPersonaSelector');
 const worldPersonaSummaryBlock = worldPersonaSelectorBlock
@@ -1947,6 +2030,17 @@ if (
   || !groupChatSource.includes('await waitForModelTyping(raw);')
 ) {
   throw new Error('Model-generated messages should simulate typing time before being appended.');
+}
+if (
+  !timelineMemorySource.includes('export function upsertGroupChatSegmentTimelineEntry')
+  || !timelineMemorySource.includes('groupChatSegmentTimelineSourceId')
+  || !appendGroupMessageBlock.includes('syncGroupSegmentTimeline(chat, message)')
+  || !groupChatSource.includes('upsertGroupChatSegmentTimelineEntry(chat, groupSegmentMessages(chat, anchor))')
+  || appendGroupMessageBlock.includes('addTimelineEntry({')
+  || !groupChatSource.includes('function groupSegmentAnchor')
+  || !groupChatSource.includes('function rebuildGroupChatSegmentTimeline')
+) {
+  throw new Error('Group chat memory should be upserted as conversation segments instead of one timeline entry per message.');
 }
 if (
   focusAfterSubmitIndex < 0
@@ -2122,6 +2216,25 @@ if (
   || !restoreScrollBlock.includes('动作菜单和图片可能在首轮布局后再改变高度')
 ) {
   throw new Error('Scroll restoration should run a second pass after message action layout settles.');
+}
+if (
+  !uiSource.includes('function requestConversationOpenAtBottom')
+  || !openPrivateChatByCharacterIdBlock.includes('requestConversationOpenAtBottom();')
+  || !restoreUiSessionSnapshotBlock.includes('isSessionScrollSnapshotRestorable(parsed.scroll)')
+  || !restoreUiSessionSnapshotBlock.includes('requestChatStickToBottom();')
+  || !uiSource.includes("snapshot.key !== 'messages'")
+  || !uiSource.includes("!snapshot.key.startsWith('groups:')")
+) {
+  throw new Error('Opening or restoring chat conversations should default to the latest message instead of replaying a stale saved scroll position.');
+}
+if (
+  !compactMediaDeclaration.includes('(max-height: 560px) and (orientation: landscape)')
+  || !styleSource.includes('@media (max-height: 560px) and (orientation: landscape)')
+  || !styleSource.includes('.mobile-chat-detail .chat-header')
+  || !styleSource.includes('.mobile-chat-detail .chat-status-expanded')
+  || !styleSource.includes('.mobile-chat-detail .composer')
+) {
+  throw new Error('Short landscape screens should use the mobile shell and compact chat chrome so the conversation remains usable.');
 }
 if (
   currentScrollContainerBlock.indexOf('settingsOpen') < 0
@@ -2457,18 +2570,18 @@ if (
 ) {
   throw new Error('Moment visibility should use public/private plus separate contact-list allow/block pickers.');
 }
-if (
+if (false && (
   !uiSource.includes('data-moment-comment-tap')
   || !uiSource.includes('data-moment-comment-menu')
-  || !uiSource.includes('moment-comment-menu')
+  || !uiSource.includes('moment-comment-actions')
   || !uiSource.includes('data-open-comment-character-reply')
   || !uiSource.includes('data-submit-comment-character-reply')
   || !uiSource.includes('楼主回复')
   || !uiSource.includes('选角色回复')
   || uiSource.includes('data-reply-comment=')
-  || uiSource.includes('moment-comment-actions')
+  || !uiSource.includes('data-author-reply-comment')
   || uiSource.includes('class="moment-comment-reply"')
-  || !styleSource.includes('.moment-comment-menu')
+  || !styleSource.includes('.moment-comment-actions')
   || !momentCommentFormMarkupBlock.includes('class="secondary moment-comment-submit"')
   || !momentCommentFormMarkupBlock.includes('moment-comment-inline-form')
   || !momentCommentFormMarkupBlock.includes('aria-label="发送评论"')
@@ -2476,10 +2589,55 @@ if (
   || momentCommentFormMarkupBlock.includes('>发送</button>')
   || !styleSource.includes('grid-template-columns: minmax(96px, 0.28fr) minmax(0, 1fr) 44px')
   || !styleSource.includes('Moment comment inline layout guard')
-  || !styleSource.includes('grid-template-columns: clamp(86px, 26%, 132px) minmax(0, 1fr) 44px')
+  || !styleSource.includes('grid-template-columns: clamp(58px, 14%, 86px) minmax(0, 1fr) 44px')
+  || styleSource.includes('.moment-comment-form select {\n    grid-column: 1 / -1;')
+)) {
+  throw new Error('Moment comments should use tap-to-reply plus long-press action menus instead of always-visible action buttons.');
+}
+if (
+  !uiSource.includes('data-moment-comment-tap')
+  || !uiSource.includes('moment-comment-actions')
+  || !uiSource.includes('data-moment-comment-reply-action')
+  || !uiSource.includes('data-open-comment-character-reply')
+  || !uiSource.includes('data-submit-comment-character-reply')
+  || !uiSource.includes('data-author-reply-comment')
+  || !uiSource.includes('data-delete-comment')
+  || !uiSource.includes('moment-comment-action-primary')
+  || !uiSource.includes('moment-comment-action-muted')
+  || !uiSource.includes('moment-comment-action-danger')
+  || !uiSource.includes('moment-comment-reply-select')
+  || !uiSource.includes('moment-comment-reply-submit')
+  || !uiSource.includes('data-comment-actor-select')
+  || !uiSource.includes('setCommunicationActor(moment.worldId, selectedActorId)')
+  || momentCommentFormMarkupBlock.includes('moment-comment-author-chip')
+  || !momentCommentFormMarkupBlock.includes('<select class="moment-comment-author-select"')
+  || uiSource.includes('role="button" tabindex="0" data-moment-comment-tap')
+  || !uiSource.includes('document.querySelectorAll<HTMLButtonElement>(\'[data-moment-comment-tap]\')')
+  || uiSource.includes('data-reply-comment=')
+  || uiSource.includes('class="moment-comment-reply"')
+  || !styleSource.includes('.moment-comment-actions')
+  || !styleSource.includes('.moment-comment-character-reply')
+  || !styleSource.includes('.moment-comment-actions button')
+  || !styleSource.includes('.moment-comment-action-primary')
+  || !styleSource.includes('.moment-comment-action-danger')
+  || !styleSource.includes('.moment-comment-actions .moment-comment-action + .moment-comment-action::before')
+  || !styleSource.includes('text-underline-offset: 3px')
+  || !styleSource.includes('.moment-comment-reply-submit')
+  || !styleSource.includes('width: min(100%, 340px)')
+  || !styleSource.includes('box-shadow: none')
+  || !styleSource.includes('.moment-comment-author-select')
+  || !styleSource.includes('grid-template-columns: clamp(58px, 14%, 86px) minmax(0, 1fr) 44px')
+  || !momentCommentFormMarkupBlock.includes('class="secondary moment-comment-submit"')
+  || !momentCommentFormMarkupBlock.includes('moment-comment-inline-form')
+  || !momentCommentFormMarkupBlock.includes('aria-label="发送评论"')
+  || !momentCommentFormMarkupBlock.includes("${icon('send')}")
+  || momentCommentFormMarkupBlock.includes('>发送</button>')
+  || !styleSource.includes('grid-template-columns: minmax(96px, 0.28fr) minmax(0, 1fr) 44px')
+  || !styleSource.includes('Moment comment inline layout guard')
+  || !styleSource.includes('grid-template-columns: clamp(58px, 14%, 86px) minmax(0, 1fr) 44px')
   || styleSource.includes('.moment-comment-form select {\n    grid-column: 1 / -1;')
 ) {
-  throw new Error('Moment comments should use tap-to-reply plus long-press action menus instead of always-visible action buttons.');
+  throw new Error('Moment comments should expose reply as a real action button instead of nesting buttons inside a clickable comment row.');
 }
 if (
   !styleSource.includes("  .moments-publisher.is-open {\n    top: 50%;\n    right: 12px;\n    bottom: auto;")
@@ -2699,13 +2857,15 @@ if (
   throw new Error('Shared display labels should live in ui/display-labels.ts instead of the main app renderer.');
 }
 if (
-  !worldWorkbenchPanelsSource.includes('export function renderWorldContinuePanel')
-  || !worldWorkbenchPanelsSource.includes('export function renderWorldChapterPanel')
-  || !worldWorkbenchPanelsSource.includes('export function renderRelationshipMapPanel')
-  || !worldWorkbenchPanelsSource.includes('export function renderMemoryInboxPanel')
-  || !worldWorkbenchPanelsSource.includes('export function renderWorldDrawerTimeline')
+  !worldWorkbenchPanelsSource.includes('export function renderWorldDrawerTimeline')
   || !worldWorkbenchPanelsSource.includes('type WorldWorkbenchPanelContext')
   || !uiSource.includes("from './world-workbench-panels'")
+  || worldWorkbenchPanelsSource.includes('renderWorldContinuePanel')
+  || worldWorkbenchPanelsSource.includes('renderMemorySuggestionItem')
+  || worldWorkbenchPanelsSource.includes('renderMemoryVault')
+  || worldWorkbenchPanelsSource.includes('renderWorldChapterPanel')
+  || worldWorkbenchPanelsSource.includes('renderRelationshipMapPanel')
+  || worldWorkbenchPanelsSource.includes('renderMemoryInboxPanel')
   || uiSource.includes('function renderWorldContinuePanel(')
   || uiSource.includes('function renderMemorySuggestionItem(')
   || uiSource.includes('function renderMemoryVault(')
@@ -2714,7 +2874,24 @@ if (
   || uiSource.includes('function renderMemoryInboxPanel(')
   || uiSource.includes('function renderWorldDrawerTimeline(')
 ) {
-  throw new Error('World workbench memory, chapter, relationship, and continue panels should live in ui/world-workbench-panels.ts instead of the main app renderer.');
+  throw new Error('World workbench dashboard panels should be deleted from the UI layer; only the drawer timeline helper should remain.');
+}
+if (
+  deletedWorldFeaturePaths.some(filePath => fs.existsSync(filePath))
+  || uiSource.includes('../memory/suggestions')
+  || uiSource.includes('../world/chapters')
+  || stateSource.includes('memorySuggestions')
+  || stateSource.includes('MemorySuggestion')
+  || stateSource.includes('worldChapters')
+  || stateSource.includes('WorldChapter')
+  || coreTypesSource.includes('memorySuggestions')
+  || coreTypesSource.includes('MemorySuggestion')
+  || coreTypesSource.includes('worldChapters')
+  || coreTypesSource.includes('WorldChapter')
+  || packageSource.includes('test:memory-suggestions')
+  || packageSource.includes('test:world-chapters')
+) {
+  throw new Error('Removed world content functions should not leave modules, persisted state fields, imports, or package test entries behind.');
 }
 if (false && (
   !styleSource.includes('/* 大注释：页面切换动效层')
@@ -2763,19 +2940,19 @@ if (
   throw new Error('Mobile world topbar should stay one-row, with an avatar identity, full-page world settings, and no horizontal overflow.');
 }
 if (
-  !worldWorkbenchBlock.includes('aria-label="开始一段日常"')
-  || !worldWorkbenchBlock.includes('<span class="world-action-label">开始日常</span>')
+  !worldWorkbenchBlock.includes('aria-label="生成事件"')
+  || !worldWorkbenchBlock.includes('<span class="world-action-label">生成事件</span>')
 ) {
-  throw new Error('World daily action should keep an accessible label while rendering as a lighter topbar action.');
+  throw new Error('World topbar action should match the original generated-event entry wording.');
 }
 if (
-  !worldWorkbenchBlock.includes('aria-label="开始一段日常"')
-  || !worldWorkbenchBlock.includes('<span class="world-action-label">开始日常</span>')
-  || !worldEventLobbyBlock.includes('今天发生点什么')
-  || !worldEventLobbyBlock.includes('<span>开始一段日常</span>')
+  !worldWorkbenchBlock.includes('aria-label="生成事件"')
+  || !worldWorkbenchBlock.includes('<span class="world-action-label">生成事件</span>')
+  || !worldEventLobbyBlock.includes('生成一段日常后')
+  || !worldEventLobbyBlock.includes('<span>生成片段</span>')
   || !renderMobileBlock.includes('aria-label="新建群聊"')
 ) {
-  throw new Error('Mobile world and inbox actions should use plain user-facing labels instead of abstract event wording.');
+  throw new Error('Mobile inbox actions should keep plain labels while the world page keeps its original event wording.');
 }
 if (
   !worldPersonaSelectorBlock.includes('renderUserAvatar(state.userName)')
@@ -2940,6 +3117,212 @@ if (
   || styleSource.includes('.world-lobby-counts')
 ) {
   throw new Error('World workbench should render daily RP narration, dialogue, event, and world-setting surfaces.');
+}
+if (
+  !worldDialogueInPageGuardBlock.includes('.world-event-rp-detail')
+  || !worldDialogueInPageGuardBlock.includes('background: transparent;')
+  || !worldDialogueInPageGuardBlock.includes('border: 0;')
+  || !worldDialogueInPageGuardBlock.includes('box-shadow: none;')
+  || !worldDialogueInPageGuardBlock.includes('border-radius: 0;')
+  || !worldDialogueInPageGuardBlock.includes('width: 100%;')
+  || !worldDialogueInPageGuardBlock.includes('max-width: none;')
+  || !worldDialogueInPageGuardBlock.includes('.world-event-detail-toolbar')
+  || !worldDialogueInPageGuardBlock.includes('position: sticky;')
+) {
+  throw new Error('World RP detail should stay as an in-page dialogue surface instead of a floating card window.');
+}
+if (
+  !eventChoiceBorderCleanupBlock.includes('.event-choice-grid .secondary')
+  || !eventChoiceBorderCleanupBlock.includes('border: 0;')
+  || !eventChoiceBorderCleanupBlock.includes('box-shadow: none;')
+  || !eventChoiceBorderCleanupBlock.includes('.event-choice-grid .secondary:hover')
+  || !eventChoiceBorderCleanupBlock.includes('border-color: transparent;')
+) {
+  throw new Error('World event choice buttons should not show an extra dark border around the timeline choice box.');
+}
+if (
+  !worldEventLobbyBlock.includes('event-swipe-row')
+  || !worldEventLobbyBlock.includes('data-event-swipe-row')
+  || !worldEventLobbyBlock.includes('event-swipe-delete')
+  || !worldEventLobbyBlock.includes('data-delete-event')
+  || !worldEventLobbyBlock.includes('tabindex="-1"')
+  || !worldEventSettingsPreviewBlock.includes('event-swipe-row')
+  || !worldEventSettingsPreviewBlock.includes('tabindex="-1"')
+  || !uiSource.includes('eventSwipeStartX')
+  || !uiSource.includes('setEventSwipeDeleteVisible')
+  || !uiSource.includes('closeRevealedEventSwipeRows')
+  || !uiSource.includes('action.tabIndex = revealed ? 0 : -1')
+  || !uiSource.includes("action.setAttribute('aria-hidden', revealed ? 'false' : 'true')")
+  || !uiSource.includes('is-delete-revealed')
+  || eventDeleteHandlerBlock.includes('openConfirmDialog')
+  || eventDeleteHandlerBlock.includes('const hasActiveImpact')
+  || eventDeleteHandlerBlock.includes('deleteEventWithImpactChoice')
+  || !eventDeleteHandlerBlock.includes('deleteWorldEvent(eventId, { rollbackImpact: true })')
+  || !styleSource.includes('.event-swipe-row')
+  || !styleSource.includes('.event-swipe-actions')
+  || !styleSource.includes('width: 68px')
+  || !styleSource.includes('opacity: 0;')
+  || !styleSource.includes('pointer-events: none;')
+  || !styleSource.includes('.event-swipe-row.is-delete-revealed .event-swipe-actions')
+  || !styleSource.includes('opacity: 1;')
+  || !styleSource.includes('.event-swipe-content')
+  || !styleSource.includes('.event-swipe-row.is-delete-revealed .event-swipe-content')
+  || !styleSource.includes('translateX(-68px)')
+) {
+  throw new Error('World events should delete from an in-page swipe action instead of a floating confirmation window.');
+}
+if (
+  !privateEventSuggestionCardBlock.includes('岛上事件草稿')
+  || !privateEventSuggestionCardBlock.includes('private-event-suggestion-label')
+  || !privateEventSuggestionCardBlock.includes('private-event-suggestion-meta')
+  || !privateEventSuggestionCardBlock.includes('private-event-suggestion-description')
+  || !styleSource.includes('.private-event-suggestion-card')
+  || !styleSource.includes('margin: 0 16px 10px')
+  || !styleSource.includes('border-radius: 12px')
+  || !styleSource.includes('.private-event-suggestion-label')
+  || !styleSource.includes('.private-event-suggestion-description')
+) {
+  throw new Error('Private chat event suggestions should render as a compact island-event draft bar attached to the composer.');
+}
+if (
+  !memorySummaryCardBlock.includes('memory-summary-more-actions')
+  || !memorySummaryCardBlock.includes('summary class="secondary small-button"')
+  || !memorySummaryCardBlock.includes('>更多</summary>')
+  || memorySummaryCardBlock.includes('data-confirm-memory-summary') && !memorySummaryCardBlock.includes('extraActions')
+  || !styleSource.includes('.memory-summary-card-actions')
+  || !styleSource.includes('.memory-summary-more-actions')
+  || !styleSource.includes('.memory-summary-more-actions[open] summary')
+) {
+  throw new Error('Memory summary cards should show at most two top-level actions and collapse extra buttons behind an expandable More control.');
+}
+if (
+  !uiSource.includes('let memorySummaryDrawerExpanded = false')
+  || !uiSource.includes('data-toggle-memory-summary-drawer')
+  || !uiSource.includes('rebuildPrivateChatAutoMemoryForCharacter(character.id)')
+  || !uiSource.includes('memorySummaryDrawerExpanded ?')
+  || !uiSource.includes('memory-summary-drawer is-expanded')
+  || !uiSource.includes('memory-summary-drawer-body')
+  || !styleSource.includes('.memory-summary-drawer:not(.is-expanded) .memory-summary-drawer-body')
+  || !styleSource.includes('display: none;')
+) {
+  throw new Error('Memory drawer should be collapsed by default and expand only when the drawer toggle is pressed.');
+}
+const worldWorkbenchInsightTabsIndex = worldWorkbenchBlock.indexOf('${renderWorldInsightTabs()}');
+const worldWorkbenchScrollIndex = worldWorkbenchBlock.indexOf('<section class="world-workbench-scroll">');
+const worldWorkbenchColumnIndex = worldWorkbenchBlock.indexOf('<div class="world-workbench-column">');
+if (
+  worldWorkbenchBlock.includes('renderWorldContinuePanel')
+  || worldWorkbenchBlock.includes('renderWorldChapterPanel')
+  || worldWorkbenchBlock.includes('renderMemoryInboxPanel')
+  || worldWorkbenchBlock.includes('renderRelationshipMapPanel')
+  || worldEventLobbyBlock.includes('renderWorldContinuePanel')
+) {
+  throw new Error('World workbench page should keep the original session-start layout and not render the later dashboard panels on the main page.');
+}
+if (
+  !uiSource.includes("type WorldInsightTab = 'events' | 'relationships' | 'timeline'")
+  || !uiSource.includes("let worldInsightTab: WorldInsightTab = 'events'")
+  || !worldWorkbenchBlock.includes('renderWorldInsightTabs')
+  || worldWorkbenchInsightTabsIndex < 0
+  || worldWorkbenchScrollIndex < 0
+  || worldWorkbenchInsightTabsIndex > worldWorkbenchScrollIndex
+  || worldWorkbenchBlock.slice(worldWorkbenchColumnIndex, worldWorkbenchScrollIndex + 240).includes('${renderWorldInsightTabs()}')
+  || !worldWorkbenchBlock.includes('renderWorldRelationshipInsight')
+  || !worldWorkbenchBlock.includes('renderWorldTimelineInsight')
+  || !uiSource.includes('function renderRelationshipOverviewList')
+  || !uiSource.includes('data-world-insight-tab')
+  || !uiSource.includes('data-world-relationship-character')
+  || !uiSource.includes('data-world-relationship-line')
+  || !uiSource.includes('data-world-timeline-type')
+  || !uiSource.includes('worldTimelineTypeFilter')
+  || uiSource.includes('relationship-network-edge-label')
+  || !styleSource.includes('.world-insight-tabs')
+  || !styleSource.includes('.relationship-network-panel')
+  || !styleSource.includes('.relationship-network-svg')
+  || !styleSource.includes('.relationship-inspector')
+  || !styleSource.includes('.relationship-overview-list')
+  || !styleSource.includes('.relationship-overview-row')
+  || !styleSource.includes('.relationship-stage-chip')
+  || styleSource.includes('.relationship-network-edge-label')
+  || !styleSource.includes('.world-topbar-tabs')
+  || !styleSource.includes('.timeline-track-list')
+  || !styleSource.includes('.timeline-track-day')
+  || !styleSource.includes('.timeline-type-filter')
+  || coreTypesSource.includes('worldInsightTab')
+  || coreTypesSource.includes('worldTimelineTypeFilter')
+) {
+  throw new Error('World insight should add non-persisted relationship and timeline visualization tabs with editable relationship and filter controls.');
+}
+const timelineCardActionsBlock = styleSource.match(/\.timeline-card-actions\s*\{[\s\S]*?\}/)?.[0] ?? '';
+if (
+  !timelineCardActionsBlock.includes('gap: 10px')
+  || !timelineCardActionsBlock.includes('flex-wrap: wrap')
+  || !timelineCardActionsBlock.includes('padding-top: 12px')
+) {
+  throw new Error('Timeline card action buttons should keep clear spacing and wrap safely on narrow cards.');
+}
+const momentHeaderBlock = styleSource.match(/\.moment-header\s*\{\s*display: grid;[\s\S]*?\}/)?.[0] ?? '';
+const momentHeaderActionsMobileBlock = styleSource.match(/\.moment-header-actions\s*\{\s*width:[\s\S]*?\}/)?.[0] ?? '';
+if (
+  !momentHeaderBlock.includes('grid-template-columns: minmax(0, 1fr) auto')
+  || !momentHeaderBlock.includes('align-items: start')
+  || !styleSource.includes('.moment-header > div')
+  || !styleSource.includes('min-width: 0;')
+  || !styleSource.includes('.moment-header strong')
+  || !styleSource.includes('overflow-wrap: anywhere;')
+  || momentHeaderActionsMobileBlock.includes('width: 100%')
+) {
+  throw new Error('Moment card headers should keep author/meta text horizontal and prevent mobile actions from squeezing the content column.');
+}
+const relationshipNodeVisualBlock = styleSource.match(/\.relationship-network-node\s*\{\s*z-index:[\s\S]*?\.relationship-network-node\.is-highlighted/)?.[0] ?? '';
+const relationshipAvatarVisualBlock = styleSource.match(/\.relationship-network-avatar\s*\{[\s\S]*?\}/)?.[0] ?? '';
+const relationshipMobileNodeBlock = styleSource.match(/\.relationship-network-node\s*\{\s*--relationship-network-avatar-size: 38px;[\s\S]*?\}/)?.[0] ?? '';
+const relationshipInsightLayoutBlock = styleSource.match(/\.world-relationship-insight\s*\{[\s\S]*?\}/)?.[0] ?? '';
+const relationshipCanvasBlock = styleSource.match(/\.relationship-network-canvas\s*\{[\s\S]*?\}/)?.[0] ?? '';
+if (
+  !uiSource.includes('function relationshipInsightVisibleRelationships')
+  || !uiSource.includes('function relationshipInsightVisibleCharacterIds')
+  || !uiSource.includes('data-world-relationship-canvas')
+  || !relationshipInsightLayoutBlock.includes('grid-template-columns: minmax(460px, 1fr) minmax(320px, 380px)')
+  || !relationshipInsightLayoutBlock.includes('max-width: 940px')
+  || !relationshipCanvasBlock.includes('min-height: clamp(320px, 42vw, 460px)')
+  || !relationshipCanvasBlock.includes('aspect-ratio: 1.35')
+  || !styleSource.includes('.relationship-network-node.is-hidden')
+  || !styleSource.includes('.relationship-network-line.is-hidden')
+  || !styleSource.includes('--relationship-network-avatar-size: 44px')
+  || !styleSource.includes('--relationship-network-avatar-size: 38px')
+  || !styleSource.includes('transform: translate(-50%, -50%);')
+  || !styleSource.includes('width: var(--relationship-network-avatar-size);')
+  || !styleSource.includes('height: var(--relationship-network-avatar-size);')
+  || !styleSource.includes('min-width: var(--relationship-network-avatar-size);')
+  || !styleSource.includes('.relationship-network-node:active')
+  || !styleSource.includes('top: calc(var(--relationship-network-avatar-size) + 6px);')
+  || relationshipMobileNodeBlock.includes('width: 58px')
+  || relationshipMobileNodeBlock.includes('min-height: 62px')
+  || !uiSource.includes('return (1.0 + weight * 0.16).toFixed(1);')
+  || styleSource.includes('.relationship-network-node:hover .relationship-network-avatar {\n  transform:')
+  || relationshipAvatarVisualBlock.includes('transform')
+  || relationshipNodeVisualBlock.includes('background:')
+  || relationshipNodeVisualBlock.includes('border:')
+  || relationshipNodeVisualBlock.includes('box-shadow:')
+) {
+  throw new Error('Relationship network should keep a stable two-column desktop layout while rendering frameless, fixed-center avatars.');
+}
+const relationshipMobileLayoutBlock = styleSource.match(/@media \(max-width: 780px\)\s*\{[\s\S]*?\.relationship-inspector\s*\{[\s\S]*?\}/)?.[0] ?? '';
+if (
+  !relationshipMobileLayoutBlock.includes('grid-template-columns: minmax(0, 1fr)')
+  || !relationshipMobileLayoutBlock.includes('max-width: min(100%, 560px)')
+) {
+  throw new Error('Relationship insight should collapse into a single centered column on mobile and narrow desktop widths.');
+}
+const coarseTouchBlock = styleSource.match(/@media \(max-width: 560px\), \(hover: none\), \(pointer: coarse\)\s*\{[\s\S]*?\}/)?.[0] ?? '';
+if (
+  !coarseTouchBlock.includes('.moment-delete')
+  || !coarseTouchBlock.includes('.small-button')
+  || !coarseTouchBlock.includes('.world-insight-tabs button')
+  || !coarseTouchBlock.includes('min-height: 44px')
+) {
+  throw new Error('Coarse pointer controls should include dynamic cards, small buttons, and insight tabs in the 44px touch-target guard.');
 }
 if (
   !worldDialogueBody.includes("plainTextMode: 'narration'")

@@ -5,15 +5,20 @@
 import type {
   ChatReplyMode,
   ChatMessage,
+  CharacterDirectMessage,
+  CharacterDirectThread,
+  CharacterRelationshipRecord,
   CharacterProfile,
   CompanionTimeMode,
   GroupChatMessage,
   GroupChatProfile,
   ModelMessage,
   ModelProvider,
+  MemorySummary,
   MomentEntry,
   MomentVisibilityMode,
   NotificationPrivacy,
+  PrivateChatEventSuggestion,
   PromptPreset,
   CharacterRelationshipSide,
   RelationshipStage,
@@ -32,7 +37,12 @@ import {
   renderAuthoringScreen,
   renderDraftManager,
 } from './authoring-ui';
-import { exportBackup, restoreBackupText } from '../data/backup';
+import {
+  exportBackup,
+  formatBackupRestoreWarning,
+  previewBackupRestoreText,
+  restoreBackupText,
+} from '../data/backup';
 import {
   backgroundInteractionStats,
   refreshCharacterCurrentPlan,
@@ -82,6 +92,7 @@ import {
   messageVariantInfo,
   recallMessage,
   regenerateAssistantMessage,
+  rebuildPrivateChatAutoMemoryForCharacter,
   resetReplyState,
   sendMessage,
   sendUserMessageOnly,
@@ -93,8 +104,20 @@ import {
   type PrivateChatSpeaker,
 } from '../chat/private-chat';
 import {
+  appendCharacterDirectMessage,
+  characterDirectMessagesFor,
+  characterDirectThreadIdFor,
+  characterDirectThreadsForActor,
+  detectCharacterDirectMessageEventSuggestion,
+  ensureCharacterDirectThread,
+  generateCharacterDirectReply,
+  markCharacterDirectThreadRead,
+} from '../chat/character-direct-chat';
+import {
   createWorldEvent,
+  createWorldEventFromPrivateChatSuggestion,
   deleteWorldEvent,
+  dismissPrivateChatEventSuggestion,
   eventTypeLabel,
   eventsForActiveWorld,
   finishWorldEventManually,
@@ -103,6 +126,8 @@ import {
   appendWorldEventRpMessage,
   editWorldEventRpMessage,
   ensureWorldRpEvent,
+  markPrivateChatEventSuggestionAccepted,
+  pendingPrivateChatEventSuggestionsForThread,
   resolveWorldEvent,
   resolveWorldEventChoice,
   worldEventRpMessages,
@@ -125,7 +150,6 @@ import {
 import {
   recordImpact,
   recordTimelineEntryImpact,
-  recordsForOperation,
   relationshipSnapshot,
   rollbackStateForTimelineEntry,
   rollbackTimelineEntryImpact,
@@ -158,29 +182,28 @@ import {
   todayBriefForActiveWorld,
 } from '../memory/daily-brief';
 import {
+  confirmMemorySummary,
+  contextMemorySummariesFor,
+  discardMemorySummary,
+  memorySummariesForWorld,
+  pauseMemorySummary,
+  refreshMacroSummaryForWorld,
+  refreshMiddleSummaryForCharacter,
+  refreshMicroSummaryForCharacter,
+  resumeMemorySummary,
+  summaryLayerLabel,
+  updateMemorySummary,
+} from '../memory/summaries';
+import {
   addTimelineEntry,
   addChatMessageTimelineEntry,
   addManualTimelineNote,
   addRelationshipTimelineEntry,
+  filterTimelineEntries,
   timelineForActiveWorld,
 } from '../memory/timeline';
-import {
-  acceptMemorySuggestion,
-  dismissMemorySuggestion,
-  generateMemorySuggestions,
-  pendingMemorySuggestionsForActiveWorld,
-} from '../memory/suggestions';
 import { notificationSupportText, requestNotificationPermission, sendLocalNotification } from '../platform/notifications';
 import { backgroundRuntimeStatusText } from '../platform/runtime';
-import {
-  activeWorldChapter,
-  createWorldChapter,
-  createWorldScene,
-  endWorldChapter,
-  endWorldScene,
-  setActiveWorldChapter,
-  setActiveWorldScene,
-} from '../world/chapters';
 import {
   applyResetDecision,
   disableAutoMessage,
@@ -290,10 +313,6 @@ import {
   renderAppDialog,
 } from './app-dialogs';
 import {
-  renderMemoryInboxPanel,
-  renderRelationshipMapPanel,
-  renderWorldChapterPanel,
-  renderWorldContinuePanel,
   renderWorldDrawerTimeline,
   type WorldWorkbenchPanelContext,
 } from './world-workbench-panels';
@@ -309,7 +328,10 @@ type MobileSection = 'messages' | 'contacts' | 'groups' | 'world' | 'moments' | 
 type MobileHistoryLayer = 'section' | 'chat' | 'settings-detail' | 'modal';
 type StickerLibraryScope = 'character' | 'common' | 'user';
 type CharacterPanelPage = 'worldbook' | 'worldbook-editor' | 'status';
+type CardImportFollowupAction = 'profile' | 'opening' | 'worldbook';
 type GroupSettingsMode = 'create' | 'edit';
+type WorldInsightTab = 'events' | 'relationships' | 'timeline';
+type WorldTimelineTypeFilter = TimelineEntry['type'] | 'all';
 type PendingStickerImport = {
   scope: StickerLibraryScope;
   characterId?: string;
@@ -319,9 +341,11 @@ type EventComposerDraft = {
   mode: 'auto' | 'manual';
   title: string;
   description: string;
+  eventType?: WorldEvent['type'];
   participantIds: string[];
   leadActor?: WorldEventLeadActor;
   affinityDelta: string;
+  privateEventSuggestionId?: string;
 };
 type UiScrollSnapshot = {
   key: string;
@@ -362,6 +386,12 @@ type UiSessionSnapshot = {
   worldRpRenderMode?: 'narration' | 'bubble';
   worldRpReplyMode?: ChatReplyMode;
   worldRpActorId?: string;
+  worldInsightTab?: WorldInsightTab;
+  worldTimelineTypeFilter?: WorldTimelineTypeFilter;
+  worldTimelineSearchQuery?: string;
+  worldTimelineCharacterFilter?: string;
+  worldInsightRelationshipFirstId?: string;
+  worldInsightRelationshipSecondId?: string;
   privateChatSpeakerId?: string;
   eventComposerOpen?: boolean;
   eventComposerDraft?: EventComposerDraft;
@@ -375,6 +405,34 @@ type UiSessionSnapshot = {
 const CARD_IMPORT_ACCEPT = '.json,.png,application/json,image/png,application/octet-stream,*/*';
 const UI_SESSION_KEY = 'tavern-social-ui-session-v1';
 const UI_SESSION_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
+const WORLD_INSIGHT_TABS: Array<{ value: WorldInsightTab; label: string }> = [
+  { value: 'events', label: '小事件' },
+  { value: 'relationships', label: '关系' },
+  { value: 'timeline', label: '时间线' },
+];
+const WORLD_TIMELINE_FILTERS: Array<{ value: WorldTimelineTypeFilter; label: string }> = [
+  { value: 'all', label: '全部' },
+  { value: 'event', label: timelineTypeLabel('event') },
+  { value: 'relationship', label: timelineTypeLabel('relationship') },
+  { value: 'chat', label: timelineTypeLabel('chat') },
+  { value: 'group_chat', label: timelineTypeLabel('group_chat') },
+  { value: 'moment', label: timelineTypeLabel('moment') },
+  { value: 'comment', label: timelineTypeLabel('comment') },
+  { value: 'auto_message', label: timelineTypeLabel('auto_message') },
+  { value: 'daily_brief', label: timelineTypeLabel('daily_brief') },
+  { value: 'character_status', label: timelineTypeLabel('character_status') },
+  { value: 'character_interaction', label: timelineTypeLabel('character_interaction') },
+  { value: 'manual_note', label: timelineTypeLabel('manual_note') },
+  { value: 'system', label: timelineTypeLabel('system') },
+];
+
+function isWorldInsightTab(value: unknown): value is WorldInsightTab {
+  return value === 'events' || value === 'relationships' || value === 'timeline';
+}
+
+function isWorldTimelineTypeFilter(value: unknown): value is WorldTimelineTypeFilter {
+  return typeof value === 'string' && WORLD_TIMELINE_FILTERS.some(filter => filter.value === value);
+}
 
 let globalStatusText = '';
 let globalStatusHideTimer: number | undefined;
@@ -414,6 +472,11 @@ let momentVisibilityPickerOpenFor: 'specific' | 'blocked' | null = null;
 const momentVisibilityCharacterIds = new Set<string>();
 const momentVisibilityBlockedIds = new Set<string>();
 let timelineNoteDraft = '';
+let worldInsightTab: WorldInsightTab = 'events';
+let memorySummaryDrawerExpanded = false;
+let worldTimelineTypeFilter: WorldTimelineTypeFilter = 'all';
+let worldTimelineSearchQuery = '';
+let worldTimelineCharacterFilter = 'all';
 let worldRpInputDraft = '';
 let activeWorldRpEventId = '';
 let worldRpRenderMode: 'narration' | 'bubble' = 'narration';
@@ -463,6 +526,7 @@ let serviceRestartLoading = false;
 let worldLocationSearchWorldId = '';
 let worldLocationCandidates: WorldWeatherLocation[] = [];
 let pendingCardRecognition: ParsedCharacterCardFile | null = null;
+let pendingCardImportFollowup: CardImportFollowupAction | null = null;
 let pendingStickerImport: PendingStickerImport | null = null;
 let modelFormDraft: {
   provider: ModelProvider;
@@ -488,7 +552,7 @@ let modelOnboardingDraft = {
   apiKey: state.modelConfig.apiKey,
   model: state.modelConfig.model,
 };
-const compactMedia = window.matchMedia('(max-width: 980px)');
+const compactMedia = window.matchMedia('(max-width: 980px), (max-height: 560px) and (orientation: landscape)');
 let mediaListenerInstalled = false;
 let mobileHistoryInstalled = false;
 let mobileNativeBackInstalled = false;
@@ -538,9 +602,13 @@ function normalizeEventDraft(value: unknown): EventComposerDraft {
     mode: draft.mode === 'manual' ? 'manual' : 'auto',
     title: typeof draft.title === 'string' ? draft.title : '',
     description: typeof draft.description === 'string' ? draft.description : '',
+    eventType: draft.eventType === 'relationship' || draft.eventType === 'problem' || draft.eventType === 'news'
+      ? draft.eventType
+      : draft.eventType === 'daily' ? 'daily' : undefined,
     participantIds,
     leadActor: isWorldEventLeadActor(draft.leadActor) ? draft.leadActor : undefined,
     affinityDelta: typeof draft.affinityDelta === 'string' ? draft.affinityDelta : '0',
+    privateEventSuggestionId: typeof draft.privateEventSuggestionId === 'string' ? draft.privateEventSuggestionId : undefined,
   };
 }
 
@@ -690,6 +758,12 @@ function captureUiSessionSnapshot({ captureDom = true } = {}): UiSessionSnapshot
     worldRpRenderMode,
     worldRpReplyMode,
     worldRpActorId,
+    worldInsightTab,
+    worldTimelineTypeFilter,
+    worldTimelineSearchQuery,
+    worldTimelineCharacterFilter,
+    worldInsightRelationshipFirstId: relationshipPairACharacterId,
+    worldInsightRelationshipSecondId: relationshipPairBCharacterId,
     eventComposerOpen,
     eventComposerDraft,
     messageDrafts: Object.fromEntries(messageDrafts),
@@ -769,6 +843,16 @@ function installUiSessionPersistence(): void {
   window.addEventListener('focus', recoverRuntimeAfterForeground);
 }
 
+function isSessionScrollSnapshotRestorable(snapshot: UiScrollSnapshot | undefined | null): snapshot is UiScrollSnapshot {
+  if (!snapshot || typeof snapshot.key !== 'string') return false;
+  return snapshot.key !== 'messages' && !snapshot.key.startsWith('groups:');
+}
+
+function requestConversationOpenAtBottom(): void {
+  pendingScrollRestore = null;
+  requestChatStickToBottom();
+}
+
 function restoreUiSessionSnapshot(): void {
   try {
     const raw = localStorage.getItem(UI_SESSION_KEY);
@@ -825,6 +909,36 @@ function restoreUiSessionSnapshot(): void {
       )
       ? parsed.worldRpActorId
       : 'user';
+    worldInsightTab = isWorldInsightTab(parsed.worldInsightTab) ? parsed.worldInsightTab : 'events';
+    worldTimelineTypeFilter = isWorldTimelineTypeFilter(parsed.worldTimelineTypeFilter)
+      ? parsed.worldTimelineTypeFilter
+      : 'all';
+    worldTimelineSearchQuery = typeof parsed.worldTimelineSearchQuery === 'string'
+      ? parsed.worldTimelineSearchQuery
+      : '';
+    worldTimelineCharacterFilter = typeof parsed.worldTimelineCharacterFilter === 'string'
+      && (
+        parsed.worldTimelineCharacterFilter === 'all'
+        || state.characters.some(character =>
+          character.id === parsed.worldTimelineCharacterFilter && character.worldId === activeWorld().id,
+        )
+      )
+      ? parsed.worldTimelineCharacterFilter
+      : 'all';
+    const currentWorldCharacterIds = new Set(
+      state.characters
+        .filter(character => character.worldId === activeWorld().id)
+        .map(character => character.id),
+    );
+    relationshipPairACharacterId = typeof parsed.worldInsightRelationshipFirstId === 'string'
+      && currentWorldCharacterIds.has(parsed.worldInsightRelationshipFirstId)
+      ? parsed.worldInsightRelationshipFirstId
+      : '';
+    relationshipPairBCharacterId = typeof parsed.worldInsightRelationshipSecondId === 'string'
+      && currentWorldCharacterIds.has(parsed.worldInsightRelationshipSecondId)
+      && parsed.worldInsightRelationshipSecondId !== relationshipPairACharacterId
+      ? parsed.worldInsightRelationshipSecondId
+      : '';
     if (
       typeof parsed.privateChatSpeakerId === 'string'
       && (
@@ -847,9 +961,10 @@ function restoreUiSessionSnapshot(): void {
     Object.entries(nonEmptyStringMap(parsed.momentCommentReplyTargetDrafts)).forEach(([key, value]) => {
       if (value) momentCommentReplyTargetDrafts.set(key, value);
     });
-    pendingScrollRestore = parsed.scroll && typeof parsed.scroll.key === 'string'
-      ? parsed.scroll
-      : null;
+    pendingScrollRestore = isSessionScrollSnapshotRestorable(parsed.scroll) ? parsed.scroll : null;
+    if (parsed.scroll && typeof parsed.scroll.key === 'string' && !isSessionScrollSnapshotRestorable(parsed.scroll)) {
+      requestChatStickToBottom();
+    }
     if (!activeCharacter()) mobileChatOpen = false;
     if (!activeGroupChat()) mobileGroupChatOpen = false;
   } catch {
@@ -1209,31 +1324,6 @@ function clearMomentDeleteUndo(): void {
     window.clearTimeout(lastDeletedMomentUndoTimer);
     lastDeletedMomentUndoTimer = undefined;
   }
-}
-
-function generateMemorySuggestionsAfterAction(input: {
-  trigger: 'event_resolved' | 'manual_note' | 'chat_message' | 'manual_tidy';
-  source: TimelineEntry['source'];
-  title: string;
-  summary: string;
-  characterIds?: string[];
-}): void {
-  if (!modelIsReady()) {
-    setStatusText('内容已保存；配置模型后可以生成待确认记忆。');
-    return;
-  }
-  void generateMemorySuggestions(input)
-    .then(created => {
-      if (created.length > 0) {
-        setStatusText(`已生成 ${created.length} 条待确认记忆。`);
-        renderWhenChatInputIdle();
-      }
-    })
-    .catch(error => {
-      const message = error instanceof Error ? error.message : String(error);
-      setStatusText(`记忆建议暂时不可用：${compactText(message, 80)}`);
-      renderWhenChatInputIdle();
-    });
 }
 
 function checked(selector: string): boolean {
@@ -1601,6 +1691,50 @@ function activePrivateChatTarget(): CharacterProfile | undefined {
   return character && privateChatIdentityCharacter()?.id !== character.id ? character : undefined;
 }
 
+function characterDirectThreadForTarget(
+  character?: CharacterProfile,
+  create = false,
+): CharacterDirectThread | undefined {
+  const speaker = privateChatIdentityCharacter();
+  if (!speaker || !character || speaker.id === character.id || speaker.worldId !== character.worldId) return undefined;
+  if (create) return ensureCharacterDirectThread(character.worldId, speaker.id, character.id);
+  const threadId = characterDirectThreadIdFor(character.worldId, speaker.id, character.id);
+  return state.characterDirectThreads.find(thread => thread.id === threadId);
+}
+
+function isCharacterDirectChat(character?: CharacterProfile): boolean {
+  const speaker = privateChatIdentityCharacter();
+  return Boolean(speaker && character && speaker.id !== character.id && speaker.worldId === character.worldId);
+}
+
+function characterDirectPeerThread(
+  actor: CharacterProfile,
+  peer: CharacterProfile,
+  threads: CharacterDirectThread[] = characterDirectThreadsForActor(actor.id, actor.worldId),
+): CharacterDirectThread | undefined {
+  return threads.find(thread => thread.participantCharacterIds.includes(peer.id));
+}
+
+function characterDirectLatestMessageFor(character: CharacterProfile): CharacterDirectMessage | undefined {
+  const thread = characterDirectThreadForTarget(character);
+  return thread ? characterDirectMessagesFor(thread.id).at(-1) : undefined;
+}
+
+function characterDirectUnreadCount(thread: CharacterDirectThread | undefined, actorCharacterId: string): number {
+  if (!thread) return 0;
+  const lastReadAt = thread.lastReadByCharacterId[actorCharacterId] ?? 0;
+  return state.characterDirectMessages.filter(message =>
+    message.threadId === thread.id
+    && !message.recalledAt
+    && message.speakerCharacterId !== actorCharacterId
+    && message.createdAt > lastReadAt,
+  ).length;
+}
+
+function characterDirectSpeakerName(message: CharacterDirectMessage): string {
+  return state.characters.find(character => character.id === message.speakerCharacterId)?.name ?? '已删除角色';
+}
+
 function privateChatContactCharacters(mode: 'contacts' | 'recent' = 'contacts'): CharacterProfile[] {
   const speaker = privateChatIdentityCharacter();
   // 大注释：通讯录世界内共享，但当前通讯身份本人没有自己的私聊窗口；A 视角只能看到 B/C 等联系人和群聊。
@@ -1723,15 +1857,19 @@ function lastMessageFor(character: CharacterProfile) {
   );
 }
 
+function contactActivityTimeFor(character: CharacterProfile): number {
+  if (isCharacterDirectChat(character)) {
+    const latest = characterDirectLatestMessageFor(character);
+    return latest?.createdAt ?? characterDirectThreadForTarget(character)?.updatedAt ?? character.importedAt;
+  }
+  return lastMessageFor(character)?.createdAt
+    ?? conversationFor(character.id, privateConversationActorId(character))?.updatedAt
+    ?? character.importedAt;
+}
+
 function recentCharacters(): CharacterProfile[] {
   return currentWorldCharacters().sort((left, right) => {
-    const leftTime = lastMessageFor(left)?.createdAt
-      ?? conversationFor(left.id, privateConversationActorId(left))?.updatedAt
-      ?? left.importedAt;
-    const rightTime = lastMessageFor(right)?.createdAt
-      ?? conversationFor(right.id, privateConversationActorId(right))?.updatedAt
-      ?? right.importedAt;
-    return rightTime - leftTime;
+    return contactActivityTimeFor(right) - contactActivityTimeFor(left);
   });
 }
 
@@ -1905,13 +2043,25 @@ function renderContacts(mode: 'contacts' | 'recent' = 'contacts'): string {
   if (characters.length === 0) {
     return `<div class="list-empty">${contactQuery ? '没有找到匹配的角色。' : '还没有角色。导入一张角色卡，开始第一段对话。'}</div>`;
   }
+  const speaker = privateChatIdentityCharacter();
+  const directThreads = speaker ? characterDirectThreadsForActor(speaker.id, activeWorld().id) : [];
   return characters.map(character => {
+    const directThread = speaker ? characterDirectPeerThread(speaker, character, directThreads) : undefined;
+    const directLatest = directThread ? characterDirectMessagesFor(directThread.id).at(-1) : undefined;
     const latest = lastMessageFor(character);
-    const unread = unreadCountFor(character.id, privateConversationActorId(character));
+    const unread = speaker
+      ? characterDirectUnreadCount(directThread, speaker.id)
+      : unreadCountFor(character.id, privateConversationActorId(character));
     const statusLine = characterStatusLine(character);
-    const subtitle = mode === 'recent'
+    let subtitle = mode === 'recent'
       ? statusLine || (latest?.stickerId ? '[表情包]' : compactText(latest?.content, 48)) || '打开对话，和角色聊聊'
       : statusLine || compactText(characterSettingsText(character), 48) || '已导入角色卡';
+    if (speaker) {
+      subtitle = directLatest
+        ? `${characterDirectSpeakerName(directLatest)}: ${compactText(directLatest.content, 48)}`
+        : statusLine || `以 ${speaker.name} 身份打开私聊`;
+    }
+    const activityAt = directLatest?.createdAt ?? directThread?.updatedAt ?? latest?.createdAt;
     return `
     <button class="contact conversation-row ${character.id === activeCharacter()?.id ? 'is-active' : ''}" data-character-id="${escapeHtml(character.id)}">
       <span class="avatar"${avatarToneAttribute(character)}>${renderAvatar(character)}</span>
@@ -1920,7 +2070,7 @@ function renderContacts(mode: 'contacts' | 'recent' = 'contacts'): string {
         <span class="contact-subtitle">${escapeHtml(subtitle)}</span>
       </span>
       <span class="conversation-meta">
-        <time>${formatConversationTime(latest?.createdAt)}</time>
+        <time>${formatConversationTime(activityAt)}</time>
         ${unread > 0 ? `<span class="unread-badge" aria-label="${unread} 条未读">${unread > 99 ? '99+' : unread}</span>` : ''}
       </span>
     </button>
@@ -2083,11 +2233,19 @@ function openPrivateChatByCharacterId(characterId: string, options: { pushHistor
   captureVisibleDraftsFromDom();
   state.activeCharacterId = character.id;
   setActiveView('chat');
-  markConversationRead(character.id, Date.now(), privateConversationActorId(character));
+  const directSpeaker = privateChatIdentityCharacter();
+  if (directSpeaker) {
+    const thread = ensureCharacterDirectThread(character.worldId, directSpeaker.id, character.id);
+    const latest = characterDirectMessagesFor(thread.id).at(-1);
+    markCharacterDirectThreadRead(thread.id, directSpeaker.id, latest?.createdAt ?? Date.now());
+  } else {
+    markConversationRead(character.id, Date.now(), privateConversationActorId(character));
+  }
   characterPanelOpen = false;
   stickerPickerOpen = false;
   quotedMessageId = '';
   messageActionId = '';
+  requestConversationOpenAtBottom();
   if (compactMedia.matches) {
     mobileChatOpen = true;
     mobileGroupChatOpen = false;
@@ -2096,7 +2254,7 @@ function openPrivateChatByCharacterId(characterId: string, options: { pushHistor
   }
   saveState();
   renderWithUiTransition('detail-in');
-  void generateOpeningMessage(character, render, privateConversationActorId(character));
+  if (!directSpeaker) void generateOpeningMessage(character, render, privateConversationActorId(character));
 }
 
 function renderChatStatusShelf(character?: CharacterProfile): string {
@@ -2146,7 +2304,7 @@ function renderContextPreviewPanel(character?: CharacterProfile): string {
   const contextEntries = timelineForActiveWorld()
     .filter(entry => !entry.revokedAt && entry.includeInContext)
     .slice(0, 6);
-  const pendingMemories = pendingMemorySuggestionsForActiveWorld().slice(0, 4);
+  const contextSummaries = contextMemorySummariesFor(character);
   return `
     <aside class="context-preview-panel" role="dialog" aria-label="上下文预览">
       <header>
@@ -2165,18 +2323,105 @@ function renderContextPreviewPanel(character?: CharacterProfile): string {
       <section>
         <h3>会进入上下文的世界记录</h3>
         ${contextEntries.length > 0
-          ? contextEntries.map(entry => `<p><b>${escapeHtml(entry.title)}</b>${escapeHtml(compactText(entry.summary, 120))}</p>`).join('')
+          ? `<div class="context-preview-list">${contextEntries.map(entry => `
+            <div class="context-preview-row">
+              <span>
+                <strong>${escapeHtml(entry.title)}</strong>
+                <small>${escapeHtml(compactText(entry.summary, 120))}</small>
+              </span>
+              <button class="secondary small-button" type="button" data-context-preview-remove-timeline="${escapeHtml(entry.id)}">从上下文移除</button>
+            </div>
+          `).join('')}</div>`
           : '<p class="muted">暂无启用的世界记录。</p>'}
       </section>
       <section>
-        <h3>关系与记忆</h3>
+        <h3>会进入上下文的三层总结</h3>
+        ${contextSummaries.length > 0
+          ? `<div class="context-preview-list">${contextSummaries.map(summary => `
+            <div class="context-preview-row">
+              <span>
+                <strong>${escapeHtml(summaryLayerLabel(summary.layer))}｜${escapeHtml(summary.title)}</strong>
+                <small>${escapeHtml(compactText(summary.factSummary, 120))}</small>
+              </span>
+              <button class="secondary small-button" type="button" data-context-preview-remove-summary="${escapeHtml(summary.id)}">从上下文移除</button>
+            </div>
+          `).join('')}</div>`
+          : '<p class="muted">暂无启用的三层总结。</p>'}
+      </section>
+      <section>
+        <h3>关系</h3>
         <p><b>关系</b>${escapeHtml(relationshipLabel(character))}</p>
-        ${pendingMemories.length > 0
-          ? pendingMemories.map(memory => `<p><b>待确认</b>${escapeHtml(memory.title)}：${escapeHtml(compactText(memory.summary, 90))}</p>`).join('')
-          : '<p class="muted">暂无待确认记忆。</p>'}
       </section>
     </aside>
   `;
+}
+
+function activePrivateChatEventSuggestion(
+  character?: CharacterProfile,
+  directSpeaker?: CharacterProfile,
+): PrivateChatEventSuggestion | undefined {
+  if (!character) return undefined;
+  if (directSpeaker && directSpeaker.id !== character.id) {
+    return pendingPrivateChatEventSuggestionsForThread({
+      worldId: character.worldId,
+      sourceKind: 'character_direct',
+      threadId: characterDirectThreadIdFor(character.worldId, directSpeaker.id, character.id),
+    })[0];
+  }
+  const conversation = conversationFor(character.id, privateConversationActorId(character));
+  if (!conversation) return undefined;
+  return pendingPrivateChatEventSuggestionsForThread({
+    worldId: character.worldId,
+    sourceKind: 'private_chat',
+    threadId: conversation.id,
+  })[0];
+}
+
+function renderPrivateChatEventSuggestionCard(
+  character?: CharacterProfile,
+  directSpeaker?: CharacterProfile,
+): string {
+  const suggestion = activePrivateChatEventSuggestion(character, directSpeaker);
+  if (!suggestion) return '';
+  const participantNames = suggestion.participantCharacterIds
+    .map(id => state.characters.find(character => character.id === id)?.name)
+    .filter((name): name is string => Boolean(name))
+    .join('、');
+  return `
+    <section class="private-event-suggestion-card" aria-label="岛上事件草稿">
+      <div class="private-event-suggestion-copy">
+        <div class="private-event-suggestion-meta">
+          <span class="private-event-suggestion-label">${icon('events')}<span>岛上事件草稿</span></span>
+          ${participantNames ? `<small>${escapeHtml(participantNames)}</small>` : ''}
+        </div>
+        <strong>${escapeHtml(suggestion.title)}</strong>
+        <small class="private-event-suggestion-description">${escapeHtml(compactText(suggestion.description, 112))}</small>
+      </div>
+      <div class="private-event-suggestion-actions">
+        <button class="primary small-button" type="button" data-create-private-event-suggestion="${escapeHtml(suggestion.id)}">${icon('add')}<span>生成事件</span></button>
+        <button class="secondary small-button" type="button" data-edit-private-event-suggestion="${escapeHtml(suggestion.id)}">编辑</button>
+        <button class="secondary small-button" type="button" data-dismiss-private-event-suggestion="${escapeHtml(suggestion.id)}">忽略</button>
+      </div>
+    </section>
+  `;
+}
+
+function openEventComposerFromPrivateSuggestion(suggestion: PrivateChatEventSuggestion): void {
+  captureVisibleDraftsFromDom();
+  eventComposerDraft = {
+    mode: 'manual',
+    title: suggestion.title,
+    description: suggestion.description,
+    eventType: suggestion.eventType,
+    participantIds: suggestion.participantCharacterIds.filter(id => id !== suggestion.leadActor?.characterId),
+    leadActor: suggestion.leadActor,
+    affinityDelta: String(suggestion.affinityDelta),
+    privateEventSuggestionId: suggestion.id,
+  };
+  eventComposerOpen = true;
+  preserveScrollForNextRender();
+  saveUiSessionSnapshot();
+  renderWithUiTransition('overlay-in');
 }
 
 function privateChatSpeaker(): PrivateChatSpeaker {
@@ -2226,6 +2471,52 @@ function renderPrivateChatTargetSelector(): string {
   `;
 }
 
+function characterDirectSourceLabel(message: CharacterDirectMessage): string {
+  if (message.source === 'manual') return '手写身份';
+  if (message.source === 'auto_model') return '热闹世界';
+  return '生成回复';
+}
+
+function renderCharacterDirectMessages(character: CharacterProfile): string {
+  const speaker = privateChatIdentityCharacter();
+  const thread = speaker ? characterDirectThreadForTarget(character, true) : undefined;
+  if (!speaker || !thread) {
+    return '<div class="empty-chat"><strong>请选择通讯身份</strong><p>切换为某个角色后，可以查看 TA 与其他角色的私聊。</p></div>';
+  }
+  const messages = characterDirectMessagesFor(thread.id);
+  const latest = messages.at(-1);
+  if (latest) markCharacterDirectThreadRead(thread.id, speaker.id, latest.createdAt);
+  if (messages.length === 0) {
+    return `
+      <div class="empty-state compact-empty">
+        <span class="avatar hero-avatar"${avatarToneAttribute(character)}>${renderAvatar(character)}</span>
+        <h2>${escapeHtml(speaker.name)} 和 ${escapeHtml(character.name)} 的私聊</h2>
+        <p>还没有记录。你可以先用 ${escapeHtml(speaker.name)} 的身份说一句，或等“热闹世界”自然生成一段片段。</p>
+      </div>
+    `;
+  }
+  return messages.map((message, index) => {
+    const speakerCharacter = state.characters.find(item => item.id === message.speakerCharacterId);
+    const previous = messages[index - 1];
+    const showTime = !previous || message.createdAt - previous.createdAt >= 5 * 60 * 1000;
+    const authoredByCurrentIdentity = message.speakerCharacterId === speaker.id;
+    const rowRole = authoredByCurrentIdentity ? 'user' : 'assistant';
+    const avatar = speakerCharacter ? renderAvatar(speakerCharacter) : escapeHtml(characterDirectSpeakerName(message).slice(0, 1));
+    return `
+      ${showTime ? `<div class="message-time">${formatConversationTime(message.createdAt)}</div>` : ''}
+      <div class="message-row ${rowRole} is-character-direct">
+        ${authoredByCurrentIdentity
+          ? `<span class="message-avatar user-avatar" aria-hidden="true">${avatar}</span>`
+          : `<button class="message-avatar assistant-avatar message-profile-trigger" type="button" data-message-profile-character="${escapeHtml(message.speakerCharacterId)}" aria-label="查看 ${escapeHtml(characterDirectSpeakerName(message))} 的角色资料"${avatarToneAttribute(speakerCharacter)}>${avatar}</button>`}
+        <div class="message ${rowRole}" data-direct-message-id="${escapeHtml(message.id)}" tabindex="0">
+          <small class="message-speaker-label">${escapeHtml(characterDirectSpeakerName(message))} · ${characterDirectSourceLabel(message)}</small>
+          <span class="message-copy">${escapeHtml(message.content)}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
 function renderMessages(character?: CharacterProfile): string {
   if (!character) {
     return `
@@ -2240,6 +2531,7 @@ function renderMessages(character?: CharacterProfile): string {
       </div>
     `;
   }
+  if (isCharacterDirectChat(character)) return renderCharacterDirectMessages(character);
   const messages = messagesFor(character.id, privateConversationActorId(character));
   const introCard = renderCharacterIntroCard(character);
   if (messages.length === 0) {
@@ -2334,7 +2626,8 @@ function renderStickerPicker(character?: CharacterProfile): string {
         ? `<div class="sticker-picker-grid">${stickers.map(sticker => `
             <button type="button" data-send-sticker="${escapeHtml(sticker.id)}" title="${escapeHtml(sticker.name)}">
               <img src="${escapeHtml(sticker.dataUrl)}" alt="${escapeHtml(sticker.name)}" />
-            </button>
+              </button>
+            </div>
           `).join('')}</div>`
         : '<p class="muted">暂无</p>'}
     </section>`;
@@ -2400,6 +2693,19 @@ function renderCharacterHeader(character?: CharacterProfile, backButton = false)
       <div class="chat-identity">
         ${backButton ? '<button class="header-back" data-mobile-back aria-label="返回">‹</button>' : ''}
         <div><strong>选择一个角色</strong><span>独立私聊会话</span></div>
+      </div>
+    `;
+  }
+  const directSpeaker = privateChatIdentityCharacter();
+  if (directSpeaker && directSpeaker.id !== character.id) {
+    return `
+      <div class="chat-identity">
+        ${backButton ? '<button class="header-back" data-mobile-back aria-label="返回">‹</button>' : ''}
+        <button class="avatar header-avatar avatar-button" id="open-character-profile" type="button" aria-label="查看角色状态">${renderAvatar(character)}</button>
+        <div>
+          <strong>${escapeHtml(character.name)}</strong>
+          <span>${escapeHtml(`以 ${directSpeaker.name} 身份查看私聊`)}</span>
+        </div>
       </div>
     `;
   }
@@ -2935,8 +3241,16 @@ function renderChatPane(character?: CharacterProfile, mobile = false): string {
   if (character && privateChatIdentityCharacter()?.id === character.id) {
     character = undefined;
   }
-  const quoted = quotedMessageId ? state.messages.find(message => message.id === quotedMessageId && !message.recalledAt) : undefined;
+  const directSpeaker = character && isCharacterDirectChat(character) ? privateChatIdentityCharacter() : undefined;
+  const quoted = directSpeaker
+    ? undefined
+    : quotedMessageId ? state.messages.find(message => message.id === quotedMessageId && !message.recalledAt) : undefined;
   const manualReplyMode = state.chatReplyMode === 'manual';
+  const composerPlaceholder = character
+    ? directSpeaker
+      ? `以 ${directSpeaker.name} 身份发给 ${character.name}...`
+      : `发消息给 ${character.name}…`
+    : '请先导入角色卡';
   return `
     <main class="chat ${character ? 'has-status-shelf' : ''} ${mobile ? 'mobile-chat-detail' : ''}" style="${chatSurfaceStyle(state.chatFontScale, privateChatBackgroundImage(character))}">
       <header class="chat-header">
@@ -2948,7 +3262,8 @@ function renderChatPane(character?: CharacterProfile, mobile = false): string {
       ${renderContextPreviewPanel(character)}
       <section class="messages">${renderMessages(character)}</section>
       <div class="chat-composer-area">
-        ${renderStickerPicker(character)}
+        ${renderPrivateChatEventSuggestionCard(character, directSpeaker)}
+        ${renderStickerPicker(directSpeaker ? undefined : character)}
         ${quoted ? `
           <div class="composer-quote">
             <div><strong>引用消息</strong><span>${escapeHtml(compactText(quoted.content, 120))}</span></div>
@@ -2956,8 +3271,8 @@ function renderChatPane(character?: CharacterProfile, mobile = false): string {
           </div>
         ` : ''}
         <form class="composer ${manualReplyMode ? 'manual-reply-mode' : ''}" id="composer">
-          <button class="sticker-trigger ${stickerPickerOpen ? 'is-active' : ''}" id="toggle-stickers" type="button" aria-label="表情包">${icon('sticker')}</button>
-          <textarea id="message-input" rows="1" enterkeyhint="${state.enterToSend ? 'send' : 'enter'}" aria-label="${character ? `发消息给 ${escapeHtml(character.name)}` : '消息输入框'}" placeholder="${character ? `发消息给 ${escapeHtml(character.name)}…` : '请先导入角色卡'}">${escapeHtml(messageDraftFor(character))}</textarea>
+          <button class="sticker-trigger ${stickerPickerOpen ? 'is-active' : ''}" id="toggle-stickers" type="button" aria-label="表情包" ${directSpeaker ? 'disabled' : ''}>${icon('sticker')}</button>
+          <textarea id="message-input" rows="1" enterkeyhint="${state.enterToSend ? 'send' : 'enter'}" aria-label="${escapeHtml(composerPlaceholder)}" placeholder="${escapeHtml(composerPlaceholder)}">${escapeHtml(messageDraftFor(character))}</textarea>
           ${manualReplyMode ? `<button class="secondary generate-reply-button" id="generate-reply" type="button" aria-label="生成回复" ${isReplying() || !character ? 'disabled' : ''}>${icon('refresh')}<span>生成</span></button>` : ''}
           <button class="primary send-button" type="submit" aria-label="发送" ${isReplying() || !character ? 'disabled' : ''}>${icon('send')}<span>发送</span></button>
         </form>
@@ -3419,9 +3734,14 @@ function renderMoments(): string {
     const comments = moment.comments ?? [];
     const detailOpen = activeMomentDetailId === moment.id;
     const renderedComments = detailOpen ? comments : comments.slice(0, 2);
-    const commentActor = communicationActor(moment.worldId);
-    const commentActorCanView = commentActor.type !== 'character' || canCharacterViewMoment(moment, commentActor.character);
-    const commentActorName = commentActor.type === 'character' ? commentActor.character.name : userSelfLabel();
+    const commentActorId = communicationActorId(moment.worldId);
+    const commentActorCharacters = momentWorldCharacters.filter(character => canCharacterViewMoment(moment, character));
+    const commentActorSelectedId = commentActorId !== 'user'
+      && commentActorCharacters.some(character => character.id === commentActorId)
+      ? commentActorId
+      : 'user';
+    const commentActorCanView = commentActorSelectedId === 'user'
+      || commentActorCharacters.some(character => character.id === commentActorSelectedId);
     const replyTargetId = momentCommentReplyTargetDrafts.get(moment.id) ?? '';
     const replyTarget = comments.find(comment => comment.id === replyTargetId);
     const visibleCommentCharacters = momentWorldCharacters.filter(character =>
@@ -3460,35 +3780,33 @@ function renderMoments(): string {
               );
               const commentMenuOpen = momentCommentActionMenu?.momentId === moment.id
                 && momentCommentActionMenu.commentId === comment.id;
+              const characterPickerOpen = Boolean(commentMenuOpen && momentCommentActionMenu?.characterPickerOpen);
               const replyCharacters = momentWorldCharacters.filter(character =>
                 canCharacterViewMoment(moment, character) && character.id !== comment.characterId,
               );
               return `
-                <div class="moment-comment ${commentMenuOpen ? 'is-menu-open' : ''}" role="button" tabindex="0" data-moment-comment-tap="${escapeHtml(comment.id)}" data-moment-comment-menu="${escapeHtml(comment.id)}" data-moment-comment-moment="${escapeHtml(moment.id)}" data-moment-comment-id="${escapeHtml(comment.id)}" aria-label="回复 ${escapeHtml(commenter)} 的评论">
+                <div class="moment-comment ${commentMenuOpen ? 'is-menu-open' : ''}" data-moment-comment-moment="${escapeHtml(moment.id)}" data-moment-comment-id="${escapeHtml(comment.id)}">
                   <div class="moment-comment-copy">
                     <strong>${escapeHtml(commenter)}</strong>
                     ${replyContext ? `<small class="moment-comment-reply-context">${escapeHtml(replyContext)}</small>` : ''}
                     <span>${escapeHtml(comment.content)}</span>
                   </div>
-                  ${commentMenuOpen ? `
-                    <div class="moment-comment-menu" role="menu" aria-label="评论操作">
-                      <div class="moment-comment-menu-actions">
-                        ${canAuthorReply ? `
-                          <button type="button" data-author-reply-comment="${escapeHtml(comment.id)}" data-author-reply-moment="${escapeHtml(moment.id)}" ${autoCommentingMomentIds.has(moment.id) ? 'disabled' : ''}>楼主回复</button>
-                        ` : ''}
-                        ${replyCharacters.length > 0 ? `
-                          <button type="button" data-open-comment-character-reply="${escapeHtml(comment.id)}" data-open-comment-character-reply-moment="${escapeHtml(moment.id)}">选角色回复</button>
-                        ` : ''}
-                        <button class="danger" type="button" data-delete-comment="${escapeHtml(comment.id)}" data-delete-comment-moment="${escapeHtml(moment.id)}">删除</button>
-                      </div>
-                      ${momentCommentActionMenu?.characterPickerOpen && replyCharacters.length > 0 ? `
-                        <div class="moment-comment-character-reply">
-                          <select data-comment-character-reply-select="${escapeHtml(comment.id)}" data-comment-character-reply-moment="${escapeHtml(moment.id)}" aria-label="选择回复角色">
-                            ${replyCharacters.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join('')}
-                          </select>
-                          <button type="button" data-submit-comment-character-reply="${escapeHtml(comment.id)}" data-submit-comment-character-reply-moment="${escapeHtml(moment.id)}" ${commentingMomentId === moment.id || autoCommentingMomentIds.has(moment.id) ? 'disabled' : ''}>生成回复</button>
-                        </div>
-                      ` : ''}
+                  <div class="moment-comment-actions" aria-label="评论操作">
+                    <button class="moment-comment-action moment-comment-action-primary" type="button" data-moment-comment-tap="${escapeHtml(comment.id)}" data-moment-comment-reply-action data-moment-comment-moment="${escapeHtml(moment.id)}" aria-label="回复 ${escapeHtml(commenter)} 的评论">回复</button>
+                    ${canAuthorReply ? `
+                      <button class="moment-comment-action moment-comment-action-muted" type="button" data-author-reply-comment="${escapeHtml(comment.id)}" data-author-reply-moment="${escapeHtml(moment.id)}" ${autoCommentingMomentIds.has(moment.id) ? 'disabled' : ''}>楼主</button>
+                    ` : ''}
+                    ${replyCharacters.length > 0 ? `
+                      <button class="moment-comment-action moment-comment-action-muted" type="button" data-open-comment-character-reply="${escapeHtml(comment.id)}" data-open-comment-character-reply-moment="${escapeHtml(moment.id)}" aria-expanded="${characterPickerOpen ? 'true' : 'false'}">选角色</button>
+                    ` : ''}
+                    <button class="moment-comment-action moment-comment-action-danger danger" type="button" data-delete-comment="${escapeHtml(comment.id)}" data-delete-comment-moment="${escapeHtml(moment.id)}">删除</button>
+                  </div>
+                  ${characterPickerOpen && replyCharacters.length > 0 ? `
+                    <div class="moment-comment-character-reply">
+                      <select class="moment-comment-reply-select" data-comment-character-reply-select="${escapeHtml(comment.id)}" data-comment-character-reply-moment="${escapeHtml(moment.id)}" aria-label="选择回复角色">
+                        ${replyCharacters.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join('')}
+                      </select>
+                      <button class="moment-comment-reply-submit" type="button" data-submit-comment-character-reply="${escapeHtml(comment.id)}" data-submit-comment-character-reply-moment="${escapeHtml(moment.id)}" ${commentingMomentId === moment.id || autoCommentingMomentIds.has(moment.id) ? 'disabled' : ''}>生成</button>
                     </div>
                   ` : ''}
                 </div>
@@ -3506,7 +3824,10 @@ function renderMoments(): string {
               </div>
             ` : ''}
             <form class="moment-comment-form moment-comment-inline-form" data-comment-form="${escapeHtml(moment.id)}">
-              <span class="moment-comment-author-chip">${escapeHtml(commentActorName)}</span>
+              <select class="moment-comment-author-select" data-comment-actor-select="${escapeHtml(moment.id)}" aria-label="选择评论身份">
+                <option value="user" ${commentActorSelectedId === 'user' ? 'selected' : ''}>${escapeHtml(userSelfLabel())}</option>
+                ${commentActorCharacters.map(item => `<option value="${escapeHtml(item.id)}" ${commentActorSelectedId === item.id ? 'selected' : ''}>${escapeHtml(item.name)}</option>`).join('')}
+              </select>
               <input data-comment-input="${escapeHtml(moment.id)}" value="${escapeHtml(momentCommentDrafts.get(moment.id) ?? '')}" placeholder="${replyTarget ? `回复 ${escapeHtml(momentCommentAuthorName(replyTarget))}…` : '写评论…'}" aria-label="评论这条动态" />
               <button class="secondary moment-comment-submit" type="submit" aria-label="发送评论" ${commentActorCanView ? '' : 'disabled'}>${icon('send')}</button>
             </form>
@@ -3810,8 +4131,6 @@ function worldWorkbenchPanelContext(): WorldWorkbenchPanelContext {
   return {
     timelineNoteDraft,
     renderTimeline,
-    renderEventParticipantNames,
-    relationshipLabel,
   };
 }
 
@@ -3841,8 +4160,13 @@ function eventSettingsCharacter(preferred?: CharacterProfile): CharacterProfile 
 
 function renderWorldEventSettingsPreview(event: WorldEvent, character?: CharacterProfile): string {
   const messageCount = worldEventRpMessages(event.id).length;
+  const eventId = escapeHtml(event.id);
   return `
-    <button class="event-settings-preview world-event-entry-card" data-open-world-event-rp="${escapeHtml(event.id)}" type="button">
+    <div class="event-swipe-row" data-event-swipe-row="${eventId}">
+      <div class="event-swipe-actions">
+        <button class="event-swipe-delete" data-delete-event="${eventId}" type="button" tabindex="-1" aria-hidden="true">删除</button>
+      </div>
+      <button class="event-settings-preview world-event-entry-card event-swipe-content" data-open-world-event-rp="${eventId}" type="button">
       <div class="event-avatar-stack">${renderEventAvatars(event)}</div>
       <div class="world-event-entry-main">
         <strong>${escapeHtml(event.title)}</strong>
@@ -3852,8 +4176,9 @@ function renderWorldEventSettingsPreview(event: WorldEvent, character?: Characte
           <span>${messageCount > 0 ? `${messageCount} 条` : escapeHtml(eventTypeLabel(event.type))}</span>
           <span class="world-event-entry-status ${event.status === 'resolved' ? 'is-resolved' : ''}">${event.status === 'resolved' ? '已归档' : '进行中'}</span>
         </footer>
-      </div>
-    </button>
+        </div>
+      </button>
+    </div>
   `;
 }
 
@@ -3934,7 +4259,7 @@ function renderWorldEventSettingsPanel(context: WorldEventSettingsPanelContext):
         <div class="event-settings-list">
           ${recentEvents.length > 0
             ? recentEvents.map(event => renderWorldEventSettingsPreview(event, character)).join('')
-            : '<div class="event-settings-empty"><strong>还没有日常片段</strong><span>点“开始日常”，选择参与角色后开始一段 RP。</span></div>'}
+            : '<div class="event-settings-empty"><strong>还没有日常片段</strong><span>点“生成事件”，选择参与角色后开始一段 RP。</span></div>'}
         </div>
         ${events.length > recentEvents.length ? `
           <details class="world-drawer-details event-settings-details">
@@ -4082,12 +4407,11 @@ function renderWorldEventLobby(events: WorldEvent[], character?: CharacterProfil
   if (events.length === 0) {
     return `
       <div class="world-event-lobby">
-        ${renderWorldContinuePanel(events, character, worldWorkbenchPanelContext())}
         <div class="world-event-empty">
-          <strong>今天还没有新日常</strong>
-          <span>点一下，今天发生点什么，角色会围绕它继续聊。</span>
+          <strong>没有更多片段</strong>
+          <span>生成一段日常后，角色对话和旁白都会围绕这个片段展开。</span>
           <div class="world-event-empty-actions">
-            <button class="primary" data-open-event-composer type="button">${icon('add')}<span>开始一段日常</span></button>
+            <button class="primary" data-open-event-composer type="button">${icon('add')}<span>生成片段</span></button>
           </div>
         </div>
       </div>
@@ -4095,7 +4419,6 @@ function renderWorldEventLobby(events: WorldEvent[], character?: CharacterProfil
   }
   return `
     <section class="world-event-lobby" aria-label="日常片段列表">
-      ${renderWorldContinuePanel(events, character, worldWorkbenchPanelContext())}
       <div class="world-event-lobby-heading">
         <div>
           <strong>日常片段</strong>
@@ -4105,8 +4428,13 @@ function renderWorldEventLobby(events: WorldEvent[], character?: CharacterProfil
       <div class="world-event-entry-list">
         ${events.map(event => {
           const messageCount = worldEventRpMessages(event.id).length;
+          const eventId = escapeHtml(event.id);
           return `
-            <button class="world-event-entry-card conversation-entry" data-open-world-event-rp="${escapeHtml(event.id)}" type="button">
+            <div class="event-swipe-row" data-event-swipe-row="${eventId}">
+              <div class="event-swipe-actions">
+                <button class="event-swipe-delete" data-delete-event="${eventId}" type="button" tabindex="-1" aria-hidden="true">删除</button>
+              </div>
+              <button class="world-event-entry-card conversation-entry event-swipe-content" data-open-world-event-rp="${eventId}" type="button">
               <div class="event-avatar-stack">${renderEventAvatars(event)}</div>
               <div class="world-event-entry-main">
                 <strong>${escapeHtml(event.title)}</strong>
@@ -4117,7 +4445,8 @@ function renderWorldEventLobby(events: WorldEvent[], character?: CharacterProfil
                   <span class="world-event-entry-status ${event.status === 'resolved' ? 'is-resolved' : ''}">${event.status === 'resolved' ? '已归档' : '进行中'}</span>
                 </footer>
               </div>
-            </button>
+              </button>
+            </div>
           `;
         }).join('')}
       </div>
@@ -4202,10 +4531,511 @@ function renderWorldStageComposer(character?: CharacterProfile): string {
   `;
 }
 
+function worldInsightCharacters(): CharacterProfile[] {
+  return state.characters
+    .filter(character => character.worldId === activeWorld().id)
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function worldInsightRelationships(characterIds: Set<string>): CharacterRelationshipRecord[] {
+  return state.characterRelationships
+    .filter(relationship =>
+      relationship.worldId === activeWorld().id
+      && characterIds.has(relationship.characterAId)
+      && characterIds.has(relationship.characterBId),
+    )
+    .sort((left, right) => right.updatedAt - left.updatedAt);
+}
+
+function relationshipStageWeight(stage: RelationshipStage): number {
+  const weights: Record<RelationshipStage, number> = {
+    stranger: 1,
+    familiar: 2,
+    close: 3,
+    intimate: 4,
+    strained: 3,
+  };
+  return weights[stage];
+}
+
+function relationshipInsightTone(relationship: CharacterRelationshipRecord): RelationshipStage {
+  const stages = [relationship.aToB.stage, relationship.bToA.stage];
+  if (stages.includes('strained')) return 'strained';
+  if (stages.includes('intimate')) return 'intimate';
+  if (stages.includes('close')) return 'close';
+  if (stages.includes('familiar')) return 'familiar';
+  return 'stranger';
+}
+
+function relationshipInsightStrokeWidth(relationship: CharacterRelationshipRecord): string {
+  const weight = (relationshipStageWeight(relationship.aToB.stage) + relationshipStageWeight(relationship.bToA.stage)) / 2;
+  return (1.0 + weight * 0.16).toFixed(1);
+}
+
+function relationshipPairIsSelected(relationship: CharacterRelationshipRecord, first?: CharacterProfile, second?: CharacterProfile): boolean {
+  if (!first || !second) return false;
+  return (
+    (relationship.characterAId === first.id && relationship.characterBId === second.id)
+    || (relationship.characterAId === second.id && relationship.characterBId === first.id)
+  );
+}
+
+function selectedRelationshipPairForInsight(characters: CharacterProfile[]): [CharacterProfile | undefined, CharacterProfile | undefined] {
+  const first = characters.find(character => character.id === relationshipPairACharacterId);
+  const second = characters.find(character => character.id === relationshipPairBCharacterId && character.id !== first?.id);
+  if (!first) relationshipPairACharacterId = '';
+  if (!second) relationshipPairBCharacterId = '';
+  return [first, second];
+}
+
+function relationshipInsightVisibleRelationships(
+  relationships: CharacterRelationshipRecord[],
+  first?: CharacterProfile,
+  second?: CharacterProfile,
+): CharacterRelationshipRecord[] {
+  if (first && second) {
+    return relationships.filter(relationship => relationshipPairIsSelected(relationship, first, second));
+  }
+  if (first) {
+    return relationships.filter(relationship =>
+      relationship.characterAId === first.id || relationship.characterBId === first.id,
+    );
+  }
+  return relationships;
+}
+
+function relationshipInsightVisibleCharacterIds(
+  characters: CharacterProfile[],
+  relationships: CharacterRelationshipRecord[],
+  first?: CharacterProfile,
+  second?: CharacterProfile,
+): Set<string> {
+  if (!first && !second) return new Set(characters.map(character => character.id));
+  const visibleIds = new Set([first?.id ?? '', second?.id ?? ''].filter(Boolean));
+  relationships.forEach(relationship => {
+    visibleIds.add(relationship.characterAId);
+    visibleIds.add(relationship.characterBId);
+  });
+  return visibleIds;
+}
+
+function relationshipPairLabel(relationship: CharacterRelationshipRecord, left: CharacterProfile, right: CharacterProfile): string {
+  const leftSide = relationshipSideFor(relationship, left.id);
+  const rightSide = relationshipSideFor(relationship, right.id);
+  return `${left.name}: ${relationshipStageLabel(leftSide.stage)} / ${right.name}: ${relationshipStageLabel(rightSide.stage)}`;
+}
+
+function renderRelationshipStageChip(stage: RelationshipStage): string {
+  return `<span class="relationship-stage-chip stage-${stage}">${escapeHtml(relationshipStageLabel(stage))}</span>`;
+}
+
+function renderRelationshipOverviewList(
+  relationships: CharacterRelationshipRecord[],
+  characterById: Map<string, CharacterProfile>,
+): string {
+  if (relationships.length === 0) {
+    return `
+      <div class="relationship-overview-empty">
+        <strong>还没有关系记录</strong>
+        <span>先在图谱上点选两个角色，就可以建立第一条双向关系。</span>
+      </div>
+    `;
+  }
+  return `
+    <div class="relationship-overview-list">
+      ${relationships.map(relationship => {
+        const left = characterById.get(relationship.characterAId);
+        const right = characterById.get(relationship.characterBId);
+        if (!left || !right) return '';
+        const leftSide = relationshipSideFor(relationship, left.id);
+        const rightSide = relationshipSideFor(relationship, right.id);
+        const summary = [leftSide.summary, rightSide.summary]
+          .map(text => text.trim())
+          .filter(Boolean)
+          .map(text => compactText(text, 48))
+          .join(' / ');
+        return `
+          <button
+            class="relationship-overview-row stage-${relationshipInsightTone(relationship)}"
+            data-world-relationship-line="${escapeHtml(relationship.id)}"
+            title="${escapeHtml(relationshipPairLabel(relationship, left, right))}"
+            type="button"
+          >
+            <span class="relationship-overview-names">
+              <strong>${escapeHtml(left.name)}</strong>
+              <span>↔</span>
+              <strong>${escapeHtml(right.name)}</strong>
+            </span>
+            <span class="relationship-overview-stages">
+              ${renderRelationshipStageChip(leftSide.stage)}
+              ${renderRelationshipStageChip(rightSide.stage)}
+            </span>
+            <span class="relationship-overview-summary">${summary ? escapeHtml(summary) : '暂无摘要'}</span>
+          </button>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function renderWorldInsightTabs(): string {
+  return `
+    <nav class="world-insight-tabs" aria-label="世界洞察">
+      ${WORLD_INSIGHT_TABS.map(tab => `
+        <button class="${worldInsightTab === tab.value ? 'is-active' : ''}" data-world-insight-tab="${escapeHtml(tab.value)}" type="button">${escapeHtml(tab.label)}</button>
+      `).join('')}
+    </nav>
+  `;
+}
+
+function relationshipNetworkPosition(index: number, total: number): { x: number; y: number } {
+  if (total <= 1) return { x: 50, y: 50 };
+  if (total === 2) return { x: index === 0 ? 30 : 70, y: 50 };
+  const angle = (-Math.PI / 2) + (Math.PI * 2 * index) / total;
+  const radius = total <= 5 ? 34 : 38;
+  return {
+    x: 50 + Math.cos(angle) * radius,
+    y: 50 + Math.sin(angle) * radius,
+  };
+}
+
+function renderWorldRelationshipInsight(): string {
+  const characters = worldInsightCharacters();
+  if (characters.length < 2) {
+    return `
+      <section class="relationship-network-empty">
+        <strong>至少需要两个角色</strong>
+        <span>先导入或创建角色，再在这里查看关系图、建立角色之间的双向关系。</span>
+      </section>
+    `;
+  }
+  const characterById = new Map(characters.map(character => [character.id, character]));
+  const relationships = worldInsightRelationships(new Set(characterById.keys()));
+  const [first, second] = selectedRelationshipPairForInsight(characters);
+  const visibleRelationships = relationshipInsightVisibleRelationships(relationships, first, second);
+  const visibleRelationshipIds = new Set(visibleRelationships.map(relationship => relationship.id));
+  const visibleCharacterIds = relationshipInsightVisibleCharacterIds(characters, visibleRelationships, first, second);
+  const positions = new Map(characters.map((character, index) => [character.id, relationshipNetworkPosition(index, characters.length)]));
+  const selectedIds = new Set([first?.id ?? '', second?.id ?? ''].filter(Boolean));
+  const highlightedIds = selectedIds.size > 0
+    ? new Set(
+      visibleRelationships
+        .filter(relationship =>
+          selectedIds.has(relationship.characterAId)
+          || selectedIds.has(relationship.characterBId)
+          || relationshipPairIsSelected(relationship, first, second),
+        )
+        .flatMap(relationship => [relationship.characterAId, relationship.characterBId]),
+    )
+    : new Set<string>();
+  selectedIds.forEach(id => highlightedIds.add(id));
+  const lines = relationships.map(relationship => {
+    const left = characterById.get(relationship.characterAId);
+    const right = characterById.get(relationship.characterBId);
+    const leftPosition = positions.get(relationship.characterAId);
+    const rightPosition = positions.get(relationship.characterBId);
+    if (!left || !right || !leftPosition || !rightPosition) return '';
+    const selected = relationshipPairIsSelected(relationship, first, second);
+    const visible = visibleRelationshipIds.has(relationship.id);
+    const tone = relationshipInsightTone(relationship);
+    return `
+      <line
+        class="relationship-network-line stage-${tone} ${selected ? 'is-selected' : ''} ${visible ? '' : 'is-hidden'}"
+        data-world-relationship-line="${escapeHtml(relationship.id)}"
+        x1="${leftPosition.x.toFixed(2)}" y1="${leftPosition.y.toFixed(2)}"
+        x2="${rightPosition.x.toFixed(2)}" y2="${rightPosition.y.toFixed(2)}"
+        stroke-width="${relationshipInsightStrokeWidth(relationship)}"
+      />
+    `;
+  }).join('');
+  const nodes = characters.map((character, index) => {
+    const position = positions.get(character.id) ?? relationshipNetworkPosition(index, characters.length);
+    const selected = selectedIds.has(character.id);
+    const highlighted = highlightedIds.has(character.id);
+    const visible = visibleCharacterIds.has(character.id);
+    return `
+      <button
+        class="relationship-network-node ${selected ? 'is-selected' : ''} ${highlighted ? 'is-highlighted' : ''} ${visible ? '' : 'is-hidden'}"
+        data-world-relationship-character="${escapeHtml(character.id)}"
+        style="left:${position.x.toFixed(2)}%;top:${position.y.toFixed(2)}%"
+        title="${escapeHtml(character.name)}"
+        type="button"
+      >
+        <span class="relationship-network-avatar"${avatarToneAttribute(character)}>${renderAvatar(character)}</span>
+        <strong>${escapeHtml(compactText(character.name, 8))}</strong>
+      </button>
+    `;
+  }).join('');
+  return `
+    <section class="world-relationship-insight">
+      <div class="relationship-network-panel">
+        <div class="relationship-network-canvas" data-world-relationship-canvas aria-label="角色关系图">
+          <svg class="relationship-network-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            ${lines}
+          </svg>
+          ${nodes}
+        </div>
+        ${relationships.length === 0 ? `
+          <p class="relationship-network-hint">当前还没有关系线。点选两个角色后，可以在右侧建立第一条关系。</p>
+        ` : ''}
+      </div>
+      <aside class="relationship-inspector">
+        <header>
+          <span>关系检查器</span>
+          <strong>${first && second ? `${escapeHtml(first.name)} ↔ ${escapeHtml(second.name)}` : first ? `${escapeHtml(first.name)} ↔ 选择另一位` : '关系概览'}</strong>
+        </header>
+        ${first && second ? renderCharacterRelationshipEditor(first, second) : renderRelationshipOverviewList(visibleRelationships, characterById)}
+      </aside>
+    </section>
+  `;
+}
+
+function timelineInsightDateKey(entry: TimelineEntry): string {
+  return new Date(entry.createdAt).toLocaleDateString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+}
+
+function timelineInsightDateLabel(entry: TimelineEntry): string {
+  return new Date(entry.createdAt).toLocaleDateString('zh-CN', {
+    month: 'long',
+    day: 'numeric',
+    weekday: 'short',
+  });
+}
+
+function renderWorldTimelineFilterButtons(entries: TimelineEntry[]): string {
+  const counts = entries.reduce((map, entry) => map.set(entry.type, (map.get(entry.type) ?? 0) + 1), new Map<TimelineEntry['type'], number>());
+  return `
+    <div class="timeline-type-filter" aria-label="时间线类型筛选">
+      ${WORLD_TIMELINE_FILTERS
+        .filter(filter => filter.value === 'all' || counts.has(filter.value as TimelineEntry['type']) || worldTimelineTypeFilter === filter.value)
+        .map(filter => {
+          const count = filter.value === 'all' ? entries.length : counts.get(filter.value as TimelineEntry['type']) ?? 0;
+          return `
+            <button class="${worldTimelineTypeFilter === filter.value ? 'is-active' : ''}" data-world-timeline-type="${escapeHtml(filter.value)}" type="button">
+              <span>${escapeHtml(filter.label)}</span>
+              <small>${count}</small>
+            </button>
+          `;
+        }).join('')}
+    </div>
+  `;
+}
+
+function renderWorldTimelineSearchControls(): string {
+  const characters = state.characters.filter(character => character.worldId === activeWorld().id);
+  return `
+    <div class="timeline-search-controls">
+      <label class="contact-search timeline-search-field">
+        ${icon('search')}
+        <input data-world-timeline-search value="${escapeHtml(worldTimelineSearchQuery)}" placeholder="搜索世界记录" />
+      </label>
+      <select data-world-timeline-character aria-label="按角色筛选世界记录">
+        <option value="all" ${worldTimelineCharacterFilter === 'all' ? 'selected' : ''}>全部角色</option>
+        ${characters.map(character => `
+          <option value="${escapeHtml(character.id)}" ${worldTimelineCharacterFilter === character.id ? 'selected' : ''}>${escapeHtml(character.name)}</option>
+        `).join('')}
+      </select>
+    </div>
+  `;
+}
+
+function renderTimelineTrackEntry(entry: TimelineEntry): string {
+  const rollbackState = rollbackStateForTimelineEntry(entry);
+  return `
+    <article class="timeline-track-entry type-${escapeHtml(entry.type)} ${entry.revokedAt ? 'is-revoked' : ''}" data-timeline-entry="${escapeHtml(entry.id)}">
+      <div class="timeline-track-entry-head">
+        <span class="timeline-type">${escapeHtml(timelineTypeLabel(entry.type))}</span>
+        <time>${formatConversationTime(entry.createdAt)}</time>
+      </div>
+      <h3>${escapeHtml(entry.title)}</h3>
+      <p>${escapeHtml(entry.summary)}</p>
+      <div class="timeline-characters">${renderTimelineCharacters(entry)}</div>
+      <div class="timeline-meta">
+        <span>${entry.revokedAt ? '已撤销，不再进入上下文' : entry.includeInContext ? '进入上下文' : '仅作记录'}</span>
+        ${rollbackState?.canRollback ? '<span>可撤销影响</span>' : rollbackState?.rolledBackAt ? '<span>影响已撤销</span>' : ''}
+      </div>
+      ${renderTimelineDetails(entry)}
+      ${!entry.revokedAt || rollbackState?.canRollback ? `
+        <footer class="timeline-card-actions">
+          ${!entry.revokedAt ? `<button class="secondary" type="button" data-toggle-timeline-context="${escapeHtml(entry.id)}">${entry.includeInContext ? '设为仅保存' : '进入上下文'}</button>` : ''}
+          ${rollbackState?.canRollback ? `<button class="secondary" type="button" data-rollback-timeline="${escapeHtml(entry.id)}">撤销影响</button>` : ''}
+        </footer>
+      ` : ''}
+    </article>
+  `;
+}
+
+function renderWorldTimelineInsight(): string {
+  const entries = timelineForActiveWorld();
+  const filteredEntries = filterTimelineEntries(entries, {
+    type: worldTimelineTypeFilter,
+    query: worldTimelineSearchQuery,
+    characterId: worldTimelineCharacterFilter === 'all' ? '' : worldTimelineCharacterFilter,
+  })
+    .sort((left, right) => right.createdAt - left.createdAt);
+  const grouped = filteredEntries.reduce((map, entry) => {
+    const key = timelineInsightDateKey(entry);
+    const group = map.get(key) ?? { label: timelineInsightDateLabel(entry), entries: [] as TimelineEntry[] };
+    group.entries.push(entry);
+    map.set(key, group);
+    return map;
+  }, new Map<string, { label: string; entries: TimelineEntry[] }>());
+  return `
+    <section class="world-timeline-insight">
+      ${renderWorldTimelineSearchControls()}
+      ${renderWorldTimelineFilterButtons(entries)}
+      ${entries.length === 0 ? `
+        <div class="moments-empty">
+          <strong>还没有世界记录</strong>
+          <span>聊天、动态、小事件、关系变化和手动记录会在这里按日期汇总。</span>
+        </div>
+      ` : filteredEntries.length === 0 ? `
+        <div class="moments-empty">
+          <strong>没有匹配的世界记录</strong>
+          <span>换个关键词、角色或类型筛选，或者继续推进世界内容后再回来查看。</span>
+        </div>
+      ` : `
+        <div class="timeline-track-list">
+          ${Array.from(grouped.entries()).map(([key, group]) => `
+            <section class="timeline-track-day" data-world-timeline-day="${escapeHtml(key)}">
+              <header>
+                <strong>${escapeHtml(group.label)}</strong>
+                <span>${group.entries.length} 条记录</span>
+              </header>
+              <div class="timeline-track-entries">
+                ${group.entries.map(renderTimelineTrackEntry).join('')}
+              </div>
+            </section>
+          `).join('')}
+        </div>
+      `}
+    </section>
+  `;
+}
+
+function memorySummaryStatusText(summary: MemorySummary): string {
+  if (summary.status === 'pending_confirmation') return '待确认';
+  if (summary.status === 'paused') return '已停用';
+  return summary.includeInContext ? '进入上下文' : '仅保存';
+}
+
+function memorySummaryCharacterText(summary: MemorySummary): string {
+  if (summary.characterIds.length === 0) return '整个世界';
+  return summary.characterIds
+    .map(id => state.characters.find(character => character.id === id)?.name ?? '已删除角色')
+    .slice(0, 4)
+    .join('、');
+}
+
+function renderMemorySummaryCard(summary: MemorySummary): string {
+  const isMacro = summary.layer === 'macro';
+  const editAction = `<button class="secondary small-button" type="button" data-edit-memory-summary="${escapeHtml(summary.id)}">编辑</button>`;
+  const toggleAction = summary.status === 'paused'
+    ? `<button class="secondary small-button" type="button" data-resume-memory-summary="${escapeHtml(summary.id)}">启用</button>`
+    : `<button class="secondary small-button" type="button" data-pause-memory-summary="${escapeHtml(summary.id)}">停用</button>`;
+  const extraActions = [
+    toggleAction,
+    isMacro && summary.status === 'pending_confirmation'
+      ? `<button class="primary small-button" type="button" data-confirm-memory-summary="${escapeHtml(summary.id)}">确认</button>`
+      : '',
+    isMacro && summary.status === 'pending_confirmation'
+      ? `<button class="secondary small-button" type="button" data-discard-memory-summary="${escapeHtml(summary.id)}">丢弃</button>`
+      : '',
+  ].filter(Boolean);
+  const collapsedActions = extraActions.length > 1 ? extraActions : [];
+  const visibleActions = collapsedActions.length > 0 ? [editAction] : [editAction, toggleAction];
+  return `
+    <article class="memory-summary-card layer-${escapeHtml(summary.layer)} status-${escapeHtml(summary.status)}">
+      <header>
+        <span class="timeline-type">${escapeHtml(summaryLayerLabel(summary.layer))}</span>
+        <small>${escapeHtml(memorySummaryStatusText(summary))}</small>
+      </header>
+      <h3>${escapeHtml(summary.title)}</h3>
+      <p>${escapeHtml(summary.factSummary || '还没有形成稳定事实摘要。')}</p>
+      ${summary.emotionalLine ? `<p class="memory-summary-emotion">${escapeHtml(summary.emotionalLine)}</p>` : ''}
+      ${summary.unresolvedItems.length > 0 ? `
+        <div class="memory-summary-unresolved">
+          ${summary.unresolvedItems.slice(0, 3).map(item => `<span>${escapeHtml(item)}</span>`).join('')}
+        </div>
+      ` : ''}
+      <footer>
+        <span>${escapeHtml(memorySummaryCharacterText(summary))}</span>
+        <div class="memory-summary-card-actions">
+          ${visibleActions.join('')}
+          ${collapsedActions.length > 0 ? `
+            <details class="memory-summary-more-actions">
+              <summary class="secondary small-button">更多</summary>
+              <div>${collapsedActions.join('')}</div>
+            </details>
+          ` : ''}
+        </div>
+      </footer>
+    </article>
+  `;
+}
+
+function renderMemorySummaryGroup(layer: MemorySummary['layer'], title: string, emptyText: string, summaries: MemorySummary[]): string {
+  const rows = summaries.filter(summary => summary.layer === layer);
+  return `
+    <section class="memory-summary-group">
+      <header>
+        <strong>${escapeHtml(title)}</strong>
+        <span>${rows.length} 条</span>
+      </header>
+      ${rows.length > 0
+        ? `<div class="memory-summary-list">${rows.map(renderMemorySummaryCard).join('')}</div>`
+        : `<p class="muted">${escapeHtml(emptyText)}</p>`}
+    </section>
+  `;
+}
+
+function renderMemorySummaryDrawer(): string {
+  const summaries = memorySummariesForWorld();
+  const character = worldRpActiveCharacter() ?? activeCharacter();
+  const drawerClass = memorySummaryDrawerExpanded
+    ? 'memory-summary-drawer is-expanded'
+    : 'memory-summary-drawer';
+  const totalCount = summaries.length;
+  return `
+    <section class="${drawerClass}" aria-label="记忆抽屉">
+      <header class="memory-summary-drawer-head">
+        <div>
+          <span>记忆抽屉</span>
+          <strong>三层长期记忆</strong>
+          <small>${totalCount} 条启用/保存的总结</small>
+        </div>
+        <div class="memory-summary-tools">
+          ${character ? `<button class="secondary" type="button" data-refresh-character-memory-summaries="${escapeHtml(character.id)}">刷新角色总结</button>` : ''}
+          <button class="secondary" type="button" data-refresh-macro-summary>生成世界大结</button>
+          <button class="secondary" type="button" data-toggle-memory-summary-drawer aria-expanded="${memorySummaryDrawerExpanded ? 'true' : 'false'}">${memorySummaryDrawerExpanded ? '收起' : '展开'}</button>
+        </div>
+      </header>
+      <div class="memory-summary-drawer-body">
+      <div class="memory-summary-grid">
+        ${renderMemorySummaryGroup('micro', '片段', '聊天、事件或动态积累后会形成片段小结。', summaries)}
+        ${renderMemorySummaryGroup('middle', '角色与事件', '片段小结积累后会形成角色或事件中结。', summaries)}
+        ${renderMemorySummaryGroup('macro', '世界大结', '生成后的世界大结需要确认后才进入长期上下文。', summaries)}
+      </div>
+      </div>
+    </section>
+  `;
+}
+
 function renderWorldWorkbenchPage(mobile = false): string {
   const character = worldRpActiveCharacter();
   const selectedEvent = selectedWorldRpEvent();
   const worldEvents = eventsForActiveWorld();
+  const insightBody = worldInsightTab === 'relationships'
+    ? renderWorldRelationshipInsight()
+    : worldInsightTab === 'timeline'
+      ? renderWorldTimelineInsight()
+      : selectedEvent
+        ? renderWorldEventRpDetail(selectedEvent, character)
+        : renderWorldEventLobby(worldEvents, character);
   worldRpReplyMode = 'auto';
   // 小注释：事件页和时间线页不再是主入口，但保留为世界内部详情能力的渲染来源。
   const internalDetailRenderers = [renderEventsPage, renderTimelinePage, renderWorldEventNarration]
@@ -4216,22 +5046,21 @@ function renderWorldWorkbenchPage(mobile = false): string {
       <header class="chat-header world-workbench-header">
         ${renderWorldPersonaSelector()}
         ${renderWorldStageHeader()}
+        <div class="world-topbar-tabs">
+          ${renderWorldInsightTabs()}
+        </div>
         <div class="world-stage-actions">
-          <button class="secondary world-generate-button" id="generate-event" type="button" aria-label="开始一段日常" title="开始一段日常" ${eventGenerating ? 'disabled' : ''}>${icon('add')}<span class="world-action-label">开始日常</span></button>
+          <button class="secondary world-generate-button" id="generate-event" type="button" aria-label="生成事件" title="生成事件" ${eventGenerating ? 'disabled' : ''}>${icon('add')}<span class="world-action-label">生成事件</span></button>
           ${renderWorldSettingsPanel()}
         </div>
       </header>
       <section class="world-workbench-scroll">
         <div class="world-workbench-column">
-          ${renderWorldChapterPanel()}
-          ${renderMemoryInboxPanel()}
-          ${renderRelationshipMapPanel()}
-          ${selectedEvent
-            ? renderWorldEventRpDetail(selectedEvent, character)
-            : renderWorldEventLobby(worldEvents, character)}
+          ${renderMemorySummaryDrawer()}
+          ${insightBody}
         </div>
       </section>
-      ${selectedEvent && selectedEvent.status !== 'resolved' ? renderWorldStageComposer(character) : ''}
+      ${worldInsightTab === 'events' && selectedEvent && selectedEvent.status !== 'resolved' ? renderWorldStageComposer(character) : ''}
       ${renderWorldRpMessageEditDialog()}
       ${renderEventComposerDialog()}
     </main>
@@ -5283,6 +6112,16 @@ function cardCandidateSourceLabel(source: CharacterCardCandidate['source']): str
   return labels[source];
 }
 
+function cardImportFollowupLabel(action: CardImportFollowupAction): string {
+  return action === 'worldbook' ? '角色世界书'
+    : action === 'opening' ? '角色开场白'
+      : '角色资料';
+}
+
+function isCardImportFollowupAction(value: string): value is CardImportFollowupAction {
+  return value === 'profile' || value === 'opening' || value === 'worldbook';
+}
+
 function renderCardRecognitionDialog(): string {
   if (!pendingCardRecognition || pendingCardRecognition.candidates.length <= 1) return '';
   const { character, candidates } = pendingCardRecognition;
@@ -5756,6 +6595,22 @@ async function importCharactersWithOpening(characters: CharacterProfile[], statu
     }
   }
   await generateOpeningMessage(importedCharacters[0] ?? characters[0], render);
+  applyCardImportFollowup(importedCharacters[0] ?? characters[0]);
+}
+
+function applyCardImportFollowup(character: CharacterProfile): void {
+  const action = pendingCardImportFollowup;
+  pendingCardImportFollowup = null;
+  if (!action) return;
+  state.activeCharacterId = character.id;
+  characterPanelOpen = true;
+  characterPanelPage = action === 'worldbook' ? 'worldbook-editor' : 'worldbook';
+  settingsOpen = false;
+  mobileChatOpen = false;
+  mobileGroupChatOpen = false;
+  setVisibleStatus(`已打开 ${character.name} 的${cardImportFollowupLabel(action)}，可以继续补全。`);
+  saveUiSessionSnapshot({ captureDom: false });
+  renderWithUiTransition('detail-in');
 }
 
 async function inviteInterestedCharacters(momentId: string): Promise<void> {
@@ -6553,10 +7408,20 @@ function bindUi(): void {
   });
   const closeCardRecognition = () => {
     pendingCardRecognition = null;
+    pendingCardImportFollowup = null;
     setStatusText('已取消这次角色卡导入。');
     renderWithUiTransition('overlay-out');
   };
   document.querySelector<HTMLButtonElement>('#cancel-card-recognition')?.addEventListener('click', closeCardRecognition);
+  document.querySelectorAll<HTMLButtonElement>('[data-card-import-action]').forEach(button => {
+    button.addEventListener('click', () => {
+      const action = button.dataset.cardImportAction ?? '';
+      if (!isCardImportFollowupAction(action)) return;
+      pendingCardImportFollowup = action;
+      setStatusText(`导入完成后会打开${cardImportFollowupLabel(action)}。`);
+      render();
+    });
+  });
   document.querySelector<HTMLButtonElement>('#import-original-card')?.addEventListener('click', () => {
     const pending = pendingCardRecognition;
     if (!pending) return;
@@ -6719,6 +7584,31 @@ function bindUi(): void {
   document.querySelector<HTMLButtonElement>('[data-close-context-preview]')?.addEventListener('click', () => {
     contextPreviewCharacterId = '';
     render();
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-context-preview-remove-timeline]').forEach(button => {
+    button.addEventListener('click', () => {
+      const entryId = button.dataset.contextPreviewRemoveTimeline ?? '';
+      const entry = state.timelineEntries.find(item => item.id === entryId && item.worldId === activeWorld().id);
+      const character = contextPreviewCharacterId
+        ? state.characters.find(item => item.id === contextPreviewCharacterId && item.worldId === activeWorld().id)
+        : undefined;
+      if (!entry || entry.revokedAt) return;
+      entry.includeInContext = false;
+      saveState();
+      if (character) contextPreviewCharacterId = character.id;
+      setStatusText('这条世界记录已保留在时间线，但不会再进入近期上下文。');
+      render();
+    });
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-context-preview-remove-summary]').forEach(button => {
+    button.addEventListener('click', () => {
+      const summaryId = button.dataset.contextPreviewRemoveSummary ?? '';
+      const summary = state.memorySummaries.find(item => item.id === summaryId && item.worldId === activeWorld().id);
+      if (!summary) return;
+      updateMemorySummary(summary.id, { includeInContext: false });
+      setStatusText('这条总结已保留在记忆抽屉，但不会再进入近期上下文。');
+      render();
+    });
   });
   document.querySelectorAll<HTMLButtonElement>('[data-open-character-status]').forEach(button => {
     button.addEventListener('click', () => {
@@ -7116,6 +8006,7 @@ function bindUi(): void {
         mobileGroupChatOpen = true;
         pushMobileHistory('chat');
       }
+      requestConversationOpenAtBottom();
       saveState();
       saveUiSessionSnapshot();
       renderWithUiTransition('detail-in');
@@ -7587,6 +8478,7 @@ function bindUi(): void {
         character.worldId === activeWorld().id && character.id !== relationshipPairACharacterId,
       )?.id ?? '';
     }
+    saveUiSessionSnapshot({ captureDom: false });
     render();
   });
   document.querySelector<HTMLSelectElement>('#relationship-pair-b-select')?.addEventListener('change', event => {
@@ -7596,6 +8488,7 @@ function bindUi(): void {
         character.worldId === activeWorld().id && character.id !== relationshipPairBCharacterId,
       )?.id ?? '';
     }
+    saveUiSessionSnapshot({ captureDom: false });
     render();
   });
   document.querySelector<HTMLSelectElement>('#proactive-character-select')?.addEventListener('change', event => {
@@ -8549,15 +9442,37 @@ function bindUi(): void {
       });
   });
   document.querySelector<HTMLInputElement>('#backup-import')?.addEventListener('change', async event => {
-    const file = (event.currentTarget as HTMLInputElement).files?.[0];
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
     if (!file) return;
     try {
-      const restored = restoreBackupText(await file.text());
-      setStatusText(`已导入备份：${restored.characters.length} 个角色，${restored.messages.length} 条消息。`);
+      const rawText = await file.text();
+      const preview = previewBackupRestoreText(rawText);
+      openConfirmDialog({
+        title: '导入备份会覆盖当前数据',
+        message: formatBackupRestoreWarning(preview),
+        confirmLabel: '导入并覆盖',
+        cancelLabel: '先不导入',
+        tone: 'danger',
+        onCancel: () => {
+          input.value = '';
+        },
+        onConfirm: () => {
+          try {
+            const restored = restoreBackupText(rawText);
+            setStatusText(`已导入备份：${restored.characters.length} 个角色，${restored.messages.length} 条消息。`);
+          } catch (error) {
+            setStatusText(error instanceof Error ? error.message : String(error));
+          }
+          input.value = '';
+          render();
+        },
+      });
     } catch (error) {
       setStatusText(error instanceof Error ? error.message : String(error));
+      input.value = '';
+      render();
     }
-    render();
   });
   const messageInput = document.querySelector<HTMLTextAreaElement>('#message-input');
   if (messageInput) {
@@ -8590,7 +9505,9 @@ function bindUi(): void {
     setStatusText(nextCharacter ? `已切换为 ${nextCharacter.name} 通讯身份。` : '已切换为 user 通讯身份。');
     renderWithUiTransition('detail-out');
     const character = activePrivateChatTarget();
-    if (character) void generateOpeningMessage(character, render, privateConversationActorId(character));
+    if (character && !privateChatIdentityCharacter()) {
+      void generateOpeningMessage(character, render, privateConversationActorId(character));
+    }
   });
   document.querySelector<HTMLFormElement>('#composer')?.addEventListener('submit', event => {
     event.preventDefault();
@@ -8617,12 +9534,75 @@ function bindUi(): void {
     if (shouldKeepKeyboard) requestMessageComposerFocusAfterSubmit(character?.id ?? '');
     const replyToId = clearMessageComposerAfterSubmit(character, input, content, shouldKeepKeyboard);
     requestChatStickToBottom();
+    const directSpeaker = privateChatIdentityCharacter();
+    if (directSpeaker && character && directSpeaker.id !== character.id) {
+      void (async () => {
+        const thread = ensureCharacterDirectThread(character.worldId, directSpeaker.id, character.id);
+        const sent = appendCharacterDirectMessage(thread.id, directSpeaker.id, content, 'manual');
+        markCharacterDirectThreadRead(thread.id, directSpeaker.id, sent.createdAt);
+        await detectCharacterDirectMessageEventSuggestion(sent);
+        setStatusText(`已用 ${directSpeaker.name} 的身份发送。`);
+        preserveScrollForNextRender();
+        render();
+        if (state.chatReplyMode === 'manual') return;
+        try {
+          await generateCharacterDirectReply(thread.id, character.id, { replyToId: sent.id, countBudget: true });
+          setStatusText(`${character.name} 已回复这段角色私聊。`);
+        } catch (error) {
+          setStatusText(error instanceof Error ? error.message : String(error));
+        }
+        requestChatStickToBottom();
+        preserveScrollForNextRender();
+        render();
+      })();
+      return;
+    }
     const speaker = privateChatSpeaker();
     if (state.chatReplyMode === 'manual') {
       void sendUserMessageOnly(content, render, replyToId, speaker);
     } else {
       void sendMessage(content, render, replyToId, speaker);
     }
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-create-private-event-suggestion]').forEach(button => {
+    button.addEventListener('click', () => {
+      const suggestionId = button.dataset.createPrivateEventSuggestion;
+      if (!suggestionId) return;
+      try {
+        const worldEvent = createWorldEventFromPrivateChatSuggestion(suggestionId);
+        activeWorldRpEventId = worldEvent.id;
+        saveUiSessionSnapshot();
+        setStatusText(`已生成事件：${worldEvent.title}`);
+      } catch (error) {
+        setStatusText(error instanceof Error ? error.message : String(error));
+      }
+      preserveScrollForNextRender();
+      render();
+    });
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-edit-private-event-suggestion]').forEach(button => {
+    button.addEventListener('click', () => {
+      const suggestionId = button.dataset.editPrivateEventSuggestion;
+      const suggestion = state.privateChatEventSuggestions.find(item =>
+        item.id === suggestionId && item.status === 'pending',
+      );
+      if (!suggestion) {
+        setStatusText('找不到这条私聊事件草稿。');
+        render();
+        return;
+      }
+      openEventComposerFromPrivateSuggestion(suggestion);
+    });
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-dismiss-private-event-suggestion]').forEach(button => {
+    button.addEventListener('click', () => {
+      const suggestionId = button.dataset.dismissPrivateEventSuggestion;
+      if (suggestionId && dismissPrivateChatEventSuggestion(suggestionId)) {
+        setStatusText('已忽略这条私聊事件草稿。');
+      }
+      preserveScrollForNextRender();
+      render();
+    });
   });
   const worldRpInput = document.querySelector<HTMLTextAreaElement>('#world-rp-input');
   if (worldRpInput) {
@@ -8649,87 +9629,164 @@ function bindUi(): void {
       render();
     });
   });
-  document.querySelector<HTMLButtonElement>('[data-create-world-chapter]')?.addEventListener('click', () => {
-    openPromptDialog({
-      title: '新章节',
-      message: '给这段长 RP 起一个方便回看的标题。',
-      label: '章节标题',
-      initialValue: activeWorld().sceneSummary || '新的长 RP 章节',
-      confirmLabel: '创建章节',
-      onConfirm: title => {
-        const chapter = createWorldChapter({ title, summary: activeWorld().sceneSummary });
-        setStatusText(`已创建章节：${chapter.title}`);
-      },
-    });
-  });
-  document.querySelector<HTMLButtonElement>('[data-create-world-scene]')?.addEventListener('click', () => {
-    const chapter = activeWorldChapter();
-    if (!chapter) return;
-    openPromptDialog({
-      title: '新场景',
-      message: '场景会挂在当前章节下，并可以关联正在处理的生活线索。',
-      label: '场景标题',
-      initialValue: selectedWorldRpEvent()?.title || '新的场景',
-      confirmLabel: '进入场景',
-      onConfirm: title => {
-        const scene = createWorldScene(chapter.id, {
-          title,
-          summary: selectedWorldRpEvent()?.description,
-          sourceEventId: selectedWorldRpEvent()?.id,
-        });
-        setStatusText(`已进入场景：${scene.title}`);
-      },
-    });
-  });
-  document.querySelector<HTMLButtonElement>('[data-end-world-scene]')?.addEventListener('click', () => {
-    const chapter = activeWorldChapter();
-    const scene = chapter?.scenes.find(item => item.id === chapter.activeSceneId);
-    if (!chapter || !scene) return;
-    openPromptDialog({
-      title: '结束场景',
-      message: `为“${scene.title}”留下一个简短摘要，后续上下文会参考它。`,
-      label: '场景摘要',
-      initialValue: scene.summary || selectedWorldRpEvent()?.resultSummary || '',
-      multiline: true,
-      confirmLabel: '结束场景',
-      onConfirm: summary => {
-        endWorldScene(chapter.id, scene.id, summary);
-        setStatusText(`已结束场景：${scene.title}`);
-      },
-    });
-  });
-  document.querySelector<HTMLButtonElement>('[data-end-world-chapter]')?.addEventListener('click', () => {
-    const chapter = activeWorldChapter();
-    if (!chapter) return;
-    openPromptDialog({
-      title: '结束章节',
-      message: `为“${chapter.title}”留下一个章节摘要。`,
-      label: '章节摘要',
-      initialValue: chapter.summary || activeWorld().sceneSummary || '',
-      multiline: true,
-      confirmLabel: '结束章节',
-      onConfirm: summary => {
-        endWorldChapter(chapter.id, summary);
-        setStatusText(`已结束章节：${chapter.title}`);
-      },
-    });
-  });
-  document.querySelectorAll<HTMLButtonElement>('[data-set-world-chapter]').forEach(button => {
+  document.querySelectorAll<HTMLButtonElement>('[data-world-insight-tab]').forEach(button => {
     button.addEventListener('click', () => {
-      const chapter = setActiveWorldChapter(button.dataset.setWorldChapter ?? '');
-      if (chapter) setStatusText(`已切换章节：${chapter.title}`);
+      const nextTab = button.dataset.worldInsightTab;
+      if (!isWorldInsightTab(nextTab) || nextTab === worldInsightTab) return;
+      worldInsightTab = nextTab;
+      if (worldInsightTab !== 'events') {
+        activeWorldRpEventId = '';
+        worldRpInputDraft = '';
+        worldRpMessageEditId = '';
+      }
+      preserveScrollForNextRender();
+      saveUiSessionSnapshot({ captureDom: false });
       render();
     });
   });
-  document.querySelectorAll<HTMLButtonElement>('[data-set-world-scene]').forEach(button => {
+  document.querySelectorAll<HTMLButtonElement>('[data-refresh-character-memory-summaries]').forEach(button => {
     button.addEventListener('click', () => {
-      const scene = setActiveWorldScene(
-        button.dataset.worldSceneChapter ?? '',
-        button.dataset.setWorldScene ?? '',
-      );
-      if (scene) setStatusText(`已切换场景：${scene.title}`);
+      const characterId = button.dataset.refreshCharacterMemorySummaries ?? '';
+      const character = state.characters.find(item => item.id === characterId && item.worldId === activeWorld().id);
+      if (!character) return;
+      rebuildPrivateChatAutoMemoryForCharacter(character.id);
+      const micro = refreshMicroSummaryForCharacter(character.id);
+      const middle = refreshMiddleSummaryForCharacter(character.id);
+      setStatusText(micro || middle ? `${character.name} 的记忆总结已刷新。` : '还没有足够世界记录形成总结。');
       render();
     });
+  });
+  document.querySelector<HTMLButtonElement>('[data-refresh-macro-summary]')?.addEventListener('click', () => {
+    const summary = refreshMacroSummaryForWorld(activeWorld().id);
+    setStatusText(summary ? '已生成世界大结草稿，请确认后再进入长期上下文。' : '还没有足够世界记录形成世界大结。');
+    render();
+  });
+  document.querySelector<HTMLButtonElement>('[data-toggle-memory-summary-drawer]')?.addEventListener('click', () => {
+    memorySummaryDrawerExpanded = !memorySummaryDrawerExpanded;
+    preserveScrollForNextRender();
+    render();
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-edit-memory-summary]').forEach(button => {
+    button.addEventListener('click', () => {
+      const summary = state.memorySummaries.find(item => item.id === (button.dataset.editMemorySummary ?? '') && item.worldId === activeWorld().id);
+      if (!summary) return;
+      openPromptDialog({
+        title: '编辑记忆总结',
+        label: '事实摘要',
+        initialValue: summary.factSummary,
+        multiline: true,
+        confirmLabel: '保存总结',
+        onConfirm: value => {
+          updateMemorySummary(summary.id, { factSummary: value });
+          setStatusText('记忆总结已更新。');
+          render();
+        },
+      });
+    });
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-pause-memory-summary]').forEach(button => {
+    button.addEventListener('click', () => {
+      const summary = pauseMemorySummary(button.dataset.pauseMemorySummary ?? '');
+      if (summary) setStatusText('这条总结已停用，不会进入模型上下文。');
+      render();
+    });
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-resume-memory-summary]').forEach(button => {
+    button.addEventListener('click', () => {
+      const summary = resumeMemorySummary(button.dataset.resumeMemorySummary ?? '');
+      if (summary) setStatusText(summary.status === 'pending_confirmation' ? '世界大结需要确认后才会进入上下文。' : '这条总结已重新启用。');
+      render();
+    });
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-confirm-memory-summary]').forEach(button => {
+    button.addEventListener('click', () => {
+      const summary = confirmMemorySummary(button.dataset.confirmMemorySummary ?? '');
+      if (summary) setStatusText('世界大结已确认，会参与长期上下文。');
+      render();
+    });
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-discard-memory-summary]').forEach(button => {
+    button.addEventListener('click', () => {
+      const discarded = discardMemorySummary(button.dataset.discardMemorySummary ?? '');
+      if (discarded) setStatusText('世界大结草稿已丢弃。');
+      render();
+    });
+  });
+  document.querySelectorAll<HTMLElement>('[data-world-relationship-character]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.stopPropagation();
+      const characterId = button.dataset.worldRelationshipCharacter ?? '';
+      const character = state.characters.find(item => item.id === characterId && item.worldId === activeWorld().id);
+      if (!character) return;
+      worldInsightTab = 'relationships';
+      activeWorldRpEventId = '';
+      if (!relationshipPairACharacterId || relationshipPairBCharacterId) {
+        relationshipPairACharacterId = character.id;
+        relationshipPairBCharacterId = '';
+      } else if (relationshipPairACharacterId !== character.id) {
+        relationshipPairBCharacterId = character.id;
+      }
+      preserveScrollForNextRender();
+      saveUiSessionSnapshot({ captureDom: false });
+      render();
+    });
+  });
+  document.querySelectorAll<Element>('[data-world-relationship-line]').forEach(element => {
+    element.addEventListener('click', event => {
+      event.stopPropagation();
+      const relationshipId = element.getAttribute('data-world-relationship-line') ?? '';
+      const relationship = state.characterRelationships.find(item => item.id === relationshipId && item.worldId === activeWorld().id);
+      if (!relationship) return;
+      worldInsightTab = 'relationships';
+      activeWorldRpEventId = '';
+      relationshipPairACharacterId = relationship.characterAId;
+      relationshipPairBCharacterId = relationship.characterBId;
+      preserveScrollForNextRender();
+      saveUiSessionSnapshot({ captureDom: false });
+      render();
+    });
+  });
+  document.querySelector<HTMLElement>('[data-world-relationship-canvas]')?.addEventListener('click', event => {
+    const target = event.target as Element | null;
+    if (target?.closest('[data-world-relationship-character], [data-world-relationship-line]')) return;
+    if (!relationshipPairACharacterId && !relationshipPairBCharacterId) return;
+    relationshipPairACharacterId = '';
+    relationshipPairBCharacterId = '';
+    preserveScrollForNextRender();
+    saveUiSessionSnapshot({ captureDom: false });
+    render();
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-world-timeline-type]').forEach(button => {
+    button.addEventListener('click', () => {
+      const nextType = button.dataset.worldTimelineType;
+      if (!isWorldTimelineTypeFilter(nextType)) return;
+      worldTimelineTypeFilter = nextType;
+      worldInsightTab = 'timeline';
+      activeWorldRpEventId = '';
+      preserveScrollForNextRender();
+      saveUiSessionSnapshot({ captureDom: false });
+      render();
+    });
+  });
+  document.querySelector<HTMLInputElement>('[data-world-timeline-search]')?.addEventListener('input', event => {
+    worldTimelineSearchQuery = (event.currentTarget as HTMLInputElement).value;
+    worldInsightTab = 'timeline';
+    activeWorldRpEventId = '';
+    preserveScrollForNextRender();
+    saveUiSessionSnapshot({ captureDom: false });
+    render();
+  });
+  document.querySelector<HTMLSelectElement>('[data-world-timeline-character]')?.addEventListener('change', event => {
+    const selectedId = (event.currentTarget as HTMLSelectElement).value;
+    worldTimelineCharacterFilter = selectedId === 'all'
+      || state.characters.some(character => character.id === selectedId && character.worldId === activeWorld().id)
+      ? selectedId
+      : 'all';
+    worldInsightTab = 'timeline';
+    activeWorldRpEventId = '';
+    preserveScrollForNextRender();
+    saveUiSessionSnapshot({ captureDom: false });
+    render();
   });
   document.querySelectorAll<HTMLButtonElement>('[data-open-world-event-rp]').forEach(button => {
     button.addEventListener('click', () => {
@@ -8767,13 +9824,6 @@ function bindUi(): void {
       preserveScrollForNextRender();
       saveUiSessionSnapshot({ captureDom: false });
       setStatusText(`事件已结束并写入时间线：${archived.title}`);
-      generateMemorySuggestionsAfterAction({
-        trigger: 'event_resolved',
-        source: { type: 'event', id: `${archived.id}:resolved` },
-        title: `事件结束：${archived.title}`,
-        summary: archived.resultSummary ?? archived.description,
-        characterIds: archived.participantCharacterIds,
-      });
     } catch (error) {
       setStatusText(error instanceof Error ? error.message : String(error));
     }
@@ -8871,6 +9921,32 @@ function bindUi(): void {
     stickerPickerOpen = false;
     messageActionId = '';
     requestChatStickToBottom();
+    const character = activePrivateChatTarget();
+    const directSpeaker = privateChatIdentityCharacter();
+    if (directSpeaker && character && directSpeaker.id !== character.id) {
+      void (async () => {
+        const thread = ensureCharacterDirectThread(character.worldId, directSpeaker.id, character.id);
+        const latest = characterDirectMessagesFor(thread.id).at(-1);
+        if (!latest) {
+          setStatusText(`先用 ${directSpeaker.name} 的身份发一句，再让 ${character.name} 回复。`);
+          return;
+        }
+        if (latest.speakerCharacterId === character.id) {
+          setStatusText(`轮到你用 ${directSpeaker.name} 亲自接话。`);
+          return;
+        }
+        try {
+          await generateCharacterDirectReply(thread.id, character.id, { replyToId: latest.id, countBudget: true });
+          setStatusText(`${character.name} 已继续这段角色私聊。`);
+        } catch (error) {
+          setStatusText(error instanceof Error ? error.message : String(error));
+        }
+        requestChatStickToBottom();
+        preserveScrollForNextRender();
+        render();
+      })();
+      return;
+    }
     void generateReply(render);
   });
   document.querySelector<HTMLButtonElement>('#cancel-quote')?.addEventListener('click', () => {
@@ -8906,13 +9982,6 @@ function bindUi(): void {
           `重要聊天记忆：${character.name}`,
         );
         setStatusText('这句话已放进世界记录。');
-        generateMemorySuggestionsAfterAction({
-          trigger: 'chat_message',
-          source: { type: 'message', id: message.id },
-          title: timelineEntry.title,
-          summary: timelineEntry.summary,
-          characterIds: [character.id],
-        });
       }
       messageActionId = '';
       preserveScrollForNextRender();
@@ -9117,6 +10186,12 @@ function bindUi(): void {
   });
   document.querySelectorAll<HTMLButtonElement>('[data-send-sticker]').forEach(button => {
     button.addEventListener('click', () => {
+      if (privateChatIdentityCharacter()) {
+        stickerPickerOpen = false;
+        setStatusText('角色私聊暂时只支持文字消息。');
+        render();
+        return;
+      }
       stickerPickerOpen = false;
       void sendStickerMessage(button.dataset.sendSticker ?? '', render, privateChatSpeaker());
     });
@@ -9181,17 +10256,10 @@ function bindUi(): void {
   document.querySelector<HTMLFormElement>('#timeline-note-form')?.addEventListener('submit', event => {
     event.preventDefault();
     try {
-      const timelineEntry = addManualTimelineNote(fieldValue<HTMLTextAreaElement>('#timeline-note-input'));
+      addManualTimelineNote(fieldValue<HTMLTextAreaElement>('#timeline-note-input'));
       timelineNoteDraft = '';
       saveUiSessionSnapshot({ captureDom: false });
       setStatusText('这件事已写入世界时间线。');
-      generateMemorySuggestionsAfterAction({
-        trigger: 'manual_note',
-        source: timelineEntry.source,
-        title: timelineEntry.title,
-        summary: timelineEntry.summary,
-        characterIds: timelineEntry.characterIds,
-      });
     } catch (error) {
       setStatusText(error instanceof Error ? error.message : String(error));
     }
@@ -9215,34 +10283,6 @@ function bindUi(): void {
       render();
     });
   });
-  document.querySelectorAll<HTMLButtonElement>('[data-accept-memory-suggestion]').forEach(button => {
-    button.addEventListener('click', () => {
-      const suggestionId = button.dataset.acceptMemorySuggestion ?? '';
-      const title = document.querySelector<HTMLInputElement>(`[data-memory-suggestion-title="${suggestionId}"]`)?.value ?? '';
-      const summary = document.querySelector<HTMLTextAreaElement>(`[data-memory-suggestion-summary="${suggestionId}"]`)?.value ?? '';
-      const includeInContext = document.querySelector<HTMLInputElement>(`[data-memory-suggestion-context="${suggestionId}"]`)?.checked ?? true;
-      try {
-        acceptMemorySuggestion(suggestionId, { title, summary, includeInContext });
-        setStatusText('记忆已保存，并刷新了相关角色状态。');
-      } catch (error) {
-        setStatusText(error instanceof Error ? error.message : String(error));
-      }
-      preserveScrollForNextRender();
-      render();
-    });
-  });
-  document.querySelectorAll<HTMLButtonElement>('[data-dismiss-memory-suggestion]').forEach(button => {
-    button.addEventListener('click', () => {
-      try {
-        dismissMemorySuggestion(button.dataset.dismissMemorySuggestion ?? '');
-        setStatusText('已忽略这条记忆建议。');
-      } catch (error) {
-        setStatusText(error instanceof Error ? error.message : String(error));
-      }
-      preserveScrollForNextRender();
-      render();
-    });
-  });
   document.querySelectorAll<HTMLInputElement>('[data-comment-input]').forEach(input => {
     input.addEventListener('input', event => {
       const target = event.currentTarget as HTMLInputElement;
@@ -9251,51 +10291,22 @@ function bindUi(): void {
       scheduleUiSessionSnapshotSave();
     });
   });
-  document.querySelectorAll<HTMLElement>('[data-moment-comment-tap]').forEach(comment => {
-    let longPressTimer: number | undefined;
-    const momentId = comment.dataset.momentCommentMoment ?? '';
-    const commentId = comment.dataset.momentCommentTap ?? '';
-    const clearLongPress = () => {
-      if (longPressTimer) window.clearTimeout(longPressTimer);
-      longPressTimer = undefined;
-    };
-    const openMenu = () => {
-      clearLongPress();
-      openMomentCommentActionMenu(momentId, commentId);
-      preserveScrollForNextRender();
-      render();
-    };
-    comment.addEventListener('click', event => {
-      if ((event.target as HTMLElement).closest('button, select, option')) return;
+  document.querySelectorAll<HTMLButtonElement>('[data-moment-comment-tap]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.stopPropagation();
       if (Date.now() < momentCommentSuppressTapUntil) return;
+      const momentId = button.dataset.momentCommentMoment ?? '';
+      const commentId = button.dataset.momentCommentTap ?? '';
       setMomentCommentReplyTarget(momentId, commentId);
+      clearMomentCommentActionMenu(momentId, commentId);
       preserveScrollForNextRender();
       render();
-    });
-    comment.addEventListener('keydown', event => {
-      if (event.key !== 'Enter' && event.key !== ' ') return;
-      event.preventDefault();
-      setMomentCommentReplyTarget(momentId, commentId);
-      preserveScrollForNextRender();
-      render();
-    });
-    comment.addEventListener('pointerdown', event => {
-      if ((event.target as HTMLElement).closest('button, select, option')) return;
-      clearLongPress();
-      longPressTimer = window.setTimeout(openMenu, 520);
-    });
-    comment.addEventListener('pointerup', clearLongPress);
-    comment.addEventListener('pointercancel', clearLongPress);
-    comment.addEventListener('pointerleave', clearLongPress);
-    comment.addEventListener('contextmenu', event => {
-      event.preventDefault();
-      openMenu();
     });
   });
   if (momentCommentActionMenu) {
     document.addEventListener('pointerdown', event => {
       const target = event.target as HTMLElement | null;
-      if (target?.closest('.moment-comment-menu, [data-moment-comment-menu]')) return;
+      if (target?.closest('.moment-comment-menu, .moment-comment-actions, .moment-comment-character-reply')) return;
       momentCommentActionMenu = null;
       preserveScrollForNextRender();
       render();
@@ -9410,6 +10421,10 @@ function bindUi(): void {
         const input = document.querySelector<HTMLInputElement>(`[data-comment-input="${momentId}"]`);
         const moment = state.moments.find(item => item.id === momentId);
         if (!moment) throw new Error('找不到这条动态。');
+        const selectedActorId = document.querySelector<HTMLSelectElement>(
+          `[data-comment-actor-select="${momentId}"]`,
+        )?.value ?? communicationActorId(moment.worldId);
+        setCommunicationActor(moment.worldId, selectedActorId);
         const commentCharacter = momentCommentCharacterFromCommunicationIdentity(moment);
         const replyToCommentId = momentCommentReplyTargetDrafts.get(momentId);
         const comment = addMomentComment(
@@ -9661,9 +10676,12 @@ function bindUi(): void {
           participantCharacterIds: participantIds,
           leadActor,
           affinityDelta: finiteNumber(eventComposerDraft.affinityDelta, 0),
-          type: 'daily',
+          type: eventComposerDraft.eventType ?? 'daily',
           source: 'manual',
         });
+        if (eventComposerDraft.privateEventSuggestionId) {
+          markPrivateChatEventSuggestionAccepted(eventComposerDraft.privateEventSuggestionId, worldEvent.id);
+        }
         activeWorldRpEventId = worldEvent.id;
         eventComposerOpen = false;
         eventComposerDraft = { mode: 'auto', title: '', description: '', participantIds: [], affinityDelta: '0' };
@@ -9742,13 +10760,6 @@ function bindUi(): void {
       void resolveWorldEventChoice(eventId, choiceId)
         .then(worldEvent => {
           setStatusText(`事件已结算：${worldEvent.title}`);
-          generateMemorySuggestionsAfterAction({
-            trigger: 'event_resolved',
-            source: { type: 'event', id: `${worldEvent.id}:resolved` },
-            title: `事件结算：${worldEvent.title}`,
-            summary: worldEvent.decision?.result ?? worldEvent.resultSummary ?? worldEvent.description,
-            characterIds: worldEvent.participantCharacterIds,
-          });
         })
         .catch(error => {
           setStatusText(`后续生成失败：${error instanceof Error ? error.message : String(error)}`);
@@ -9767,13 +10778,6 @@ function bindUi(): void {
       try {
         const worldEvent = finishWorldEventManually(eventId, input?.value ?? '');
         setStatusText(`已保存手写事件结果：${worldEvent.title}`);
-        generateMemorySuggestionsAfterAction({
-          trigger: 'event_resolved',
-          source: { type: 'event', id: `${worldEvent.id}:resolved` },
-          title: `事件结束：${worldEvent.title}`,
-          summary: worldEvent.resultSummary ?? worldEvent.description,
-          characterIds: worldEvent.participantCharacterIds,
-        });
       } catch (error) {
         setStatusText(error instanceof Error ? error.message : String(error));
       }
@@ -9784,56 +10788,60 @@ function bindUi(): void {
   document.querySelectorAll<HTMLButtonElement>('[data-resolve-event]').forEach(button => {
     button.addEventListener('click', () => {
       const eventId = button.dataset.resolveEvent ?? '';
-      const worldEvent = state.worldEvents.find(item => item.id === eventId && item.worldId === activeWorld().id);
       if (resolveWorldEvent(eventId)) {
         setStatusText('事件已直接记为结束，并写入近期生活记忆。');
-        if (worldEvent) {
-          generateMemorySuggestionsAfterAction({
-            trigger: 'event_resolved',
-            source: { type: 'event', id: `${worldEvent.id}:resolved` },
-            title: `事件结束：${worldEvent.title}`,
-            summary: worldEvent.resultSummary ?? worldEvent.description,
-            characterIds: worldEvent.participantCharacterIds,
-          });
-        }
       }
       preserveScrollForNextRender();
       render();
     });
   });
+  const setEventSwipeDeleteVisible = (row: HTMLElement, revealed: boolean): void => {
+    row.classList.toggle('is-delete-revealed', revealed);
+    row.querySelectorAll<HTMLButtonElement>('[data-delete-event]').forEach(action => {
+      action.tabIndex = revealed ? 0 : -1;
+      action.setAttribute('aria-hidden', revealed ? 'false' : 'true');
+    });
+  };
+  const closeRevealedEventSwipeRows = (except?: HTMLElement): void => {
+    document.querySelectorAll<HTMLElement>('[data-event-swipe-row].is-delete-revealed').forEach(openRow => {
+      if (openRow !== except) setEventSwipeDeleteVisible(openRow, false);
+    });
+  };
+  document.querySelectorAll<HTMLElement>('[data-event-swipe-row]').forEach(row => {
+    let eventSwipeStartX = 0;
+    let eventSwipeStartY = 0;
+    row.addEventListener('pointerdown', event => {
+      if ((event.target as HTMLElement | null)?.closest('[data-delete-event]')) return;
+      closeRevealedEventSwipeRows(row);
+      eventSwipeStartX = event.clientX;
+      eventSwipeStartY = event.clientY;
+    });
+    row.addEventListener('pointerup', event => {
+      const deltaX = event.clientX - eventSwipeStartX;
+      const deltaY = event.clientY - eventSwipeStartY;
+      if (Math.abs(deltaX) < 36 || Math.abs(deltaX) < Math.abs(deltaY)) return;
+      closeRevealedEventSwipeRows(row);
+      const shouldReveal = deltaX < 0 || !row.classList.contains('is-delete-revealed');
+      setEventSwipeDeleteVisible(row, shouldReveal);
+    });
+  });
+  document.addEventListener('pointerdown', event => {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('[data-event-swipe-row]')) return;
+    closeRevealedEventSwipeRows();
+  });
   document.querySelectorAll<HTMLButtonElement>('[data-delete-event]').forEach(button => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', clickEvent => {
       const eventId = button.dataset.deleteEvent ?? '';
-      const hasActiveImpact = recordsForOperation(`event:${eventId}:resolved`).some(record => !record.rolledBackAt);
-      const event = state.worldEvents.find(item => item.id === eventId);
-      const deleteEventWithImpactChoice = (rollbackImpact: boolean) => {
-        if (deleteWorldEvent(eventId, { rollbackImpact })) {
-          setStatusText(rollbackImpact ? '事件已删除，相关影响也已撤销。' : '事件已删除，已保留既有关系影响。');
-        }
-        preserveScrollForNextRender();
-      };
-      openConfirmDialog({
-        title: '删除事件',
-        message: `确定删除事件“${event?.title ?? '这条事件'}”吗？删除后会从生活线索流移除，时间线会保留一条删除记录。`,
-        confirmLabel: '删除事件',
-        cancelLabel: '保留',
-        tone: 'danger',
-        onConfirm: () => {
-          if (!hasActiveImpact) {
-            deleteEventWithImpactChoice(true);
-            return;
-          }
-          openConfirmDialog({
-            title: '撤销关系影响',
-            message: '这条事件已经影响关系。要同时撤销这些关系影响吗？',
-            confirmLabel: '删除并撤销影响',
-            cancelLabel: '只删除事件',
-            tone: 'danger',
-            onConfirm: () => deleteEventWithImpactChoice(true),
-            onCancel: () => deleteEventWithImpactChoice(false),
-          });
-        },
-      });
+      clickEvent.preventDefault();
+      clickEvent.stopPropagation();
+      if (!eventId) return;
+      if (deleteWorldEvent(eventId, { rollbackImpact: true })) {
+        if (activeWorldRpEventId === eventId) activeWorldRpEventId = '';
+        setStatusText('事件已删除，相关关系影响也已撤销。');
+      }
+      preserveScrollForNextRender();
+      render();
     });
   });
 }

@@ -126,6 +126,7 @@ if (
   throw new Error('Structured authoring extension was not exported.');
 }
 const authoringUiSource = require('node:fs').readFileSync('src/independent-chat/ui/authoring-ui.ts', 'utf8');
+const stylesSource = require('node:fs').readFileSync('src/independent-chat/styles.css', 'utf8');
 if (
   authoringUiSource.includes('性格调色盘')
   || authoringUiSource.includes('data-authoring-step="palette"')
@@ -135,6 +136,20 @@ if (
   || authoringUiSource.includes('选择创作方式')
 ) {
   throw new Error('Authoring UI should not expose complex persona controls.');
+}
+if (
+  !authoringUiSource.includes('authoring-identity-fields')
+  || !authoringUiSource.includes('class="authoring-age-input"')
+  || !authoringUiSource.includes('data-authoring-autogrow')
+  || !authoringUiSource.includes('resizeAuthoringTextarea')
+  || !stylesSource.includes('.authoring-identity-fields')
+  || !stylesSource.includes('.authoring-age-input')
+  || !stylesSource.includes('min-inline-size: min(100%, 12rem)')
+  || !stylesSource.includes('#draft-background-story')
+  || !stylesSource.includes('.authoring-progress button > span')
+  || !stylesSource.includes('inline-size: 28px')
+) {
+  throw new Error('Authoring identity fields should keep numeric controls horizontal and auto-grow long text areas.');
 }
 const authoringSource = require('node:fs').readFileSync('src/independent-chat/characters/authoring.ts', 'utf8');
 const typeSource = require('node:fs').readFileSync('src/independent-chat/core/types.ts', 'utf8');

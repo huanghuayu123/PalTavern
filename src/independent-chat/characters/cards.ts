@@ -584,6 +584,23 @@ export function deleteCharacter(characterId: string): CharacterProfile | undefin
   state.messages = state.messages.filter(message =>
     message.characterId !== characterId && !conversationIds.has(message.conversationId),
   );
+  const removedDirectThreadIds = new Set(
+    state.characterDirectThreads
+      .filter(thread => thread.participantCharacterIds.includes(characterId))
+      .map(thread => thread.id),
+  );
+  state.characterDirectThreads = state.characterDirectThreads.filter(thread =>
+    !removedDirectThreadIds.has(thread.id),
+  );
+  state.characterDirectMessages = state.characterDirectMessages.filter(message =>
+    !removedDirectThreadIds.has(message.threadId) && message.speakerCharacterId !== characterId,
+  );
+  state.privateChatEventSuggestions = state.privateChatEventSuggestions.filter(suggestion =>
+    !suggestion.participantCharacterIds.includes(characterId)
+    && suggestion.triggerCharacterId !== characterId
+    && !conversationIds.has(suggestion.threadId)
+    && !removedDirectThreadIds.has(suggestion.threadId),
+  );
   state.moments = state.moments
     .filter(moment => moment.characterId !== characterId)
     .map(moment => {

@@ -82,6 +82,7 @@ export function timelineSourceLabel(entry: TimelineEntry): string {
   const labels: Record<TimelineEntry['source']['type'], string> = {
     message: '消息',
     group_message: '群聊消息',
+    direct_chat: '角色私聊',
     moment: '动态',
     comment: '评论',
     event: '世界事件',

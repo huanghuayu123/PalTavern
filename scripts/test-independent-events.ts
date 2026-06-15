@@ -23,6 +23,7 @@ const stateModule = require('../src/independent-chat/core/state');
 const events = require('../src/independent-chat/social/events');
 const impacts = require('../src/independent-chat/memory/impacts');
 const model = require('../src/independent-chat/model/client');
+const privateChat = require('../src/independent-chat/chat/private-chat');
 const characterRelationships = require('../src/independent-chat/characters/relationships');
 const rpRendering = require('../src/independent-chat/ui/rp-rendering');
 const promptPresets = require('../src/independent-chat/model/prompt-presets');
@@ -174,7 +175,14 @@ async function assertWorldPresetGeneration() {
   (globalThis as any).fetch = async (_input: string, init?: { body?: string }) => {
     worldRpPayload = init?.body ? JSON.parse(init.body) : undefined;
     return new Response(JSON.stringify({
-      choices: [{ message: { content: 'DROP_WORLD_TOKEN @bubble:Event Character|gentle|Preset reply.' } }],
+      choices: [{ message: { content: [
+        '<thinking>hidden planning</thinking>',
+        'DROP_WORLD_TOKEN ```md',
+        '# 世界 RP',
+        '<msg>@bubble:Event Character|gentle|Preset reply.</msg>',
+        '<sticker:smile>',
+        '```',
+      ].join('\n') } }],
     }), { status: 200, headers: { 'content-type': 'application/json' } });
   };
   const generated = await events.generateWorldEventRpReply(worldRpEvent.id, character);
@@ -185,9 +193,14 @@ async function assertWorldPresetGeneration() {
     || !promptText.includes('Event Companion')
     || !promptText.includes('World RP history')
     || generated.content.includes('DROP_WORLD_TOKEN')
+    || generated.content.includes('<thinking>')
+    || generated.content.includes('<msg>')
+    || generated.content.includes('<sticker:')
+    || generated.content.includes('```')
+    || generated.content.includes('# 世界 RP')
     || !generated.content.includes('Preset reply.')
   ) {
-    throw new Error('World RP generation did not use the selected SillyTavern-style world prompt preset and regex script.');
+    throw new Error('World RP generation did not use the selected preset or clean wrapper formatting from model output.');
   }
 }
 let explicitEventPayload: any;
@@ -220,6 +233,108 @@ async function assertExplicitEventGeneration() {
     || !promptText.includes('Event Companion')
   ) {
     throw new Error('Explicit user-led event generation should use the chosen lead actor and selected participants only.');
+  }
+}
+
+async function assertPrivateChatEventSuggestions() {
+  const responses = [
+    JSON.stringify({
+      shouldSuggest: true,
+      title: '线下咖啡碰面',
+      type: 'daily',
+      description: '你和 Event Character 在私聊里约定明天下午到线下咖啡店碰面。',
+      affinityDelta: 3,
+      participantCharacterIds: [character.id, 'missing_character', companion.id],
+      reason: '私聊中出现明确的线下见面安排。',
+    }),
+    JSON.stringify({ shouldSuggest: false, reason: '只是普通问候。' }),
+    JSON.stringify({ shouldSuggest: false, reason: '用户只是确认时间。' }),
+    '<msg>那我们明天下午就在线下咖啡店见。</msg>',
+    JSON.stringify({
+      shouldSuggest: true,
+      title: '角色确认线下见面',
+      type: 'daily',
+      description: 'Event Character 在回复中确认明天下午的线下咖啡店碰面。',
+      affinityDelta: 2,
+      participantCharacterIds: [character.id],
+      reason: '角色回复确认了线下见面安排。',
+    }),
+  ];
+  const detectorPayloads: any[] = [];
+  (globalThis as any).fetch = async (_input: string, init?: { body?: string }) => {
+    const body = init?.body ? JSON.parse(init.body) : {};
+    if (Array.isArray(body.messages)) detectorPayloads.push(body);
+    const content = responses.shift() ?? JSON.stringify({ shouldSuggest: false });
+    return new Response(JSON.stringify({
+      choices: [{ message: { content } }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+
+  await privateChat.sendUserMessageOnly('那我们明天下午在线下咖啡店见。', () => {});
+  const userSuggestion = stateModule.state.privateChatEventSuggestions.find((suggestion: any) =>
+    suggestion.title === '线下咖啡碰面'
+  );
+  if (
+    !userSuggestion
+    || userSuggestion.status !== 'pending'
+    || userSuggestion.sourceKind !== 'private_chat'
+    || userSuggestion.sourceMessageRole !== 'user'
+    || userSuggestion.participantCharacterIds.includes('missing_character')
+    || !userSuggestion.participantCharacterIds.includes(character.id)
+    || !userSuggestion.participantCharacterIds.includes(companion.id)
+    || stateModule.state.worldEvents.some((event: any) => event.title === '线下咖啡碰面')
+  ) {
+    throw new Error('User private chat event detection should create a pending suggestion without creating a world event.');
+  }
+  const detectorPrompt = detectorPayloads[0]?.messages?.map((message: { content: string }) => message.content).join('\n') ?? '';
+  if (
+    !detectorPrompt.includes('只输出 JSON')
+    || !detectorPrompt.includes('接受前不得进入世界记录/世界上下文')
+    || !detectorPrompt.includes('触发消息')
+  ) {
+    throw new Error('Private chat event detection prompt should be structured, narrow, and explicit about pre-acceptance isolation.');
+  }
+  const createdFromSuggestion = events.createWorldEventFromPrivateChatSuggestion(userSuggestion.id);
+  if (
+    createdFromSuggestion.title !== '线下咖啡碰面'
+    || createdFromSuggestion.source !== 'manual'
+    || userSuggestion.status !== 'accepted'
+    || userSuggestion.createdEventId !== createdFromSuggestion.id
+    || !stateModule.state.timelineEntries.some((entry: any) =>
+      entry.source.type === 'event' && entry.source.id === createdFromSuggestion.id
+    )
+  ) {
+    throw new Error('Accepting a private chat suggestion should create a manual world event and mark the suggestion accepted.');
+  }
+
+  const beforeQuiet = stateModule.state.privateChatEventSuggestions.length;
+  await privateChat.sendUserMessageOnly('今天只是普通聊聊天。', () => {});
+  if (stateModule.state.privateChatEventSuggestions.length !== beforeQuiet) {
+    throw new Error('AI shouldSuggest:false responses must not create private chat event suggestions.');
+  }
+
+  await privateChat.sendMessage('你觉得明天下午还方便吗？', () => {});
+  const assistantSuggestion = stateModule.state.privateChatEventSuggestions.find((suggestion: any) =>
+    suggestion.title === '角色确认线下见面'
+  );
+  if (
+    !assistantSuggestion
+    || assistantSuggestion.sourceMessageRole !== 'assistant'
+    || assistantSuggestion.status !== 'pending'
+  ) {
+    throw new Error('Assistant private chat replies should also be checked for event suggestions.');
+  }
+  if (!events.dismissPrivateChatEventSuggestion(assistantSuggestion.id) || assistantSuggestion.status !== 'dismissed') {
+    throw new Error('Private chat event suggestions should be dismissible.');
+  }
+
+  const beforeFailure = stateModule.state.privateChatEventSuggestions.length;
+  (globalThis as any).fetch = async () => {
+    throw new Error('detector unavailable');
+  };
+  await privateChat.sendUserMessageOnly('失败时也不该打断聊天，哪怕我说今晚见。', () => {});
+  if (stateModule.state.privateChatEventSuggestions.length !== beforeFailure) {
+    throw new Error('Detector failures should be silent and should not create suggestions.');
   }
 }
 const bracketlessBubbleSegments = rpRendering.parseRpRenderSegments('@bubble:Event Character|gentle|I saw the note.', {
@@ -321,6 +436,7 @@ const eventOutcomeFetch = async () => new Response(JSON.stringify({
 async function main() {
   await assertExplicitEventGeneration();
   await assertWorldPresetGeneration();
+  await assertPrivateChatEventSuggestions();
   stateModule.state.activeWorldPromptPresetId = promptPresets.TAVERN_SOCIAL_DEFAULT_WORLD_PROMPT_PRESET_ID;
   stateModule.state.worldPromptPresetEnabled = true;
   (globalThis as any).fetch = eventOutcomeFetch;

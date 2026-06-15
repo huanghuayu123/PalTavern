@@ -47,6 +47,28 @@ function rerenderAuthoringInPlace(rerender: () => void): void {
   restoreAuthoringScrollIfNeeded();
 }
 
+function resizeAuthoringTextarea(textarea: HTMLTextAreaElement): void {
+  textarea.style.height = 'auto';
+  const style = window.getComputedStyle(textarea);
+  const minHeight = Number.parseFloat(style.minHeight);
+  const maxHeight = Number.parseFloat(style.maxHeight);
+  const contentHeight = Math.max(textarea.scrollHeight, Number.isFinite(minHeight) ? minHeight : 0);
+  const nextHeight = Number.isFinite(maxHeight) && maxHeight > 0
+    ? Math.min(contentHeight, maxHeight)
+    : contentHeight;
+  textarea.style.height = `${Math.ceil(nextHeight)}px`;
+  textarea.style.overflowY = contentHeight > nextHeight ? 'auto' : 'hidden';
+}
+
+function bindAuthoringAutoGrowTextareas(): void {
+  document.querySelectorAll<HTMLTextAreaElement>('[data-authoring-autogrow]').forEach(textarea => {
+    resizeAuthoringTextarea(textarea);
+    textarea.addEventListener('input', event => {
+      resizeAuthoringTextarea(event.currentTarget as HTMLTextAreaElement);
+    });
+  });
+}
+
 export function isAuthoringOpen(): boolean {
   return authoringOpen;
 }
@@ -141,13 +163,15 @@ function renderTutor(draft: CharacterCardDraft, step: CharacterCardDraftStep): s
 function renderEditor(draft: CharacterCardDraft, step: CharacterCardDraftStep): string {
   if (step === 'identity') {
     return `
-      <section class="authoring-editor">
+      <section class="authoring-editor authoring-identity-editor">
         <div class="authoring-panel-heading"><div><span>基础信息</span><h2>这个角色是谁？</h2></div></div>
-        <label class="field"><span>角色名称（必填）</span><input id="draft-name" value="${escapeHtml(draft.name)}" placeholder="例如：沈灵" /></label>
-        <label class="field"><span>年龄</span><input id="draft-age" value="${escapeHtml(draft.age)}" placeholder="例如：17岁、大学二年级、未知" /></label>
-        <label class="field"><span>一句话构想</span><textarea id="draft-concept" placeholder="例如：总在替别人收拾残局，却不肯承认自己也需要被照顾。">${escapeHtml(draft.concept)}</textarea></label>
-        <label class="field"><span>背景故事</span><textarea id="draft-background-story" placeholder="写出生长环境、过去经历，或她为什么会来到当前世界。">${escapeHtml(draft.backgroundStory)}</textarea></label>
-        <label class="field"><span>备注</span><textarea id="draft-profile-note" placeholder="给自己看的补充信息，比如关系前情、禁忌、容易忘的细节。">${escapeHtml(draft.profileNote)}</textarea></label>
+        <div class="authoring-identity-fields">
+          <label class="field"><span>角色名称（必填）</span><input id="draft-name" value="${escapeHtml(draft.name)}" placeholder="例如：沈灵" /></label>
+          <label class="field"><span>年龄</span><input class="authoring-age-input" id="draft-age" value="${escapeHtml(draft.age)}" placeholder="例如：17岁、大学二年级、未知" /></label>
+          <label class="field"><span>一句话构想</span><textarea data-authoring-autogrow id="draft-concept" rows="3" placeholder="例如：总在替别人收拾残局，却不肯承认自己也需要被照顾。">${escapeHtml(draft.concept)}</textarea></label>
+          <label class="field"><span>背景故事</span><textarea data-authoring-autogrow id="draft-background-story" rows="5" placeholder="写出生长环境、过去经历，或她为什么会来到当前世界。">${escapeHtml(draft.backgroundStory)}</textarea></label>
+          <label class="field"><span>备注</span><textarea data-authoring-autogrow id="draft-profile-note" rows="3" placeholder="给自己看的补充信息，比如关系前情、禁忌、容易忘的细节。">${escapeHtml(draft.profileNote)}</textarea></label>
+        </div>
       </section>
     `;
   }
@@ -348,6 +372,7 @@ export function bindAuthoringUi(rerender: () => void): void {
   });
   const draft = activeDraft();
   if (!draft) return;
+  bindAuthoringAutoGrowTextareas();
   const steps = stepsFor(draft);
   const step = draft.currentStep;
   const index = steps.indexOf(step);

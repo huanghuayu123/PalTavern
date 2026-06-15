@@ -3,7 +3,7 @@
  * Records, traces, and rolls back relationship, status, and event side effects.
  */
 import { saveState, state } from '../core/state';
-import { addTimelineEntry } from './timeline';
+import { addTimelineEntry, removePrivateChatSegmentTimelineEntries } from './timeline';
 import type {
   CharacterRelationshipRecord,
   CharacterRelationshipSide,
@@ -293,6 +293,7 @@ function applyRollback(record: ImpactRecord, rolledBackAt: number): void {
     const message = state.messages.find(item => item.id === record.targetId);
     if (message) {
       message.impactRevokedAt = rolledBackAt;
+      removePrivateChatSegmentTimelineEntries(message.conversationId);
     }
     return;
   }

@@ -8,6 +8,7 @@ import { characterRelationshipContextFor } from '../characters/relationships';
 import { characterSettingsText } from '../characters/settings';
 import { characterStatusContextFor, characterStatusFor } from '../memory/character-status';
 import { isImpactSourceRolledBack } from '../memory/impacts';
+import { memorySummaryContextFor } from '../memory/summaries';
 import { applyPromptPresetRegexScripts } from './prompt-presets';
 import { hasModelBudget, messagesFor, recordModelRequest, saveState, state } from '../core/state';
 import { companionTimeContext } from '../core/time';
@@ -291,8 +292,9 @@ function privateMemorySummaryContextFor(character: CharacterProfile): string {
     ? `关系摘要：${compactText(character.relationship.summary, 180)}`
     : '';
   const parts = [
+    memorySummaryContextFor(character),
     characterStatusMemoryContextFor(character),
-    timelineContextFor(character, 4),
+    timelineContextFor(character, 2),
     dailyBriefContextFor(character),
     characterRelationshipContextFor(character, 6),
     relationshipSummary,
