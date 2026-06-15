@@ -39,6 +39,75 @@ export const STEP_LABELS: Record<CharacterCardDraftStep, string> = {
   preview: '完成预览',
 };
 
+const AUTHORING_FIELD_LABELS = [
+  ...Object.values(STEP_LABELS),
+  '角色描述',
+  '角色卡正文',
+  '最终内容',
+  '候选稿',
+  '角色名',
+  '名称',
+  '年龄',
+  '背景故事',
+  '备注',
+  '外貌',
+  '性格',
+  '爱好',
+  '性格细节',
+  '补充解释',
+  '开场白',
+  'first_mes',
+  'first message',
+  'first_message',
+  'opening',
+];
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function cleanMarkdownShell(output: string): string {
+  return output
+    .trim()
+    .replace(/^```(?:\w+)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .replace(/^[ \t]*#{1,6}[ \t]+/gm, '')
+    .replace(/\*\*([^*\n]+?)\*\*/g, '$1')
+    .replace(/__([^_\n]+?)__/g, '$1')
+    .replace(/[ \t]+$/gm, '')
+    .trim();
+}
+
+function stripFieldLabelPrefix(line: string): string {
+  const labels = AUTHORING_FIELD_LABELS.map(escapeRegExp).join('|');
+  const labelPattern = new RegExp(
+    `^\\s*(?:[-*•>]\\s*)?(?:【\\s*(?:${labels})\\s*】|(?:${labels})\\s*[:：])\\s*`,
+    'iu',
+  );
+  const bareLabelPattern = new RegExp(`^\\s*(?:${labels})\\s*$`, 'iu');
+  let next = line.trim();
+  let previous = '';
+  while (next && next !== previous) {
+    previous = next;
+    next = next.replace(labelPattern, '').trim();
+  }
+  return bareLabelPattern.test(next) ? '' : next;
+}
+
+export function cleanAuthoringTutorOutput(output: string): string {
+  return cleanMarkdownShell(output);
+}
+
+export function cleanAuthoringCandidateText(output: string, _step?: CharacterCardDraftStep): string {
+  const cleaned = cleanMarkdownShell(output);
+  return cleaned
+    .split(/\r?\n/)
+    .map(stripFieldLabelPrefix)
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+}
+
 export function stepsFor(_draft: CharacterCardDraft): CharacterCardDraftStep[] {
   return SIMPLE_STEPS;
 }

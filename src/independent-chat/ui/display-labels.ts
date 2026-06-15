@@ -3,6 +3,7 @@
  * 业务模块继续保存稳定的英文状态码，UI 在这里把它们翻译成用户能读懂的中文。
  */
 import type {
+  CharacterProfile,
   PacingState,
   RelationshipStage,
   TimelineEntry,
@@ -94,4 +95,98 @@ export function timelineSourceLabel(entry: TimelineEntry): string {
     manual: '手动记录',
   };
   return labels[entry.source.type];
+}
+
+const CONTACT_FIELD_LABELS = [
+  '角色描述',
+  '角色构想',
+  '角色卡正文',
+  '最终内容',
+  '候选稿',
+  '年龄',
+  '背景故事',
+  '备注',
+  '外貌',
+  '性格',
+  '爱好',
+  '性格细节',
+  '补充解释',
+  '当前场景',
+  '开场白',
+  'first_mes',
+  'first message',
+  'first_message',
+  'opening',
+];
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function compactLine(value: string, maxLength: number): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1)}…` : normalized;
+}
+
+function stripContactFieldLabelPrefix(line: string): string {
+  const labels = CONTACT_FIELD_LABELS.map(escapeRegExp).join('|');
+  const labelPattern = new RegExp(
+    `^\\s*(?:[-*•>]\\s*)?(?:【\\s*(?:${labels})\\s*】|(?:${labels})\\s*[:：])\\s*`,
+    'iu',
+  );
+  const bareLabelPattern = new RegExp(`^\\s*(?:${labels})\\s*$`, 'iu');
+  let next = line
+    .replace(/^[ \t]*#{1,6}[ \t]+/, '')
+    .replace(/\*\*([^*\n]+?)\*\*/g, '$1')
+    .replace(/__([^_\n]+?)__/g, '$1')
+    .trim();
+  let previous = '';
+  while (next && next !== previous) {
+    previous = next;
+    next = next.replace(labelPattern, '').trim();
+  }
+  return bareLabelPattern.test(next) ? '' : next;
+}
+
+function isGenericContactLine(character: CharacterProfile, line: string): boolean {
+  const name = character.name.trim();
+  return (
+    line === '未填写'
+    || line === '暂无'
+    || line === '尚未填写'
+    || line.includes('最近按自己的生活节奏行动')
+    || (Boolean(name) && line === `${name} 设定`)
+  );
+}
+
+function firstNaturalContactLine(character: CharacterProfile, text?: string): string {
+  if (!text?.trim()) return '';
+  const lines = text
+    .split(/\r?\n/)
+    .map(stripContactFieldLabelPrefix)
+    .map(line => line.replace(/^[“”"']+|[“”"']+$/g, '').trim())
+    .filter(line => line && !isGenericContactLine(character, line));
+  return lines[0] ?? '';
+}
+
+export function characterContactSubtitle(
+  character: CharacterProfile,
+  settingsText = '',
+  fallback = '已导入角色卡',
+): string {
+  const currentPlan = character.currentPlan?.source === 'model' ? character.currentPlan.text : '';
+  const candidates = [
+    currentPlan,
+    character.profileNote,
+    character.backgroundStory,
+    settingsText,
+    character.description,
+    character.personality,
+    character.scenario,
+  ];
+  for (const candidate of candidates) {
+    const line = firstNaturalContactLine(character, candidate);
+    if (line) return compactLine(line, 48);
+  }
+  return fallback;
 }

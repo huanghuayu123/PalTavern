@@ -47,6 +47,12 @@ export function isReplying(): boolean {
   return Boolean(replyController);
 }
 
+export function isOpeningMessageGenerating(character?: CharacterProfile, actorId = 'user'): boolean {
+  if (!character) return false;
+  const conversationActorId = privateConversationActorIdFor(character, actorId);
+  return openingRequests.has(`${conversationActorId}:${character.id}`);
+}
+
 export function replyStateAgeMs(): number | null {
   return replyController && replyStartedAt > 0 ? Date.now() - replyStartedAt : null;
 }

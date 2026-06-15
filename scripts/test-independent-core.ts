@@ -302,6 +302,7 @@ const androidMainActivitySource = fs.readFileSync(path.join(
 const worldDialogueBody = functionBody(appSource, 'renderWorldDialogueStream');
 const worldComposerBindingBody = functionBody(appSource, 'bindUi');
 const chatPaneRenderBlock = functionBody(appSource, 'renderChatPane');
+const renderMessagesBlock = functionBody(appSource, 'renderMessages');
 const mobileRenderBlock = functionBody(appSource, 'renderMobile');
 const privateTargetSelectorBlock = functionBody(appSource, 'renderPrivateChatTargetSelector');
 const renderGroupSpeakerPickerBlock = functionBody(appSource, 'renderGroupSpeakerPicker');
@@ -372,6 +373,14 @@ if (
   || !appSource.includes('data-dismiss-private-event-suggestion')
 ) {
   throw new Error('Private chat event suggestions should use the authoring JSON detector, stay out of world context until accepted, and expose confirmation actions.');
+}
+if (
+  typeof chat.isOpeningMessageGenerating !== 'function'
+  || !privateChatSource.includes('export function isOpeningMessageGenerating')
+  || !renderMessagesBlock.includes('isOpeningMessageGenerating(character')
+  || !renderMessagesBlock.includes('正在生成新消息')
+) {
+  throw new Error('New character opening-message generation should surface an in-chat generating hint.');
 }
 if (worldComposerBindingBody.includes('void sendMessage(content, render);')) {
   throw new Error('World RP composer must not submit through the private-chat sender.');
@@ -3176,6 +3185,8 @@ if (
   || !privateEventSuggestionCardBlock.includes('private-event-suggestion-label')
   || !privateEventSuggestionCardBlock.includes('private-event-suggestion-meta')
   || !privateEventSuggestionCardBlock.includes('private-event-suggestion-description')
+  || !privateEventSuggestionCardBlock.includes('creatingPrivateEventSuggestionId')
+  || !privateEventSuggestionCardBlock.includes('正在生成事件')
   || !styleSource.includes('.private-event-suggestion-card')
   || !styleSource.includes('margin: 0 16px 10px')
   || !styleSource.includes('border-radius: 12px')
@@ -3183,6 +3194,14 @@ if (
   || !styleSource.includes('.private-event-suggestion-description')
 ) {
   throw new Error('Private chat event suggestions should render as a compact island-event draft bar attached to the composer.');
+}
+if (
+  !uiSource.includes('let creatingPrivateEventSuggestionId = \'\'')
+  || !uiSource.includes('creatingPrivateEventSuggestionId = suggestionId')
+  || !uiSource.includes('window.setTimeout(() =>')
+  || !uiSource.includes('creatingPrivateEventSuggestionId = \'\'')
+) {
+  throw new Error('Private chat event generation should keep the draft card visible in a generating state before it resolves.');
 }
 if (
   !memorySummaryCardBlock.includes('memory-summary-more-actions')

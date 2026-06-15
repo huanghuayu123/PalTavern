@@ -44,6 +44,14 @@ import {
   restoreBackupText,
 } from '../data/backup';
 import {
+  downloadWorldBundle,
+  importWorldBundlePreview,
+  previewWorldBundleText,
+  type WorldBundleImportSelection,
+  type WorldBundlePreview,
+  type WorldBundleSection,
+} from '../data/world-bundle';
+import {
   backgroundInteractionStats,
   refreshCharacterCurrentPlan,
   scheduleNextBackgroundInteraction,
@@ -89,6 +97,7 @@ import {
   generateReply,
   generateOpeningMessage,
   isReplying,
+  isOpeningMessageGenerating,
   messageVariantInfo,
   recallMessage,
   regenerateAssistantMessage,
@@ -297,6 +306,7 @@ import {
   renderSwitchControl,
 } from './settings-ui';
 import {
+  characterContactSubtitle,
   countdownText,
   formatConversationTime,
   messageTimelineHint,
@@ -460,6 +470,7 @@ let momentGenerating = false;
 let momentGenerationStatus = '';
 let momentComposerOpen = false;
 let eventGenerating = false;
+let creatingPrivateEventSuggestionId = '';
 let worldRpGenerating = false;
 let eventComposerOpen = false;
 let eventResolvingId = '';
@@ -526,6 +537,7 @@ let serviceRestartLoading = false;
 let worldLocationSearchWorldId = '';
 let worldLocationCandidates: WorldWeatherLocation[] = [];
 let pendingCardRecognition: ParsedCharacterCardFile | null = null;
+let pendingWorldBundleImport: WorldBundlePreview | null = null;
 let pendingCardImportFollowup: CardImportFollowupAction | null = null;
 let pendingStickerImport: PendingStickerImport | null = null;
 let modelFormDraft: {
@@ -801,9 +813,10 @@ function resetTransientGenerationState(status: string): boolean {
     momentGenerationStatus = status;
     changed = true;
   }
-  if (eventGenerating || eventResolvingId || worldRpGenerating) {
+  if (eventGenerating || eventResolvingId || worldRpGenerating || creatingPrivateEventSuggestionId) {
     eventGenerating = false;
     eventResolvingId = '';
+    creatingPrivateEventSuggestionId = '';
     worldRpGenerating = false;
     changed = true;
   }
@@ -1063,6 +1076,7 @@ type ChatScrollSettleResult = 'none' | 'restored' | 'bottom' | 'snapshot';
 function hasMobileBackTarget(): boolean {
   return compactMedia.matches && (
     Boolean(pendingCardRecognition)
+    || Boolean(pendingWorldBundleImport)
     || Boolean(pendingStickerImport)
     || modelOnboardingOpen
     || timeModeOnboardingOpen
@@ -1101,6 +1115,11 @@ function closeMobileLayer(): boolean {
   captureVisibleDraftsFromDom();
   if (pendingCardRecognition) {
     pendingCardRecognition = null;
+    saveUiSessionSnapshot();
+    return true;
+  }
+  if (pendingWorldBundleImport) {
+    pendingWorldBundleImport = null;
     saveUiSessionSnapshot();
     return true;
   }
@@ -2053,9 +2072,10 @@ function renderContacts(mode: 'contacts' | 'recent' = 'contacts'): string {
       ? characterDirectUnreadCount(directThread, speaker.id)
       : unreadCountFor(character.id, privateConversationActorId(character));
     const statusLine = characterStatusLine(character);
+    const naturalSubtitle = characterContactSubtitle(character, characterSettingsText(character));
     let subtitle = mode === 'recent'
-      ? statusLine || (latest?.stickerId ? '[表情包]' : compactText(latest?.content, 48)) || '打开对话，和角色聊聊'
-      : statusLine || compactText(characterSettingsText(character), 48) || '已导入角色卡';
+      ? statusLine || (latest?.stickerId ? '[表情包]' : compactText(latest?.content, 48)) || naturalSubtitle || '打开对话，和角色聊聊'
+      : statusLine || naturalSubtitle || '已导入角色卡';
     if (speaker) {
       subtitle = directLatest
         ? `${characterDirectSpeakerName(directLatest)}: ${compactText(directLatest.content, 48)}`
@@ -2387,6 +2407,7 @@ function renderPrivateChatEventSuggestionCard(
     .map(id => state.characters.find(character => character.id === id)?.name)
     .filter((name): name is string => Boolean(name))
     .join('、');
+  const isCreating = creatingPrivateEventSuggestionId === suggestion.id;
   return `
     <section class="private-event-suggestion-card" aria-label="岛上事件草稿">
       <div class="private-event-suggestion-copy">
@@ -2395,12 +2416,12 @@ function renderPrivateChatEventSuggestionCard(
           ${participantNames ? `<small>${escapeHtml(participantNames)}</small>` : ''}
         </div>
         <strong>${escapeHtml(suggestion.title)}</strong>
-        <small class="private-event-suggestion-description">${escapeHtml(compactText(suggestion.description, 112))}</small>
+        <small class="private-event-suggestion-description">${escapeHtml(isCreating ? '正在生成事件，请稍等…' : compactText(suggestion.description, 112))}</small>
       </div>
       <div class="private-event-suggestion-actions">
-        <button class="primary small-button" type="button" data-create-private-event-suggestion="${escapeHtml(suggestion.id)}">${icon('add')}<span>生成事件</span></button>
-        <button class="secondary small-button" type="button" data-edit-private-event-suggestion="${escapeHtml(suggestion.id)}">编辑</button>
-        <button class="secondary small-button" type="button" data-dismiss-private-event-suggestion="${escapeHtml(suggestion.id)}">忽略</button>
+        <button class="primary small-button" type="button" data-create-private-event-suggestion="${escapeHtml(suggestion.id)}" ${isCreating ? 'disabled' : ''}>${icon('add')}<span>${isCreating ? '正在生成事件…' : '生成事件'}</span></button>
+        <button class="secondary small-button" type="button" data-edit-private-event-suggestion="${escapeHtml(suggestion.id)}" ${isCreating ? 'disabled' : ''}>编辑</button>
+        <button class="secondary small-button" type="button" data-dismiss-private-event-suggestion="${escapeHtml(suggestion.id)}" ${isCreating ? 'disabled' : ''}>忽略</button>
       </div>
     </section>
   `;
@@ -2606,7 +2627,13 @@ function renderMessages(character?: CharacterProfile): string {
     </div>
   `;
   }).join('');
-  return `${introCard}${rendered}${isReplying() ? `
+  const openingGenerating = isOpeningMessageGenerating(character, privateConversationActorId(character));
+  return `${introCard}${rendered}${openingGenerating ? `
+    <div class="replying-row" aria-live="polite">
+      <span class="replying-dots"><i></i><i></i><i></i></span>
+      <span>${escapeHtml(character.name)} 正在生成新消息…</span>
+    </div>
+  ` : isReplying() ? `
     <div class="replying-row" aria-live="polite">
       <span class="replying-dots"><i></i><i></i><i></i></span>
       <span>${escapeHtml(character.name)} 正在回复中…</span>
@@ -5565,6 +5592,7 @@ function renderSettingsContent(character?: CharacterProfile): string {
       <p class="muted">当前城市：${escapeHtml(locationLabel)}。${escapeHtml(weatherSummary)}${world.weather ? ` 更新时间：${escapeHtml(formatConversationTime(world.weather.fetchedAt))}。` : ''}</p>
       ${worldWeatherStatus ? `<p class="muted">${escapeHtml(worldWeatherStatus)}</p>` : ''}
       <button id="save-world" class="secondary">保存世界设置</button>
+      <button id="export-world-bundle" class="secondary secondary-gap" type="button">导出完整世界包 JSON</button>
       ${state.worlds.length > 1 ? '<button id="delete-world" class="danger secondary-gap">删除当前世界</button>' : ''}
     `;
     const newWorldSettings = `
@@ -6120,6 +6148,100 @@ function cardImportFollowupLabel(action: CardImportFollowupAction): string {
 
 function isCardImportFollowupAction(value: string): value is CardImportFollowupAction {
   return value === 'profile' || value === 'opening' || value === 'worldbook';
+}
+
+function worldBundleExportedAtLabel(value: string): string {
+  if (!value) return '未知时间';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '未知时间' : date.toLocaleString();
+}
+
+function worldBundleImportRows(preview: WorldBundlePreview): Array<{
+  section: WorldBundleSection;
+  title: string;
+  detail: string;
+  disabled?: boolean;
+}> {
+  return [
+    {
+      section: 'world',
+      title: '世界资料',
+      detail: '世界观、用户设定、地点、氛围、场景和天气',
+      disabled: true,
+    },
+    {
+      section: 'characters',
+      title: '角色',
+      detail: `${preview.characterCount} 个角色及角色设定`,
+    },
+    {
+      section: 'relationships',
+      title: '角色关系',
+      detail: `${preview.relationshipCount} 条关系，${preview.relationshipSuggestionCount} 条关系建议`,
+    },
+    {
+      section: 'chats',
+      title: '聊天记录',
+      detail: `${preview.privateChatCount} 段私聊、${preview.privateMessageCount} 条私聊消息、${preview.groupChatCount} 个群聊、${preview.groupMessageCount} 条群聊消息、${preview.directThreadCount} 段角色私聊、${preview.directMessageCount} 条角色私聊消息`,
+    },
+    {
+      section: 'moments',
+      title: '动态',
+      detail: `${preview.momentCount} 条动态及评论`,
+    },
+    {
+      section: 'events',
+      title: '世界事件',
+      detail: `${preview.eventCount} 个事件，${preview.privateEventSuggestionCount} 条事件建议`,
+    },
+    {
+      section: 'timeline',
+      title: '世界记录',
+      detail: `${preview.timelineCount} 条时间线，${preview.impactCount} 条影响记录，${preview.interactionCount} 条角色互动`,
+    },
+    {
+      section: 'summaries',
+      title: '记忆与状态',
+      detail: `${preview.summaryCount} 条记忆小结，${preview.statusCount} 条角色状态，${preview.dailyBriefCount} 份每日简报`,
+    },
+    {
+      section: 'drafts',
+      title: '写卡草稿',
+      detail: `${preview.draftCount} 份草稿`,
+    },
+  ];
+}
+
+function renderWorldBundleImportDialog(): string {
+  if (!pendingWorldBundleImport) return '';
+  const preview = pendingWorldBundleImport;
+  return `
+    <div class="card-recognition-overlay" role="dialog" aria-modal="true" aria-label="导入完整世界包">
+      <button class="card-recognition-backdrop" id="cancel-world-bundle-import" type="button" aria-label="取消导入"></button>
+      <section class="card-recognition-dialog">
+        <header>
+          <span>完整世界包</span>
+          <h2>${escapeHtml(preview.worldName)}</h2>
+          <p>导出时间：${escapeHtml(worldBundleExportedAtLabel(preview.exportedAt))}。请选择这次要导入的部分。</p>
+        </header>
+        <div class="card-recognition-list">
+          ${worldBundleImportRows(preview).map(row => `
+            <label class="card-recognition-item">
+              <input type="checkbox" name="world-bundle-section" value="${escapeHtml(row.section)}" checked ${row.disabled ? 'disabled' : ''} />
+              <span>
+                <strong>${escapeHtml(row.title)}${row.disabled ? '（必选）' : ''}</strong>
+                <small>${escapeHtml(row.detail)}</small>
+              </span>
+            </label>
+          `).join('')}
+        </div>
+        <footer>
+          <button id="cancel-world-bundle-import-button" class="secondary" type="button">取消</button>
+          <button id="import-world-bundle-selected" class="primary" type="button">导入选中部分</button>
+        </footer>
+      </section>
+    </div>
+  `;
 }
 
 function renderCardRecognitionDialog(): string {
@@ -7014,7 +7136,7 @@ export function render(): void {
   const onboardingLayer = welcomeCoverOpen
     ? renderWelcomeCover()
     : renderOnboardingLayer();
-  appRoot.innerHTML = `${compactMedia.matches ? renderMobile(character) : renderDesktop(character)}${renderGlobalStatus()}${onboardingLayer}${renderCardRecognitionDialog()}${renderStickerImportDialog()}${renderAppDialog()}`;
+  appRoot.innerHTML = `${compactMedia.matches ? renderMobile(character) : renderDesktop(character)}${renderGlobalStatus()}${onboardingLayer}${renderCardRecognitionDialog()}${renderWorldBundleImportDialog()}${renderStickerImportDialog()}${renderAppDialog()}`;
   applyCharacterAccent(character);
   bindUi();
   bindAppDialog(() => renderWithUiTransition('overlay-out'));
@@ -7413,6 +7535,40 @@ function bindUi(): void {
     renderWithUiTransition('overlay-out');
   };
   document.querySelector<HTMLButtonElement>('#cancel-card-recognition')?.addEventListener('click', closeCardRecognition);
+  const closeWorldBundleImport = () => {
+    pendingWorldBundleImport = null;
+    setStatusText('已取消这次完整世界包导入。');
+    renderWithUiTransition('overlay-out');
+  };
+  document.querySelector<HTMLButtonElement>('#cancel-world-bundle-import')?.addEventListener('click', closeWorldBundleImport);
+  document.querySelector<HTMLButtonElement>('#cancel-world-bundle-import-button')?.addEventListener('click', closeWorldBundleImport);
+  document.querySelector<HTMLButtonElement>('#import-world-bundle-selected')?.addEventListener('click', () => {
+    const pending = pendingWorldBundleImport;
+    if (!pending) return;
+    const checkedSections = new Set(Array.from(
+      document.querySelectorAll<HTMLInputElement>('input[name="world-bundle-section"]:checked'),
+    ).map(input => input.value));
+    const selection: WorldBundleImportSelection = {
+      world: true,
+      characters: checkedSections.has('characters'),
+      relationships: checkedSections.has('relationships'),
+      chats: checkedSections.has('chats'),
+      moments: checkedSections.has('moments'),
+      events: checkedSections.has('events'),
+      timeline: checkedSections.has('timeline'),
+      summaries: checkedSections.has('summaries'),
+      drafts: checkedSections.has('drafts'),
+    };
+    try {
+      const result = importWorldBundlePreview(pending, selection);
+      pendingWorldBundleImport = null;
+      setStatusText(`已导入完整世界包：${result.worldName}。`);
+      render();
+    } catch (error) {
+      setStatusText(error instanceof Error ? error.message : String(error));
+      render();
+    }
+  });
   document.querySelectorAll<HTMLButtonElement>('[data-card-import-action]').forEach(button => {
     button.addEventListener('click', () => {
       const action = button.dataset.cardImportAction ?? '';
@@ -8433,8 +8589,19 @@ function bindUi(): void {
         setVisibleStatus('没有选择文件。');
         return;
       }
-      setVisibleStatus(`正在读取角色卡：${file.name || '未命名文件'}…`);
+      setVisibleStatus(`正在读取文件：${file.name || '未命名文件'}…`);
       try {
+        try {
+          const preview = previewWorldBundleText(await file.text());
+          pendingCardRecognition = null;
+          pendingCardImportFollowup = null;
+          pendingWorldBundleImport = preview;
+          setVisibleStatus(`检测到完整世界包：${preview.worldName}，请选择导入部分。`);
+          render();
+          return;
+        } catch {
+          // 不是 PalTavern 世界包时继续走单张角色卡导入。
+        }
         const parsed = await parseCharacterCardFileWithRecognition(file);
         if (parsed.candidates.length > 1) {
           if (modelIsReady()) {
@@ -9256,6 +9423,25 @@ function bindUi(): void {
       render();
     });
   });
+  document.querySelector<HTMLButtonElement>('#export-world-bundle')?.addEventListener('click', () => {
+    const world = activeWorld();
+    void downloadWorldBundle(world.id)
+      .then(downloadInfo => {
+        const message = `已导出 ${world.name} 的完整世界包。\n文件名：${downloadInfo.fileName}\n保存位置：${downloadInfo.folderHint}`;
+        openAlertDialog({
+          title: '完整世界包已导出',
+          message,
+          confirmLabel: '知道了',
+        });
+        setStatusText(message.replace(/\n/g, ' '));
+      })
+      .catch(error => {
+        setStatusText(error instanceof DOMException && error.name === 'AbortError'
+          ? '已取消导出。'
+          : error instanceof Error ? error.message : String(error));
+        render();
+      });
+  });
   document.querySelector<HTMLButtonElement>('#export-tavern-card')?.addEventListener('click', () => {
     const character = activeCharacter();
     if (!character) return;
@@ -9567,17 +9753,25 @@ function bindUi(): void {
   document.querySelectorAll<HTMLButtonElement>('[data-create-private-event-suggestion]').forEach(button => {
     button.addEventListener('click', () => {
       const suggestionId = button.dataset.createPrivateEventSuggestion;
-      if (!suggestionId) return;
-      try {
-        const worldEvent = createWorldEventFromPrivateChatSuggestion(suggestionId);
-        activeWorldRpEventId = worldEvent.id;
-        saveUiSessionSnapshot();
-        setStatusText(`已生成事件：${worldEvent.title}`);
-      } catch (error) {
-        setStatusText(error instanceof Error ? error.message : String(error));
-      }
+      if (!suggestionId || creatingPrivateEventSuggestionId) return;
+      creatingPrivateEventSuggestionId = suggestionId;
+      setStatusText('正在生成事件…');
       preserveScrollForNextRender();
       render();
+      window.setTimeout(() => {
+        try {
+          const worldEvent = createWorldEventFromPrivateChatSuggestion(suggestionId);
+          activeWorldRpEventId = worldEvent.id;
+          saveUiSessionSnapshot({ captureDom: false });
+          setStatusText(`已生成事件：${worldEvent.title}`);
+        } catch (error) {
+          setStatusText(error instanceof Error ? error.message : String(error));
+        } finally {
+          creatingPrivateEventSuggestionId = '';
+          preserveScrollForNextRender();
+          render();
+        }
+      }, 0);
     });
   });
   document.querySelectorAll<HTMLButtonElement>('[data-edit-private-event-suggestion]').forEach(button => {

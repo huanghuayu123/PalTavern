@@ -25,6 +25,7 @@ Object.defineProperty(globalThis, 'localStorage', {
 const backup = require('../src/independent-chat/data/backup');
 const timeline = require('../src/independent-chat/memory/timeline');
 const cardDiagnostics = require('../src/independent-chat/ui/card-import-diagnostics');
+const displayLabels = require('../src/independent-chat/ui/display-labels');
 
 const appSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/ui/app.ts'), 'utf8');
 const styleSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/styles.css'), 'utf8');
@@ -154,6 +155,45 @@ if (
   throw new Error('Card import diagnostics should offer direct completion actions for missing fields.');
 }
 
+const contactSubtitle = displayLabels.characterContactSubtitle({
+  id: 'bookshop_keeper',
+  worldId: 'world_a',
+  name: '许灯',
+  tags: [],
+  importInfo: {
+    sourceFormat: 'json',
+    spec: 'chara_card_v3',
+    specVersion: '3.0',
+    worldBookEntryCount: 1,
+    importedFileName: '',
+  },
+  profileNote: '',
+  relationship: { stage: 'stranger', affinity: 0, summary: '', updatedAt: 1 },
+  autoMessage: {},
+  autoMoment: {},
+  autoEvent: {},
+  currentPlan: {
+    text: '许灯 最近按自己的生活节奏行动，偶尔会因为动态、关系或身边小事和其他角色产生交集。',
+    updatedAt: 1,
+    source: 'rule',
+  },
+  importedAt: 1,
+}, [
+  '角色描述',
+  '【角色构想】',
+  '在旧潮书店值夜班，正在整理旧画册。',
+  '【外貌】',
+  '总戴着一副旧圆框眼镜。',
+].join('\n'));
+if (
+  contactSubtitle.includes('角色描述')
+  || contactSubtitle.includes('【角色构想】')
+  || contactSubtitle.includes('【外貌】')
+  || !contactSubtitle.startsWith('在旧潮书店值夜班')
+) {
+  throw new Error('Contact subtitles should read like natural status lines, not leaked card field labels.');
+}
+
 if (
   !appSource.includes('data-context-preview-remove-timeline')
   || !appSource.includes('从上下文移除')
@@ -171,10 +211,38 @@ if (
   throw new Error('Group conversation rows should reserve enough fixed avatar-stack width so names never overlap.');
 }
 
+const authoringProgressBlocks = Array.from(styleSource.matchAll(/\.authoring-progress\s*\{[^}]*\}/g), (match) => match[0]);
+const authoringProgressMobileGridOverride = authoringProgressBlocks.some((block) => (
+  block.includes('display: grid')
+  || /grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/.test(block)
+));
+const authoringProgressSingleColumnOverride = authoringProgressBlocks.some((block) => (
+  /grid-template-columns:\s*1fr/.test(block)
+));
+if (authoringProgressMobileGridOverride || authoringProgressSingleColumnOverride) {
+  throw new Error('Authoring progress should stay as a horizontal step rail on narrow screens.');
+}
+
+const momentHeaderActionsBlock = styleSource.match(/\.moment-header-actions\s*\{[\s\S]*?\}/)?.[0] ?? '';
+const specificMomentHeaderActionsBlock = styleSource.match(/\.moment-header\s*>\s*\.moment-header-actions\s*\{[\s\S]*?\}/)?.[0] ?? '';
+if (
+  !momentHeaderActionsBlock.includes('display: inline-flex')
+  || !momentHeaderActionsBlock.includes('flex-wrap: nowrap')
+  || !momentHeaderActionsBlock.includes('white-space: nowrap')
+  || !specificMomentHeaderActionsBlock.includes('display: inline-flex')
+  || !styleSource.includes('.moment-header-actions .small-button')
+  || !styleSource.includes('.moment-header-actions .moment-delete')
+) {
+  throw new Error('Moment detail and delete actions should stay side by side in the card header.');
+}
+
 console.log(JSON.stringify({
   backupImportConfirm: true,
   timelineSearch: true,
   cardCompletionActions: true,
   contextPreviewCorrection: true,
   groupAvatarLayout: true,
+  authoringProgressRail: true,
+  momentHeaderActions: true,
+  naturalContactSubtitle: true,
 }));

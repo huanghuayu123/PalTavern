@@ -74,6 +74,28 @@ if (
   throw new Error('Generated opening cleanup did not extract only first_mes content.');
 }
 
+const cleanedTutorText = authoring.cleanAuthoringTutorOutput([
+  '**可以先抓住一个核心反差。**',
+  '',
+  '她不是真的冷漠，只是不擅长开口。',
+].join('\n'));
+if (cleanedTutorText.includes('**') || !cleanedTutorText.startsWith('可以先抓住')) {
+  throw new Error('Authoring tutor cleanup should remove visible Markdown emphasis markers.');
+}
+
+const cleanedAppearanceCandidate = authoring.cleanAuthoringCandidateText([
+  '【外貌】',
+  '**外貌：** 在旧潮书店值夜班，袖口总沾着一点纸灰。',
+].join('\n'), 'appearance');
+if (
+  cleanedAppearanceCandidate.includes('【外貌】')
+  || cleanedAppearanceCandidate.includes('外貌：')
+  || cleanedAppearanceCandidate.includes('**')
+  || !cleanedAppearanceCandidate.startsWith('在旧潮书店值夜班')
+) {
+  throw new Error('Authoring candidate cleanup should remove field headings before adoption.');
+}
+
 const forcedComplex = authoring.createCharacterCardDraft('complex');
 const forcedComplexSteps = authoring.stepsFor(forcedComplex);
 if (
@@ -213,6 +235,8 @@ console.log(JSON.stringify({
   complexModeRemoved: true,
   candidateRequiresAcceptance: true,
   openingCleanup: true,
+  tutorCleanup: true,
+  candidateFieldCleanup: true,
   linkedUpdate: true,
   structuredExport: true,
   directStandardExport: true,

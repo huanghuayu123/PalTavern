@@ -2,6 +2,8 @@ import {
   STEP_LABELS,
   askAuthoringTutor,
   characterProfileFromDraft,
+  cleanAuthoringCandidateText,
+  cleanAuthoringTutorOutput,
   cleanGeneratedOpeningMessage,
   createCharacterCardDraft,
   createCharacterFromDraft,
@@ -126,14 +128,14 @@ function renderTranscript(draft: CharacterCardDraft, step: CharacterCardDraftSte
   return exchanges.map(exchange => `
     <div class="authoring-exchange ${exchange.role}">
       <strong>${exchange.role === 'assistant' ? '写卡导师' : '你'}</strong>
-      <p>${escapeHtml(exchange.content)}</p>
+      <p>${escapeHtml(exchange.role === 'assistant' ? cleanAuthoringTutorOutput(exchange.content) : exchange.content)}</p>
     </div>
   `).join('');
 }
 
 function renderTutor(draft: CharacterCardDraft, step: CharacterCardDraftStep): string {
   const note = draft.notes[step] ?? '';
-  const candidate = draft.candidates[step] ?? '';
+  const candidate = draft.candidates[step] ? cleanAuthoringCandidateText(draft.candidates[step] ?? '', step) : '';
   return `
     <aside class="authoring-tutor">
       <div class="authoring-panel-heading">
@@ -337,14 +339,14 @@ async function runTutorAction(
   try {
     const result = await askAuthoringTutor(draft, step, note, action);
     if (action === 'organize') {
-      draft.candidates[step] = result;
+      draft.candidates[step] = cleanAuthoringCandidateText(result, step);
     } else if (action === 'opening') {
       draft.firstMessage = cleanGeneratedOpeningMessage(result);
     } else {
       (draft.conversations[step] ??= []).push({
         id: nowId('exchange'),
         role: 'assistant',
-        content: result,
+        content: cleanAuthoringTutorOutput(result),
         createdAt: Date.now(),
       });
     }
@@ -442,7 +444,7 @@ export function bindAuthoringUi(rerender: () => void): void {
     const field = fieldForStep(step);
     const candidate = draft.candidates[step];
     if (field && candidate) {
-      updateTextField(draft, field, candidate);
+      updateTextField(draft, field, cleanAuthoringCandidateText(candidate, step));
       delete draft.candidates[step];
       touchDraft(draft);
       authoringStatus = '候选稿已采用，你仍可继续修改。';
