@@ -6627,6 +6627,18 @@ textarea::placeholder {
   transform: translate(-50%, -50%);
 }
 
+html[data-ui-transition="overlay-in"] .moments-publisher.is-open,
+.moments-publisher.is-open.is-entering {
+  animation: springPanelCenterIn 420ms cubic-bezier(0.18, 0.98, 0.22, 1) both;
+  will-change: transform;
+}
+
+.moments-publisher.is-open.is-exiting,
+.moments-publisher.is-open.moment-composer-drop-closing {
+  animation: springPanelCenterDropOut 360ms cubic-bezier(0.55, 0.02, 0.74, 0.22) forwards;
+  pointer-events: none;
+}
+
 .moment-composer-head {
   display: flex;
   grid-column: 1 / -1;
@@ -6880,6 +6892,15 @@ textarea::placeholder {
 .moments-publisher .moment-actions button {
   min-height: 40px;
   padding: 8px 12px;
+}
+
+.moment-composer-layout-expanding .moment-compose-meta,
+.moment-composer-layout-expanding .moment-visibility-contact-controls,
+.moment-composer-layout-expanding .moment-visibility-private-hint,
+.moment-composer-layout-expanding .moments-publisher-footer {
+  overflow: hidden;
+  animation: momentComposerLayoutExpand 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: top center;
 }
 
 .keyboard-open .moment-compose-meta,
@@ -7278,12 +7299,32 @@ textarea::placeholder {
     transform: translateY(-50%);
   }
 
+  html[data-ui-transition="overlay-in"] .moments-publisher.is-open,
+  .moments-publisher.is-open.is-entering {
+    animation-name: springPanelMobileIn;
+  }
+
+  .moments-publisher.is-open.is-exiting,
+  .moments-publisher.is-open.moment-composer-drop-closing {
+    animation-name: springPanelMobileDropOut;
+  }
+
   .keyboard-open .moments-publisher.is-open {
     top: auto;
     bottom: calc(max(10px, env(safe-area-inset-bottom)) + var(--keyboard-offset));
     max-height: max(220px, calc(100dvh - var(--keyboard-offset) - 20px));
     overscroll-behavior: contain;
     transform: none;
+  }
+
+  html.keyboard-open[data-ui-transition="overlay-in"] .moments-publisher.is-open,
+  .keyboard-open .moments-publisher.is-open.is-entering {
+    animation-name: springPanelKeyboardIn;
+  }
+
+  .keyboard-open .moments-publisher.is-open.is-exiting,
+  .keyboard-open .moments-publisher.is-open.moment-composer-drop-closing {
+    animation-name: springPanelKeyboardDropOut;
   }
 
   .keyboard-open .moments-publisher textarea {
@@ -10144,6 +10185,22 @@ body,
   box-shadow: -18px 0 50px rgba(20, 28, 46, 0.16);
 }
 
+.group-settings-panel[data-group-settings-mode="create"] {
+  animation: none;
+  transform-origin: bottom center;
+  will-change: transform, clip-path;
+}
+
+html[data-ui-transition="overlay-in"] .group-settings-panel[data-group-settings-mode="create"],
+.group-settings-panel[data-group-settings-mode="create"].is-entering {
+  animation: groupCreateRollIn 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: transform, clip-path;
+}
+
+.group-settings-panel[data-group-settings-mode="create"].is-exiting {
+  animation: groupCreateRollOut 180ms cubic-bezier(0.55, 0.02, 0.74, 0.22) forwards;
+}
+
 .group-settings-header {
   display: flex;
   gap: 12px;
@@ -11459,6 +11516,17 @@ body,
   border: 1px solid var(--line);
   border-radius: 18px;
   box-shadow: 0 24px 72px rgba(0, 0, 0, 0.26);
+}
+
+html[data-ui-transition="overlay-in"] .event-composer-dialog {
+  animation: springPanelIn 420ms cubic-bezier(0.18, 0.98, 0.22, 1) both;
+  will-change: transform;
+}
+
+.event-composer-dialog.is-exiting,
+.event-composer-dialog.event-composer-drop-closing {
+  animation: springPanelDropOut 360ms cubic-bezier(0.55, 0.02, 0.74, 0.22) forwards;
+  pointer-events: none;
 }
 
 .event-composer-dialog-header {
@@ -12829,11 +12897,16 @@ body,
     z-index: 1;
   }
 
-  .world-gear-panel > summary {
+  .world-gear-panel > summary,
+  .world-gear-trigger {
     display: grid;
     width: 36px;
     height: 36px;
     place-items: center;
+  }
+
+  .world-gear-panel > .world-gear-trigger {
+    display: grid !important;
   }
 }
 
@@ -15168,7 +15241,8 @@ summary:focus-visible {
 
   .world-stage-actions #generate-event,
   .world-gear-panel,
-  .world-gear-panel > summary {
+  .world-gear-panel > summary,
+  .world-gear-trigger {
     width: 44px;
     height: 44px;
     min-width: 44px;
@@ -15176,16 +15250,24 @@ summary:focus-visible {
     border-radius: 14px;
   }
 
+  .world-gear-panel > summary {
+    display: none;
+  }
+
+  .world-gear-panel > .world-gear-trigger {
+    display: none !important;
+  }
+
   .world-gear-panel[open] {
     position: static;
     z-index: 120;
   }
 
-  .world-gear-panel[open] > summary {
+  .world-gear-trigger {
     position: fixed;
     top: max(10px, env(safe-area-inset-top));
     right: 14px;
-    z-index: 142;
+    z-index: 146;
     background: color-mix(in srgb, var(--surface-solid) 94%, transparent);
     box-shadow: var(--shadow-soft);
     backdrop-filter: blur(14px);
@@ -15207,11 +15289,35 @@ summary:focus-visible {
     box-shadow: none;
   }
 
+  .world-gear-panel.is-closing .world-gear-card {
+    animation: worldGearPanelOut 180ms cubic-bezier(0.55, 0.02, 0.74, 0.22) forwards;
+    pointer-events: none;
+    will-change: transform, opacity;
+  }
+
+  .world-gear-panel.is-closing .world-gear-trigger {
+    pointer-events: none;
+  }
+
   .world-gear-panel[open] .world-gear-card header {
     min-height: 76px;
     padding: calc(16px + env(safe-area-inset-top)) 72px 14px 18px;
     background: color-mix(in srgb, var(--surface-solid) 96%, transparent);
     backdrop-filter: blur(16px);
+  }
+
+  .world-gear-panel[open] .world-gear-card header [data-save-world-workbench] {
+    position: fixed;
+    top: max(10px, env(safe-area-inset-top));
+    right: 66px;
+    z-index: 142;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+    border-radius: 14px;
+    box-shadow: var(--shadow-soft);
   }
 
   .world-gear-panel[open] .world-gear-body {
@@ -15486,30 +15592,24 @@ summary:focus-visible {
   }
 }
 
-/* Reference APK motion pass: stagger content blocks, keep chrome fixed, and reveal private chat from the avatar anchor. */
+/* Main-tab motion: content blocks slide as one ordered menu while bottom navigation stays fixed. */
 :root {
-  --fade-dur: 160ms;
-  --fade-out-dur: 80ms;
-  --block-gap: 8ms;
+  --fade-dur: 260ms;
+  --fade-out-dur: 220ms;
+  --block-gap: 24ms;
   --fade-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --enter-x: 0px;
   --exit-x: 0px;
-  --enter-y: 8px;
-  --exit-y: -4px;
 }
 
 [data-tab-dir="right"] {
-  --enter-x: 10px;
-  --exit-x: -6px;
-  --enter-y: 4px;
-  --exit-y: 0px;
+  --enter-x: 100vw;
+  --exit-x: -100vw;
 }
 
 [data-tab-dir="left"] {
-  --enter-x: -10px;
-  --exit-x: 6px;
-  --enter-y: 4px;
-  --exit-y: 0px;
+  --enter-x: -100vw;
+  --exit-x: 100vw;
 }
 
 @keyframes fadeIn {
@@ -15524,23 +15624,19 @@ summary:focus-visible {
 
 @keyframes referencePageEnter {
   from {
-    opacity: 0;
-    transform: translateY(var(--enter-y)) translateX(var(--enter-x)) scale(0.99);
+    transform: translateX(var(--enter-x));
   }
   to {
-    opacity: 1;
-    transform: translateY(0) translateX(0) scale(1);
+    transform: translateX(0);
   }
 }
 
 @keyframes referencePageExit {
   from {
-    opacity: 1;
-    transform: translateY(0) translateX(0) scale(1);
+    transform: translateX(0);
   }
   to {
-    opacity: 0;
-    transform: translateY(var(--exit-y)) translateX(var(--exit-x)) scale(0.995);
+    transform: translateX(var(--exit-x));
   }
 }
 
@@ -15566,33 +15662,245 @@ summary:focus-visible {
   }
 }
 
-.ui-fallback-transition[data-ui-transition] .mobile-page,
-.ui-fallback-transition[data-ui-transition] .mobile-list-page,
-.ui-fallback-transition[data-ui-transition] .mobile-chat-detail,
-.ui-fallback-transition[data-ui-transition] .moments-page,
-.ui-fallback-transition[data-ui-transition] .events-page,
-.ui-fallback-transition[data-ui-transition] .timeline-page,
-.ui-fallback-transition[data-ui-transition] .group-list-page,
-.ui-fallback-transition[data-ui-transition] .chat,
-.ui-fallback-transition[data-ui-transition] .desktop-settings-page,
-.ui-fallback-transition[data-ui-transition] .character-page,
-.ui-fallback-transition[data-ui-transition] .desktop-shell > :not(.sidebar):not(.group-settings-panel) {
+@keyframes springPanelCenterIn {
+  0% {
+    transform: translate(-50%, calc(100dvh - 50% + 64px));
+  }
+  58% {
+    transform: translate(-50%, calc(-50% - 28px));
+  }
+  78% {
+    transform: translate(-50%, calc(-50% + 10px));
+  }
+  100% {
+    transform: translate(-50%, -50%);
+  }
+}
+
+@keyframes springPanelCenterDropOut {
+  0% {
+    transform: translate(-50%, -50%);
+  }
+  24% {
+    transform: translate(-50%, calc(-50% - 14px));
+  }
+  100% {
+    transform: translate(-50%, calc(100dvh + 40px));
+  }
+}
+
+@keyframes springPanelMobileIn {
+  0% {
+    transform: translateY(calc(100dvh + 48px));
+  }
+  56% {
+    transform: translateY(calc(-50% - 28px));
+  }
+  78% {
+    transform: translateY(calc(-50% + 10px));
+  }
+  100% {
+    transform: translateY(-50%);
+  }
+}
+
+@keyframes springPanelMobileDropOut {
+  0% {
+    transform: translateY(-50%);
+  }
+  24% {
+    transform: translateY(calc(-50% - 14px));
+  }
+  100% {
+    transform: translateY(calc(100dvh + 40px));
+  }
+}
+
+@keyframes springPanelKeyboardIn {
+  0% {
+    transform: translateY(calc(100dvh + 48px));
+  }
+  56% {
+    transform: translateY(-28px);
+  }
+  78% {
+    transform: translateY(10px);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+@keyframes springPanelKeyboardDropOut {
+  0% {
+    transform: none;
+  }
+  24% {
+    transform: translateY(-14px);
+  }
+  100% {
+    transform: translateY(calc(100dvh + 40px));
+  }
+}
+
+@keyframes springPanelIn {
+  0% {
+    transform: translateY(calc(100dvh + 48px));
+  }
+  58% {
+    transform: translateY(-28px);
+  }
+  78% {
+    transform: translateY(10px);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+@keyframes springPanelDropOut {
+  0% {
+    transform: translateY(0);
+  }
+  24% {
+    transform: translateY(-14px);
+  }
+  100% {
+    transform: translateY(calc(100dvh + 40px));
+  }
+}
+
+@keyframes momentComposerLayoutExpand {
+  0% {
+    max-height: 0;
+    opacity: 1;
+    transform: translateY(-10px);
+    clip-path: inset(0 0 100% 0 round 14px);
+  }
+  100% {
+    max-height: 240px;
+    opacity: 1;
+    transform: translateY(0);
+    clip-path: inset(0 0 0 0 round 0);
+  }
+}
+
+@keyframes groupCreateRollIn {
+  from {
+    transform: translateY(38px);
+    clip-path: inset(100% 0 0 0 round 18px 18px 0 0);
+  }
+  to {
+    transform: translateY(0);
+    clip-path: inset(0 0 0 0 round 0);
+  }
+}
+
+@keyframes groupCreateRollOut {
+  from {
+    transform: translateY(0);
+    clip-path: inset(0 0 0 0 round 0);
+  }
+  to {
+    transform: translateY(44px);
+    clip-path: inset(100% 0 0 0 round 18px 18px 0 0);
+  }
+}
+
+@keyframes worldGearPanelOut {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  28% {
+    opacity: 1;
+    transform: translateY(-10px);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(36px);
+  }
+}
+
+.ui-fallback-transition[data-ui-transition]:not([data-ui-transition^="world-"]) .mobile-page,
+.ui-fallback-transition[data-ui-transition]:not([data-ui-transition^="world-"]) .mobile-list-page,
+.ui-fallback-transition[data-ui-transition]:not([data-ui-transition^="world-"]) .mobile-chat-detail,
+.ui-fallback-transition[data-ui-transition]:not([data-ui-transition^="world-"]) .moments-page > *:not(.moments-publisher),
+.ui-fallback-transition[data-ui-transition]:not([data-ui-transition^="world-"]) .events-page,
+.ui-fallback-transition[data-ui-transition]:not([data-ui-transition^="world-"]) .timeline-page,
+.ui-fallback-transition[data-ui-transition]:not([data-ui-transition^="world-"]) .group-list-page,
+.ui-fallback-transition[data-ui-transition]:not([data-ui-transition^="world-"]) .chat,
+.ui-fallback-transition[data-ui-transition]:not([data-ui-transition^="world-"]) .desktop-settings-page,
+.ui-fallback-transition[data-ui-transition]:not([data-ui-transition^="world-"]) .character-page,
+.ui-fallback-transition[data-ui-transition]:not([data-ui-transition^="world-"]) .desktop-shell > :not(.sidebar):not(.group-settings-panel) {
   animation: none !important;
 }
 
-.ui-fallback-transition[data-ui-transition-phase="enter"] .sidebar:not(.is-exiting) > *,
-.ui-fallback-transition[data-ui-transition-phase="enter"] .mobile-page:not(.is-exiting) > *:not(.bottom-nav):not(.moment-compose-fab),
-.ui-fallback-transition[data-ui-transition-phase="enter"] .mobile-list-page:not(.is-exiting) > *:not(.bottom-nav):not(.moment-compose-fab),
-.ui-fallback-transition[data-ui-transition-phase="enter"] .moments-page:not(.is-exiting) > *:not(.bottom-nav):not(.moment-compose-fab),
-.ui-fallback-transition[data-ui-transition-phase="enter"] .events-page:not(.is-exiting) > *,
-.ui-fallback-transition[data-ui-transition-phase="enter"] .timeline-page:not(.is-exiting) > *,
-.ui-fallback-transition[data-ui-transition-phase="enter"] .group-list-page:not(.is-exiting) > *,
-.ui-fallback-transition[data-ui-transition-phase="enter"] .chat:not(.is-exiting) > *:not(.bottom-nav):not(.moment-compose-fab),
-.ui-fallback-transition[data-ui-transition-phase="enter"] .desktop-settings-page:not(.is-exiting) > *,
-.ui-fallback-transition[data-ui-transition-phase="enter"] .character-page:not(.is-exiting) > * {
+.pt-main-tab-snapshot {
+  position: fixed;
+  z-index: 80;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--page);
+  contain: layout paint style;
+}
+
+.pt-main-tab-snapshot-page {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  background: transparent !important;
+  scrollbar-width: none;
+}
+
+.pt-main-tab-snapshot-page::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.pt-main-tab-snapshot.is-overlapping-next {
+  background: transparent;
+}
+
+.ui-fallback-transition[data-ui-transition-phase="exit"][data-ui-transition^="main-"] .mobile-shell > .mobile-page,
+.ui-fallback-transition[data-ui-transition-phase="exit"][data-ui-transition^="main-"] .mobile-shell > .mobile-list-page,
+.ui-fallback-transition[data-ui-transition-phase="exit"][data-ui-transition^="main-"] .mobile-shell > .moments-page,
+.ui-fallback-transition[data-ui-transition-phase="exit"][data-ui-transition^="main-"] .mobile-shell > .events-page,
+.ui-fallback-transition[data-ui-transition-phase="exit"][data-ui-transition^="main-"] .mobile-shell > .timeline-page,
+.ui-fallback-transition[data-ui-transition-phase="exit"][data-ui-transition^="main-"] .mobile-shell > .group-list-page,
+.ui-fallback-transition[data-ui-transition-phase="exit"][data-ui-transition^="main-"] .mobile-shell > .chat,
+.ui-fallback-transition[data-ui-transition-phase="exit"][data-ui-transition^="main-"] .mobile-shell > .world-workbench {
+  visibility: hidden;
+}
+
+.ui-fallback-transition[data-ui-transition-phase="enter"][data-ui-transition^="main-"] .mobile-page:not(.is-exiting) > *:not(.bottom-nav):not(.moment-compose-fab),
+.ui-fallback-transition[data-ui-transition-phase="enter"][data-ui-transition^="main-"] .mobile-list-page:not(.is-exiting) > *:not(.bottom-nav):not(.moment-compose-fab),
+.ui-fallback-transition[data-ui-transition-phase="enter"][data-ui-transition^="main-"] .moments-page:not(.is-exiting) > *:not(.bottom-nav):not(.moments-publisher),
+.ui-fallback-transition[data-ui-transition-phase="enter"][data-ui-transition^="main-"] .events-page:not(.is-exiting) > *,
+.ui-fallback-transition[data-ui-transition-phase="enter"][data-ui-transition^="main-"] .timeline-page:not(.is-exiting) > *,
+.ui-fallback-transition[data-ui-transition-phase="enter"][data-ui-transition^="main-"] .group-list-page:not(.is-exiting) > *,
+.ui-fallback-transition[data-ui-transition-phase="enter"][data-ui-transition^="main-"] .chat:not(.is-exiting) > *:not(.bottom-nav):not(.moment-compose-fab),
+.ui-fallback-transition[data-ui-transition-phase="enter"][data-ui-transition^="main-"] .desktop-settings-page:not(.is-exiting) > *,
+.ui-fallback-transition[data-ui-transition-phase="enter"][data-ui-transition^="main-"] .character-page:not(.is-exiting) > *,
+.ui-fallback-transition[data-ui-transition-phase="enter"][data-ui-transition^="main-"] .sidebar:not(.is-exiting) > * {
   animation: referencePageEnter var(--fade-dur) var(--fade-ease) backwards;
   animation-delay: var(--anim-delay, 0ms);
-  will-change: transform, opacity;
+  will-change: transform;
+}
+
+.ui-fallback-transition[data-ui-transition^="main-"] .pt-main-tab-snapshot .is-exiting.mobile-page > *:not(.bottom-nav):not(.moment-compose-fab),
+.ui-fallback-transition[data-ui-transition^="main-"] .pt-main-tab-snapshot .is-exiting.mobile-list-page > *:not(.bottom-nav):not(.moment-compose-fab),
+.ui-fallback-transition[data-ui-transition^="main-"] .pt-main-tab-snapshot .is-exiting.moments-page > *:not(.bottom-nav):not(.moments-publisher),
+.ui-fallback-transition[data-ui-transition^="main-"] .pt-main-tab-snapshot .is-exiting.events-page > *,
+.ui-fallback-transition[data-ui-transition^="main-"] .pt-main-tab-snapshot .is-exiting.timeline-page > *,
+.ui-fallback-transition[data-ui-transition^="main-"] .pt-main-tab-snapshot .is-exiting.group-list-page > *,
+.ui-fallback-transition[data-ui-transition^="main-"] .pt-main-tab-snapshot .is-exiting.chat > *:not(.bottom-nav):not(.moment-compose-fab),
+.ui-fallback-transition[data-ui-transition^="main-"] .pt-main-tab-snapshot .is-exiting.desktop-settings-page > *,
+.ui-fallback-transition[data-ui-transition^="main-"] .pt-main-tab-snapshot .is-exiting.character-page > *,
+.ui-fallback-transition[data-ui-transition^="main-"] .pt-main-tab-snapshot .is-exiting.sidebar > * {
+  animation: referencePageExit var(--fade-out-dur) ease-in forwards;
+  animation-delay: var(--anim-delay, 0ms);
+  will-change: transform;
 }
 
 .ui-fallback-transition[data-ui-transition] .mobile-page > *:nth-child(1),
@@ -15660,19 +15968,19 @@ summary:focus-visible {
   --anim-delay: calc(var(--block-gap) * 4);
 }
 
-.ui-fallback-transition[data-ui-transition-phase="exit"] .is-exiting.mobile-page > *:not(.bottom-nav):not(.moment-compose-fab),
-.ui-fallback-transition[data-ui-transition-phase="exit"] .is-exiting.mobile-list-page > *:not(.bottom-nav):not(.moment-compose-fab),
-.ui-fallback-transition[data-ui-transition-phase="exit"] .is-exiting.moments-page > *:not(.bottom-nav):not(.moment-compose-fab),
-.ui-fallback-transition[data-ui-transition-phase="exit"] .is-exiting.events-page > *,
-.ui-fallback-transition[data-ui-transition-phase="exit"] .is-exiting.timeline-page > *,
-.ui-fallback-transition[data-ui-transition-phase="exit"] .is-exiting.group-list-page > *,
-.ui-fallback-transition[data-ui-transition-phase="exit"] .is-exiting.chat > *:not(.bottom-nav):not(.moment-compose-fab),
-.ui-fallback-transition[data-ui-transition-phase="exit"] .is-exiting.desktop-settings-page > *,
-.ui-fallback-transition[data-ui-transition-phase="exit"] .is-exiting.character-page > *,
-.ui-fallback-transition[data-ui-transition-phase="exit"] .is-exiting.sidebar > * {
+.ui-fallback-transition[data-ui-transition-phase="exit"][data-ui-transition^="main-"] .is-exiting.mobile-page > *:not(.bottom-nav):not(.moment-compose-fab),
+.ui-fallback-transition[data-ui-transition-phase="exit"][data-ui-transition^="main-"] .is-exiting.mobile-list-page > *:not(.bottom-nav):not(.moment-compose-fab),
+.ui-fallback-transition[data-ui-transition-phase="exit"][data-ui-transition^="main-"] .is-exiting.moments-page > *:not(.bottom-nav):not(.moments-publisher),
+.ui-fallback-transition[data-ui-transition-phase="exit"][data-ui-transition^="main-"] .is-exiting.events-page > *,
+.ui-fallback-transition[data-ui-transition-phase="exit"][data-ui-transition^="main-"] .is-exiting.timeline-page > *,
+.ui-fallback-transition[data-ui-transition-phase="exit"][data-ui-transition^="main-"] .is-exiting.group-list-page > *,
+.ui-fallback-transition[data-ui-transition-phase="exit"][data-ui-transition^="main-"] .is-exiting.chat > *:not(.bottom-nav):not(.moment-compose-fab),
+.ui-fallback-transition[data-ui-transition-phase="exit"][data-ui-transition^="main-"] .is-exiting.desktop-settings-page > *,
+.ui-fallback-transition[data-ui-transition-phase="exit"][data-ui-transition^="main-"] .is-exiting.character-page > *,
+.ui-fallback-transition[data-ui-transition-phase="exit"][data-ui-transition^="main-"] .is-exiting.sidebar > * {
   animation: referencePageExit var(--fade-out-dur) ease-in forwards;
   animation-delay: var(--anim-delay, 0ms);
-  will-change: transform, opacity;
+  will-change: transform;
 }
 
 .mobile-chat-detail > *,
@@ -15684,7 +15992,6 @@ summary:focus-visible {
   transition: none !important;
 }
 
-.event-composer-dialog,
 .character-panel,
 .group-settings-panel,
 .card-recognition-dialog,
@@ -15698,7 +16005,6 @@ summary:focus-visible {
   animation: slideUpIn 180ms ease-out backwards;
 }
 
-.event-composer-dialog.is-exiting,
 .character-panel.is-exiting,
 .group-settings-panel.is-exiting,
 .card-recognition-dialog.is-exiting,
@@ -15712,14 +16018,17 @@ summary:focus-visible {
   animation: slideDownOut 120ms ease-in forwards;
 }
 
-.moment-compose-fab,
+.group-settings-panel[data-group-settings-mode="create"].is-exiting {
+  animation: groupCreateRollOut 180ms cubic-bezier(0.55, 0.02, 0.74, 0.22) forwards;
+}
+
 .moment-compose-fab *,
 .bottom-nav,
 .bottom-nav * {
   animation: none !important;
 }
 
-html[data-ui-transition] .moment-compose-fab {
+html[data-ui-transition]:not([data-ui-transition^="main-"]) .moment-compose-fab {
   animation: none !important;
   transition: none !important;
   transform: none !important;
@@ -15771,29 +16080,45 @@ html[data-ui-transition] .moment-compose-fab {
   pointer-events: none !important;
 }
 
-.pt-chat-reveal-ring {
-  position: absolute;
-  left: var(--reveal-x, 50vw);
-  top: var(--reveal-y, 50vh);
-  width: 56px;
-  height: 56px;
-  border: 1px solid color-mix(in srgb, var(--accent) 32%, rgb(255 255 255 / 86%));
-  border-radius: 999px;
-  background: radial-gradient(circle, rgb(255 255 255 / 14%) 0%, rgb(255 255 255 / 5%) 58%, rgb(255 255 255 / 0%) 72%);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--accent-soft) 70%, transparent) inset,
-    0 0 30px color-mix(in srgb, var(--accent) 24%, transparent);
-  opacity: 0.72;
-  transform: translate(-50%, -50%) scale(var(--reveal-scale, 1));
-  transform-origin: center;
-  will-change: transform, opacity;
+.pt-action-expand-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483645;
+  overflow: hidden;
+  pointer-events: none;
+  contain: layout paint style;
 }
 
-.pt-chat-reveal-layer.is-exit .pt-chat-reveal-ring {
-  border-color: color-mix(in srgb, var(--accent) 20%, rgb(255 255 255 / 72%));
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--surface-solid) 80%, transparent) inset,
-    0 0 20px color-mix(in srgb, var(--accent) 18%, transparent);
+.pt-action-expand-snapshot {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--page);
+}
+
+.pt-action-expand-new {
+  will-change: clip-path, -webkit-clip-path;
+  transition:
+    clip-path 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    -webkit-clip-path 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.pt-action-expand-snapshot * {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+
+.pt-action-expand-new {
+  transition:
+    clip-path 280ms cubic-bezier(0.22, 1, 0.36, 1) !important,
+    -webkit-clip-path 280ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+
+.pt-action-expand-snapshot > * {
+  width: 100%;
+  min-height: 100vh;
+  pointer-events: none !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -15804,6 +16129,12 @@ html[data-ui-transition] .moment-compose-fab {
   .ui-fallback-transition[data-ui-transition] .timeline-page > *,
   .ui-fallback-transition[data-ui-transition] .group-list-page > *,
   .ui-fallback-transition[data-ui-transition] .chat > *,
+  .ui-fallback-transition[data-ui-transition] .world-insight-transition-frame > *,
+  .moments-publisher.is-open,
+  .moment-composer-layout-expanding .moment-compose-meta,
+  .moment-composer-layout-expanding .moment-visibility-contact-controls,
+  .moment-composer-layout-expanding .moment-visibility-private-hint,
+  .moment-composer-layout-expanding .moments-publisher-footer,
   .event-composer-dialog,
   .character-panel,
   .group-settings-panel,
@@ -15814,12 +16145,14 @@ html[data-ui-transition] .moment-compose-fab {
   .sticker-import-dialog,
   .settings-window,
   .settings-dialog,
-  .moments-tutorial-sheet {
+  .moments-tutorial-sheet,
+  .world-gear-panel.is-closing .world-gear-card {
     animation-duration: 0.01ms !important;
     transform: none !important;
   }
 
-  .pt-chat-reveal-layer {
+  .pt-chat-reveal-layer,
+  .pt-action-expand-layer {
     display: none !important;
   }
 }
@@ -15887,7 +16220,8 @@ html[data-ui-transition] .moment-compose-fab {
   display: grid;
   gap: 6px;
   text-align: left;
-  cursor: pointer;
+  cursor: default;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .first-run-step.is-done {
@@ -16306,6 +16640,49 @@ html[data-ui-transition] .moment-compose-fab {
   color: var(--text);
   background: var(--surface-raised);
   box-shadow: var(--shadow-soft);
+}
+
+.world-insight-transition-frame {
+  min-width: 0;
+}
+
+.ui-fallback-transition[data-ui-transition-phase="enter"][data-ui-transition^="world-"] .world-insight-transition-frame:not(.is-exiting) > * > *,
+.ui-fallback-transition[data-ui-transition-phase="enter"][data-ui-transition^="world-"] .world-insight-transition-frame:not(.is-exiting) > * {
+  animation: referencePageEnter var(--fade-dur) var(--fade-ease) backwards;
+  animation-delay: var(--anim-delay, 0ms);
+  will-change: transform;
+}
+
+.ui-fallback-transition[data-ui-transition-phase="exit"][data-ui-transition^="world-"] .world-insight-transition-frame .is-exiting > *,
+.ui-fallback-transition[data-ui-transition-phase="exit"][data-ui-transition^="world-"] .world-insight-transition-frame.is-exiting > * {
+  animation: referencePageExit var(--fade-out-dur) ease-in forwards;
+  animation-delay: var(--anim-delay, 0ms);
+  will-change: transform;
+}
+
+.ui-fallback-transition[data-ui-transition^="world-"] .world-insight-transition-frame > * > *:nth-child(1),
+.ui-fallback-transition[data-ui-transition^="world-"] .world-insight-transition-frame > *:nth-child(1) {
+  --anim-delay: 0ms;
+}
+
+.ui-fallback-transition[data-ui-transition^="world-"] .world-insight-transition-frame > * > *:nth-child(2),
+.ui-fallback-transition[data-ui-transition^="world-"] .world-insight-transition-frame > *:nth-child(2) {
+  --anim-delay: var(--block-gap);
+}
+
+.ui-fallback-transition[data-ui-transition^="world-"] .world-insight-transition-frame > * > *:nth-child(3),
+.ui-fallback-transition[data-ui-transition^="world-"] .world-insight-transition-frame > *:nth-child(3) {
+  --anim-delay: calc(var(--block-gap) * 2);
+}
+
+.ui-fallback-transition[data-ui-transition^="world-"] .world-insight-transition-frame > * > *:nth-child(4),
+.ui-fallback-transition[data-ui-transition^="world-"] .world-insight-transition-frame > *:nth-child(4) {
+  --anim-delay: calc(var(--block-gap) * 3);
+}
+
+.ui-fallback-transition[data-ui-transition^="world-"] .world-insight-transition-frame > * > *:nth-child(n + 5),
+.ui-fallback-transition[data-ui-transition^="world-"] .world-insight-transition-frame > *:nth-child(n + 5) {
+  --anim-delay: calc(var(--block-gap) * 4);
 }
 
 .world-relationship-insight {

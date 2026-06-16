@@ -28,10 +28,10 @@ export function renderFirstRunGuide(state: FirstRunGuideState): string {
       </header>
       <div class="first-run-steps">
         ${steps.map(([id, title, done, copy], index) => `
-          <button class="first-run-step ${done ? 'is-done' : ''}" data-first-run-step="${id}" type="button">
+          <div class="first-run-step ${done ? 'is-done' : ''}" data-first-run-step-id="${id}">
             <b>${done ? '✓' : index + 1}</b>
             <span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(copy)}</small></span>
-          </button>
+          </div>
         `).join('')}
       </div>
     </section>

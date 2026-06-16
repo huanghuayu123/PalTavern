@@ -280,6 +280,7 @@ import {
 import {
   desktopViewTransition,
   mainSectionTransition,
+  prepareActionExpandFromElement,
   prepareChatRevealFromElement,
   renderWithUiTransition as runUiTransition,
   type UiTransitionKind,
@@ -440,6 +441,14 @@ function isWorldInsightTab(value: unknown): value is WorldInsightTab {
   return value === 'events' || value === 'relationships' || value === 'timeline';
 }
 
+function worldInsightTransition(from: WorldInsightTab, to: WorldInsightTab): UiTransitionKind {
+  if (from === to) return 'quiet';
+  const fromIndex = WORLD_INSIGHT_TABS.findIndex(tab => tab.value === from);
+  const toIndex = WORLD_INSIGHT_TABS.findIndex(tab => tab.value === to);
+  if (fromIndex < 0 || toIndex < 0) return 'world-forward';
+  return toIndex > fromIndex ? 'world-forward' : 'world-back';
+}
+
 function isWorldTimelineTypeFilter(value: unknown): value is WorldTimelineTypeFilter {
   return typeof value === 'string' && WORLD_TIMELINE_FILTERS.some(filter => filter.value === value);
 }
@@ -454,6 +463,8 @@ let mobileGroupChatOpen = false;
 let desktopGroupChatOpen = false;
 let groupSettingsOpen = false;
 let groupSettingsMode: GroupSettingsMode = 'create';
+let groupSettingsOpening = false;
+let groupSettingsOpeningTimer: number | undefined;
 let editingPromptPresetId = '';
 let mobileSettingsDetail = false;
 let characterPanelOpen = false;
@@ -469,10 +480,18 @@ let replyStrategyGeneratingCharacterId = '';
 let momentGenerating = false;
 let momentGenerationStatus = '';
 let momentComposerOpen = false;
+let momentComposerClosing = false;
+let momentComposerDropClosing = false;
+let momentComposerOpening = false;
+let momentComposerOpeningTimer: number | undefined;
+let momentComposerKeyboardBlurTimer: number | undefined;
+let momentComposerCloseKeyboardTimer: number | undefined;
+let momentComposerLayoutTransition: 'expand' | null = null;
 let eventGenerating = false;
 let creatingPrivateEventSuggestionId = '';
 let worldRpGenerating = false;
 let eventComposerOpen = false;
+let eventComposerDropClosing = false;
 let eventResolvingId = '';
 let commentingMomentId = '';
 const autoCommentingMomentIds = new Set<string>();
@@ -484,6 +503,9 @@ const momentVisibilityCharacterIds = new Set<string>();
 const momentVisibilityBlockedIds = new Set<string>();
 let timelineNoteDraft = '';
 let worldInsightTab: WorldInsightTab = 'events';
+let worldGearPanelOpen = false;
+let worldGearPanelClosing = false;
+let worldGearPanelCloseTimer: number | undefined;
 let memorySummaryDrawerExpanded = false;
 let worldTimelineTypeFilter: WorldTimelineTypeFilter = 'all';
 let worldTimelineSearchQuery = '';
@@ -509,6 +531,10 @@ let contextPreviewCharacterId = '';
 let lastComposerSubmission: { characterId: string; content: string } | null = null;
 const COMPOSER_FOCUS_KEEPALIVE_MS = 6000;
 const COMPOSER_FOCUS_RETRY_DELAYS = [40, 120, 260, 520, 900];
+const MOMENT_COMPOSER_CLOSE_KEYBOARD_MS = 360;
+const MOMENT_COMPOSER_LAYOUT_TRANSITION_MS = 260;
+const EVENT_COMPOSER_DROP_CLOSE_MS = 360;
+const WORLD_GEAR_CLOSE_MS = 180;
 let messageComposerKeyboardHoldCharacterId = '';
 let focusMessageInputAfterRenderCharacterId = '';
 let focusGroupInputAfterRenderChatId = '';
@@ -586,6 +612,11 @@ function isSettingsSection(value: unknown): value is SettingsSection {
 
 function isMobileSection(value: unknown): value is MobileSection {
   return typeof value === 'string' && MOBILE_SECTIONS.includes(value as MobileSection);
+}
+
+function visibleMobileSection(): MobileSection {
+  const activeSection = document.querySelector<HTMLButtonElement>('.bottom-nav button.is-active')?.dataset.mobileSection;
+  return isMobileSection(activeSection) ? activeSection : mobileSection;
 }
 
 function nonEmptyStringMap(value: unknown): Record<string, string> {
@@ -1195,6 +1226,7 @@ function closeMobileLayer(): boolean {
   }
   if (eventComposerOpen) {
     eventComposerOpen = false;
+    eventComposerDropClosing = false;
     saveUiSessionSnapshot();
     return true;
   }
@@ -1211,10 +1243,7 @@ function closeMobileLayer(): boolean {
     return true;
   }
   if (momentComposerOpen) {
-    momentComposerOpen = false;
-    momentGenerationStatus = '';
-    setMomentComposerKeyboardFocus(false);
-    saveUiSessionSnapshot();
+    closeMomentComposerWithTransition(false);
     return true;
   }
   if (groupSettingsOpen) {
@@ -1256,8 +1285,13 @@ function closeMobileLayer(): boolean {
     mobileSettingsDetail = false;
     momentComposerOpen = false;
     momentGenerationStatus = '';
-    setMomentComposerKeyboardFocus(false);
+    resetMomentComposerKeyboardState();
     eventComposerOpen = false;
+    eventComposerDropClosing = false;
+    worldGearPanelOpen = false;
+    worldGearPanelClosing = false;
+    window.clearTimeout(worldGearPanelCloseTimer);
+    worldGearPanelCloseTimer = undefined;
     saveUiSessionSnapshot();
     return true;
   }
@@ -3172,10 +3206,15 @@ function renderGroupSettingsPanel(chat?: GroupChatProfile): string {
   if (!groupSettingsOpen) return '';
   const title = chat?.title ?? `${activeWorld().name} 群聊`;
   const activeGenerationDisabled = !chat?.allowModelInitiatedMessages || isGroupGenerating();
+  const mode = chat ? 'edit' : 'create';
+  const panelClasses = [
+    'group-settings-panel',
+    mode === 'create' && groupSettingsOpening ? 'is-entering' : '',
+  ].filter(Boolean).join(' ');
   return `
     <div class="group-settings-overlay" role="dialog" aria-modal="true" aria-label="群聊设置">
       <button class="group-settings-backdrop" id="close-group-settings-backdrop" type="button" aria-label="关闭群聊设置"></button>
-      <aside class="group-settings-panel">
+      <aside class="${panelClasses}" data-group-settings-mode="${mode}">
         <header class="group-settings-header">
           <div>
             <span class="settings-kicker">Group Settings</span>
@@ -3323,11 +3362,12 @@ function renderChatPane(character?: CharacterProfile, mobile = false): string {
 }
 
 function renderMomentComposerLauncher(): string {
+  const composerVisible = momentComposerOpen || momentComposerDropClosing;
   return `
     <button class="moment-compose-fab" id="open-moment-composer" type="button" aria-haspopup="dialog">
       ${icon('send')}<span>发布动态</span>
     </button>
-    ${momentComposerOpen ? '<button class="moment-composer-backdrop" id="close-moment-composer-backdrop" type="button" aria-label="关闭发布动态"></button>' : ''}
+    ${composerVisible ? '<button class="moment-composer-backdrop" id="close-moment-composer-backdrop" type="button" aria-label="关闭发布动态"></button>' : ''}
   `;
 }
 
@@ -3435,6 +3475,14 @@ function renderMomentVisibilityContactControls(characters: CharacterProfile[]): 
 }
 
 function renderMomentsPage(mobile = false): string {
+  const composerVisible = momentComposerOpen || momentComposerDropClosing;
+  const composerClasses = [
+    'moments-publisher',
+    composerVisible ? 'is-open' : '',
+    momentComposerOpening ? 'is-entering' : '',
+    momentComposerDropClosing ? 'is-exiting moment-composer-drop-closing' : '',
+    momentComposerLayoutTransition === 'expand' ? 'moment-composer-layout-expanding' : '',
+  ].filter(Boolean).join(' ');
   const worldCharacters = state.characters.filter(character => character.worldId === activeWorld().id);
   const selectedMomentCharacter = worldCharacters.find(character => character.id === momentComposerAuthorId);
   const selectedAuthorId = selectedMomentCharacter ? selectedMomentCharacter.id : 'user';
@@ -3457,7 +3505,7 @@ function renderMomentsPage(mobile = false): string {
       </header>
       <section class="moments-scroll">
         <div class="moments-column">
-          <form class="moments-publisher ${momentComposerOpen ? 'is-open' : ''}" id="moment-composer" role="dialog" aria-modal="true" aria-label="发布动态">
+          <form class="${composerClasses}" id="moment-composer" role="dialog" aria-modal="true" aria-label="发布动态">
             <div class="moment-composer-head">
               <div><span class="eyebrow">Moment</span><strong>发布动态</strong></div>
               <button class="icon-button" id="close-moment-composer" type="button" aria-label="关闭发布动态">×</button>
@@ -3614,12 +3662,12 @@ function renderEventParticipantSelect(): string {
 }
 
 function renderEventComposerDialog(): string {
-  if (!eventComposerOpen) return '';
+  if (!eventComposerOpen && !eventComposerDropClosing) return '';
   const manualMode = eventComposerDraft.mode === 'manual';
   return `
     <div class="event-composer-overlay" role="dialog" aria-modal="true" aria-label="生成事件">
       <button class="event-composer-backdrop" id="close-event-composer-backdrop" type="button" aria-label="关闭生成窗口"></button>
-      <section class="event-composer-dialog">
+      <section class="event-composer-dialog ${eventComposerDropClosing ? 'is-exiting event-composer-drop-closing' : ''}">
         <header class="event-composer-dialog-header">
           <div>
             <span>世界事件</span>
@@ -3671,6 +3719,7 @@ function openEventComposer(mode: 'auto' | 'manual' = 'auto'): void {
     participantIds: eventComposerDraft.participantIds.filter(id => id !== leadActor.characterId),
   };
   eventComposerOpen = true;
+  eventComposerDropClosing = false;
   preserveScrollForNextRender();
   saveUiSessionSnapshot();
   renderWithUiTransition('overlay-in');
@@ -4099,9 +4148,16 @@ function renderWorldPersonaSelector(): string {
 
 function renderWorldSettingsPanel(): string {
   const world = activeWorld();
+  const panelClasses = ['world-gear-panel', worldGearPanelClosing ? 'is-closing' : ''].filter(Boolean).join(' ');
+  const panelOpen = worldGearPanelOpen || worldGearPanelClosing;
+  const trigger = compactMedia.matches
+    ? `<button class="icon-button world-gear-trigger" data-open-world-gear type="button" aria-label="涓栫晫涓庢椂闂寸嚎璁剧疆">${icon('settings')}</button>`
+    : '';
   return `
-    <details class="world-gear-panel">
-      <summary class="icon-button" aria-label="世界与时间线设置">${icon('settings')}</summary>
+    ${trigger}
+    <details class="${panelClasses}" ${panelOpen ? 'open' : ''}>
+      ${trigger}
+      <summary class="icon-button" data-open-world-gear aria-label="世界与时间线设置">${icon('settings')}</summary>
       <section class="world-gear-card" aria-label="世界设置与时间线">
         <header>
           <div>
@@ -5084,7 +5140,9 @@ function renderWorldWorkbenchPage(mobile = false): string {
       <section class="world-workbench-scroll">
         <div class="world-workbench-column">
           ${renderMemorySummaryDrawer()}
-          ${insightBody}
+          <div class="world-insight-transition-frame" data-world-insight-transition="${worldInsightTab}">
+            ${insightBody}
+          </div>
         </div>
       </section>
       ${worldInsightTab === 'events' && selectedEvent && selectedEvent.status !== 'resolved' ? renderWorldStageComposer(character) : ''}
@@ -6870,15 +6928,25 @@ function closeTransientOverlaysForPageChange(): void {
   settingsOpen = false;
   characterPanelOpen = false;
   groupSettingsOpen = false;
+  resetGroupSettingsOpening();
   stickerPickerOpen = false;
   eventComposerOpen = false;
+  eventComposerDropClosing = false;
   momentComposerOpen = false;
+  momentComposerDropClosing = false;
+  momentComposerLayoutTransition = null;
+  resetMomentComposerKeyboardState();
   momentsTutorialOpen = false;
   messageProfileCharacterId = '';
   messageProfileAnchor = null;
   messageActionId = '';
   groupMessageActionId = '';
+  worldGearPanelOpen = false;
+  worldGearPanelClosing = false;
+  window.clearTimeout(worldGearPanelCloseTimer);
+  worldGearPanelCloseTimer = undefined;
   document.querySelectorAll<HTMLDetailsElement>('.world-gear-panel[open], .world-persona-select[open]').forEach(details => {
+    if (details.classList.contains('world-gear-panel')) worldGearPanelOpen = false;
     details.open = false;
   });
 }
@@ -7088,6 +7156,132 @@ function setMomentComposerKeyboardFocus(active: boolean): void {
   );
 }
 
+function clearMomentComposerKeyboardTimers(): void {
+  window.clearTimeout(momentComposerOpeningTimer);
+  window.clearTimeout(momentComposerKeyboardBlurTimer);
+  window.clearTimeout(momentComposerCloseKeyboardTimer);
+  momentComposerOpeningTimer = undefined;
+  momentComposerKeyboardBlurTimer = undefined;
+  momentComposerCloseKeyboardTimer = undefined;
+}
+
+function releaseMomentComposerClosingFocus(): void {
+  momentComposerClosing = false;
+  momentComposerDropClosing = false;
+  setMomentComposerKeyboardFocus(false);
+  momentComposerCloseKeyboardTimer = undefined;
+}
+
+function resetMomentComposerKeyboardState(): void {
+  clearMomentComposerKeyboardTimers();
+  momentComposerOpening = false;
+  momentComposerClosing = false;
+  momentComposerDropClosing = false;
+  momentComposerLayoutTransition = null;
+  setMomentComposerKeyboardFocus(false);
+}
+
+function finishMomentComposerDropClose(): void {
+  momentComposerDropClosing = false;
+  momentComposerOpen = false;
+  saveUiSessionSnapshot({ captureDom: false });
+  render();
+}
+
+function clearMomentComposerLayoutTransitionSoon(): void {
+  if (!momentComposerLayoutTransition) return;
+  window.setTimeout(() => {
+    if (!momentComposerLayoutTransition) return;
+    momentComposerLayoutTransition = null;
+    document.querySelector<HTMLElement>('#moment-composer')?.classList.remove('moment-composer-layout-expanding');
+    render();
+  }, MOMENT_COMPOSER_LAYOUT_TRANSITION_MS + 40);
+}
+
+function expandMomentComposerLayout(): void {
+  if (!document.documentElement.classList.contains('moment-composer-keyboard-focus')) return;
+  window.clearTimeout(momentComposerKeyboardBlurTimer);
+  momentComposerKeyboardBlurTimer = undefined;
+  momentComposerLayoutTransition = 'expand';
+  document.querySelector<HTMLElement>('#moment-composer')?.classList.add('moment-composer-layout-expanding');
+  setMomentComposerKeyboardFocus(false);
+  preserveScrollForNextRender();
+  saveUiSessionSnapshot({ captureDom: true });
+  render();
+  clearMomentComposerLayoutTransitionSoon();
+}
+
+function expandMomentComposerLayoutInPlace(): void {
+  if (!document.documentElement.classList.contains('moment-composer-keyboard-focus')) return;
+  momentComposerLayoutTransition = 'expand';
+  document.querySelector<HTMLElement>('#moment-composer')?.classList.add('moment-composer-layout-expanding');
+  setMomentComposerKeyboardFocus(false);
+  clearMomentComposerLayoutTransitionSoon();
+}
+
+function closeMomentComposerWithTransition(renderTransition: boolean, dropMotion = false): void {
+  captureVisibleDraftsFromDom();
+  clearMomentComposerKeyboardTimers();
+  momentComposerOpening = false;
+  momentComposerClosing = true;
+  momentGenerationStatus = '';
+  saveUiSessionSnapshot();
+  if (dropMotion && renderTransition) {
+    momentComposerDropClosing = true;
+    momentComposerOpen = true;
+    renderWithUiTransition('overlay-out');
+    momentComposerCloseKeyboardTimer = window.setTimeout(() => {
+      releaseMomentComposerClosingFocus();
+      finishMomentComposerDropClose();
+    }, Math.max(0, MOMENT_COMPOSER_CLOSE_KEYBOARD_MS - 40));
+    return;
+  }
+  momentComposerOpen = false;
+  momentComposerCloseKeyboardTimer = window.setTimeout(
+    releaseMomentComposerClosingFocus,
+    MOMENT_COMPOSER_CLOSE_KEYBOARD_MS,
+  );
+  if (renderTransition) renderWithUiTransition('overlay-out');
+}
+
+function closeWorldGearPanel(renderTransition = true): void {
+  if (!worldGearPanelOpen && !worldGearPanelClosing) return;
+  document.querySelectorAll('.pt-action-expand-layer').forEach(element => element.remove());
+  window.clearTimeout(worldGearPanelCloseTimer);
+  worldGearPanelCloseTimer = undefined;
+  captureVisibleDraftsFromDom();
+  worldGearPanelOpen = false;
+  worldGearPanelClosing = true;
+  saveUiSessionSnapshot({ captureDom: false });
+  const finishClose = () => {
+    worldGearPanelCloseTimer = undefined;
+    worldGearPanelClosing = false;
+    document.querySelector<HTMLDetailsElement>('.world-gear-panel')?.removeAttribute('open');
+    render();
+  };
+  if (renderTransition) {
+    render();
+    worldGearPanelCloseTimer = window.setTimeout(finishClose, WORLD_GEAR_CLOSE_MS);
+    return;
+  }
+  finishClose();
+}
+
+function clearGroupSettingsOpeningSoon(): void {
+  window.clearTimeout(groupSettingsOpeningTimer);
+  groupSettingsOpeningTimer = window.setTimeout(() => {
+    groupSettingsOpening = false;
+    groupSettingsOpeningTimer = undefined;
+    document.querySelector<HTMLElement>('.group-settings-panel.is-entering')?.classList.remove('is-entering');
+  }, 520);
+}
+
+function resetGroupSettingsOpening(): void {
+  window.clearTimeout(groupSettingsOpeningTimer);
+  groupSettingsOpeningTimer = undefined;
+  groupSettingsOpening = false;
+}
+
 function updateKeyboardOffset(): void {
   const viewport = window.visualViewport;
   const offset = viewport
@@ -7280,7 +7474,7 @@ function bindUi(): void {
   const openMomentsTutorialIfNeeded = () => {
     if (localStorage.getItem(MOMENTS_TUTORIAL_KEY) !== 'done') {
       momentComposerOpen = false;
-      setMomentComposerKeyboardFocus(false);
+      resetMomentComposerKeyboardState();
       momentsTutorialOpen = true;
     }
   };
@@ -7291,7 +7485,7 @@ function bindUi(): void {
   };
   document.querySelector<HTMLButtonElement>('#open-moments-tutorial')?.addEventListener('click', () => {
     momentComposerOpen = false;
-    setMomentComposerKeyboardFocus(false);
+    resetMomentComposerKeyboardState();
     momentsTutorialOpen = true;
     renderWithUiTransition('overlay-in');
   });
@@ -7299,23 +7493,36 @@ function bindUi(): void {
     button.addEventListener('click', closeMomentsTutorial);
   });
   document.querySelector<HTMLButtonElement>('#open-moment-composer')?.addEventListener('click', () => {
+    clearMomentComposerKeyboardTimers();
+    momentComposerClosing = false;
+    momentComposerDropClosing = false;
+    momentComposerLayoutTransition = null;
+    momentComposerOpening = true;
     momentGenerationStatus = '';
     momentsTutorialOpen = false;
     momentComposerOpen = true;
     renderWithUiTransition('overlay-in');
-    document.querySelector<HTMLTextAreaElement>('#moment-input')?.focus();
+    momentComposerOpeningTimer = window.setTimeout(() => {
+      momentComposerOpening = false;
+      document.querySelector<HTMLElement>('#moment-composer')?.classList.remove('is-entering');
+    }, 460);
+    const momentInput = document.querySelector<HTMLTextAreaElement>('#moment-input');
+    momentInput?.focus();
+    if (document.activeElement === momentInput) setMomentComposerKeyboardFocus(true);
     window.setTimeout(keepMomentComposerVisible, 80);
   });
   const closeMomentComposer = () => {
-    captureVisibleDraftsFromDom();
-    momentComposerOpen = false;
-    momentGenerationStatus = '';
-    setMomentComposerKeyboardFocus(false);
-    saveUiSessionSnapshot();
-    renderWithUiTransition('overlay-out');
+    closeMomentComposerWithTransition(true, true);
   };
   document.querySelector<HTMLButtonElement>('#close-moment-composer')?.addEventListener('click', closeMomentComposer);
   document.querySelector<HTMLButtonElement>('#close-moment-composer-backdrop')?.addEventListener('click', closeMomentComposer);
+  if (worldGearPanelOpen && compactMedia.matches) {
+    document.addEventListener('pointerdown', event => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('.world-gear-panel')) return;
+      closeWorldGearPanel(true);
+    }, { capture: true, once: true });
+  }
   if (messageActionId) {
     document.addEventListener('pointerdown', event => {
       const target = event.target as HTMLElement | null;
@@ -7676,39 +7883,6 @@ function bindUi(): void {
   document.querySelector<HTMLButtonElement>('#open-settings')?.addEventListener('click', openSettings);
   document.querySelector<HTMLButtonElement>('#open-settings-bottom')?.addEventListener('click', openSettings);
   document.querySelector<HTMLButtonElement>('#open-settings-header')?.addEventListener('click', openSettings);
-  document.querySelectorAll<HTMLButtonElement>('[data-first-run-step]').forEach(button => {
-    button.addEventListener('click', () => {
-      const step = button.dataset.firstRunStep;
-      const fromSection = mobileSection;
-      if (step === 'model') {
-        activeSettingsSection = 'model';
-        if (compactMedia.matches) {
-          mobileSection = 'settings';
-          mobileSettingsDetail = true;
-          pushMobileHistory('section');
-        } else {
-          settingsOpen = true;
-        }
-        renderWithUiTransition(compactMedia.matches ? mainSectionTransition(fromSection, 'settings') : 'detail-in');
-        return;
-      }
-      if (step === 'character') {
-        settingsOpen = false;
-        mobileSettingsDetail = false;
-        mobileChatOpen = false;
-        mobileGroupChatOpen = false;
-        desktopGroupChatOpen = false;
-        groupSettingsOpen = false;
-        openAuthoringChooser();
-        renderWithUiTransition('detail-in');
-        return;
-      }
-      setActiveView('chat');
-      mobileSection = 'messages';
-      mobileChatOpen = Boolean(activeCharacter());
-      renderWithUiTransition(compactMedia.matches ? mainSectionTransition(fromSection, 'messages') : desktopViewTransition(state.activeView, 'chat'));
-    });
-  });
   const openCharacterPanel = (page: CharacterPanelPage = 'worldbook') => {
     if (!activeCharacter()) return;
     characterPanelOpen = true;
@@ -7956,8 +8130,13 @@ function bindUi(): void {
       captureVisibleDraftsFromDom();
       closeTransientOverlaysForPageChange();
       const nextSection = button.dataset.mobileSection;
-      const fromSection = mobileSection;
-      mobileSection = isMobileSection(nextSection) ? nextSection : 'messages';
+      const fromSection = visibleMobileSection();
+      const nextMobileSection = isMobileSection(nextSection) ? nextSection : 'messages';
+      const transitionKind = mainSectionTransition(fromSection, nextMobileSection);
+      document.querySelectorAll<HTMLButtonElement>('.bottom-nav button[data-mobile-section]').forEach(navButton => {
+        navButton.classList.toggle('is-active', navButton.dataset.mobileSection === nextMobileSection);
+      });
+      mobileSection = nextMobileSection;
       setActiveView(
         mobileSection === 'moments' ? 'moments'
           : mobileSection === 'world' ? 'world'
@@ -7971,6 +8150,7 @@ function bindUi(): void {
       if (mobileSection !== 'moments') {
         momentComposerOpen = false;
         momentGenerationStatus = '';
+        resetMomentComposerKeyboardState();
       }
       mobileChatOpen = false;
       mobileGroupChatOpen = false;
@@ -7980,7 +8160,7 @@ function bindUi(): void {
       mobileSettingsDetail = false;
       if (mobileSection !== 'messages') pushMobileHistory('section');
       saveUiSessionSnapshot();
-      renderWithUiTransition(mainSectionTransition(fromSection, mobileSection));
+      renderWithUiTransition(transitionKind);
     });
   });
   document.querySelectorAll<HTMLButtonElement>('[data-open-timeline]').forEach(button => {
@@ -7997,6 +8177,8 @@ function bindUi(): void {
       groupSettingsOpen = false;
       mobileSettingsDetail = false;
       momentComposerOpen = false;
+      momentGenerationStatus = '';
+      resetMomentComposerKeyboardState();
       if (compactMedia.matches) pushMobileHistory('section');
       saveUiSessionSnapshot();
       renderWithUiTransition(compactMedia.matches ? mainSectionTransition(fromSection, 'world') : desktopViewTransition(fromView, 'world'));
@@ -8026,9 +8208,7 @@ function bindUi(): void {
       return;
     }
     if (event.key === 'Escape' && momentComposerOpen) {
-      momentComposerOpen = false;
-      momentGenerationStatus = '';
-      renderWithUiTransition('overlay-out');
+      closeMomentComposerWithTransition(true, true);
       return;
     }
     if (event.key === 'Escape' && groupSettingsOpen) {
@@ -8063,6 +8243,7 @@ function bindUi(): void {
       if (nextView !== 'moments') {
         momentComposerOpen = false;
         momentGenerationStatus = '';
+        resetMomentComposerKeyboardState();
       }
       if (nextView !== 'groups') {
         desktopGroupChatOpen = false;
@@ -8077,7 +8258,6 @@ function bindUi(): void {
   document.querySelectorAll<HTMLButtonElement>('[data-open-groups]').forEach(button => {
     button.addEventListener('click', () => {
       captureVisibleDraftsFromDom();
-      const fromSection = mobileSection;
       const fromView = state.activeView;
       setActiveView('groups');
       desktopGroupChatOpen = false;
@@ -8088,25 +8268,32 @@ function bindUi(): void {
         mobileChatOpen = false;
         mobileGroupChatOpen = false;
         mobileSettingsDetail = false;
+        prepareActionExpandFromElement(button);
       }
       saveUiSessionSnapshot();
-      renderWithUiTransition(compactMedia.matches ? mainSectionTransition(fromSection, 'messages') : desktopViewTransition(fromView, 'groups'));
+      renderWithUiTransition(compactMedia.matches ? 'detail-in' : desktopViewTransition(fromView, 'groups'));
     });
   });
   document.querySelectorAll<HTMLButtonElement>('[data-open-group-create]').forEach(button => {
     button.addEventListener('click', () => {
       groupSettingsMode = 'create';
       groupSettingsOpen = true;
+      groupSettingsOpening = true;
       mobileSettingsDetail = false;
       if (compactMedia.matches) pushMobileHistory('modal');
       saveUiSessionSnapshot();
       renderWithUiTransition('overlay-in');
+      window.requestAnimationFrame(() => {
+        document.querySelector<HTMLElement>('.group-settings-panel[data-group-settings-mode="create"]')?.classList.add('is-entering');
+      });
+      clearGroupSettingsOpeningSoon();
     });
   });
   document.querySelectorAll<HTMLButtonElement>('#open-group-settings, [data-open-group-settings]').forEach(button => {
     button.addEventListener('click', () => {
       groupSettingsMode = 'edit';
       groupSettingsOpen = true;
+      resetGroupSettingsOpening();
       mobileSettingsDetail = false;
       if (compactMedia.matches) pushMobileHistory('modal');
       saveUiSessionSnapshot();
@@ -8114,18 +8301,21 @@ function bindUi(): void {
     });
   });
   document.querySelector<HTMLButtonElement>('#close-group-settings')?.addEventListener('click', () => {
+    resetGroupSettingsOpening();
     groupSettingsOpen = false;
     groupSettingsMode = 'create';
     saveUiSessionSnapshot();
     renderWithUiTransition('overlay-out');
   });
   document.querySelector<HTMLButtonElement>('#close-group-settings-backdrop')?.addEventListener('click', () => {
+    resetGroupSettingsOpening();
     groupSettingsOpen = false;
     groupSettingsMode = 'create';
     saveUiSessionSnapshot();
     renderWithUiTransition('overlay-out');
   });
   document.querySelector<HTMLButtonElement>('#cancel-group-settings')?.addEventListener('click', () => {
+    resetGroupSettingsOpening();
     groupSettingsOpen = false;
     groupSettingsMode = 'create';
     saveUiSessionSnapshot();
@@ -8183,6 +8373,7 @@ function bindUi(): void {
       mobileChatOpen = false;
       mobileGroupChatOpen = false;
     }
+    resetGroupSettingsOpening();
     groupSettingsOpen = false;
     groupSettingsMode = 'create';
     setVisibleStatus(`已创建群聊：${group.title}`);
@@ -8239,6 +8430,7 @@ function bindUi(): void {
         mobileChatOpen = false;
         mobileGroupChatOpen = Boolean(editingChat);
       }
+      resetGroupSettingsOpening();
       groupSettingsOpen = false;
       groupSettingsMode = 'create';
       saveState();
@@ -8734,6 +8926,53 @@ function bindUi(): void {
     setStatusText('世界设置已保存。');
     render();
   });
+  const toggleWorldGearPanel = (trigger: HTMLElement): void => {
+    document.querySelectorAll('.pt-action-expand-layer').forEach(element => element.remove());
+    const nextOpen = !worldGearPanelOpen;
+    if (!nextOpen) {
+      closeWorldGearPanel(true);
+      return;
+    }
+    prepareActionExpandFromElement(trigger);
+    window.clearTimeout(worldGearPanelCloseTimer);
+    worldGearPanelCloseTimer = undefined;
+    worldGearPanelClosing = false;
+    worldGearPanelOpen = true;
+    saveUiSessionSnapshot({ captureDom: false });
+    renderWithUiTransition('overlay-in');
+  };
+  appRoot.querySelector<HTMLElement>('[data-open-world-gear]')?.addEventListener('pointerdown', event => {
+    if (!compactMedia.matches) return;
+    const trigger = event.currentTarget as HTMLElement;
+    if (trigger.tagName.toLowerCase() !== 'summary') return;
+    event.preventDefault();
+    event.stopPropagation();
+    toggleWorldGearPanel(trigger);
+  }, { capture: true });
+  appRoot.querySelector<HTMLElement>('[data-open-world-gear]')?.addEventListener('click', event => {
+    const trigger = event.currentTarget as HTMLElement;
+    if (!compactMedia.matches) {
+      window.setTimeout(() => {
+        worldGearPanelOpen = Boolean(trigger.closest<HTMLDetailsElement>('.world-gear-panel')?.open);
+        saveUiSessionSnapshot({ captureDom: false });
+      }, 0);
+      return;
+    }
+    event.preventDefault();
+    toggleWorldGearPanel(trigger);
+  });
+  appRoot.querySelector<HTMLDetailsElement>('.world-gear-panel')?.addEventListener('toggle', event => {
+    const details = event.currentTarget as HTMLDetailsElement;
+    if (!compactMedia.matches) {
+      worldGearPanelOpen = details.open;
+      saveUiSessionSnapshot({ captureDom: false });
+      return;
+    }
+    if (!details.open && worldGearPanelOpen && !worldGearPanelClosing) {
+      details.open = true;
+      closeWorldGearPanel(true);
+    }
+  });
   document.querySelector<HTMLButtonElement>('[data-save-world-workbench]')?.addEventListener('click', () => {
     const world = activeWorld();
     world.name = fieldValue('#workbench-world-name') || world.name;
@@ -8745,7 +8984,7 @@ function bindUi(): void {
     world.updatedAt = Date.now();
     saveState();
     setStatusText('世界工作台设置已保存。');
-    render();
+    closeWorldGearPanel(true);
   });
   document.querySelector<HTMLButtonElement>('[data-save-workbench-user]')?.addEventListener('click', () => {
     const world = activeWorld();
@@ -9827,6 +10066,7 @@ function bindUi(): void {
     button.addEventListener('click', () => {
       const nextTab = button.dataset.worldInsightTab;
       if (!isWorldInsightTab(nextTab) || nextTab === worldInsightTab) return;
+      const transitionKind = worldInsightTransition(worldInsightTab, nextTab);
       worldInsightTab = nextTab;
       if (worldInsightTab !== 'events') {
         activeWorldRpEventId = '';
@@ -9835,7 +10075,7 @@ function bindUi(): void {
       }
       preserveScrollForNextRender();
       saveUiSessionSnapshot({ captureDom: false });
-      render();
+      renderWithUiTransition(transitionKind);
     });
   });
   document.querySelectorAll<HTMLButtonElement>('[data-refresh-character-memory-summaries]').forEach(button => {
@@ -10391,12 +10631,14 @@ function bindUi(): void {
     });
   });
   document.querySelector<HTMLSelectElement>('#moment-author-select')?.addEventListener('change', event => {
+    expandMomentComposerLayout();
     momentComposerAuthorId = (event.currentTarget as HTMLSelectElement).value || 'user';
     momentComposerTextDraft = document.querySelector<HTMLTextAreaElement>('#moment-input')?.value ?? '';
     momentGenerationStatus = '';
     render();
   });
   document.querySelector<HTMLSelectElement>('#moment-visibility-mode')?.addEventListener('change', event => {
+    expandMomentComposerLayout();
     momentVisibilityMode = (event.currentTarget as HTMLSelectElement).value as MomentVisibilityMode;
     if (momentVisibilityMode === 'private') momentVisibilityPickerOpenFor = null;
     scheduleUiSessionSnapshotSave();
@@ -10405,6 +10647,7 @@ function bindUi(): void {
   });
   document.querySelectorAll<HTMLButtonElement>('[data-moment-visibility-picker]').forEach(button => {
     button.addEventListener('click', () => {
+      expandMomentComposerLayout();
       const mode = button.dataset.momentVisibilityPicker === 'blocked' ? 'blocked' : 'specific';
       momentVisibilityPickerOpenFor = momentVisibilityPickerOpenFor === mode ? null : mode;
       scheduleUiSessionSnapshotSave();
@@ -10437,11 +10680,18 @@ function bindUi(): void {
     scheduleUiSessionSnapshotSave();
   });
   document.querySelector<HTMLTextAreaElement>('#moment-input')?.addEventListener('focus', () => {
+    window.clearTimeout(momentComposerKeyboardBlurTimer);
+    momentComposerKeyboardBlurTimer = undefined;
     setMomentComposerKeyboardFocus(true);
     keepMomentComposerVisible();
   });
   document.querySelector<HTMLTextAreaElement>('#moment-input')?.addEventListener('blur', () => {
-    window.setTimeout(() => setMomentComposerKeyboardFocus(false), 120);
+    window.clearTimeout(momentComposerKeyboardBlurTimer);
+    if (momentComposerClosing) return;
+    momentComposerKeyboardBlurTimer = window.setTimeout(() => {
+      momentComposerKeyboardBlurTimer = undefined;
+      if (!momentComposerClosing) expandMomentComposerLayoutInPlace();
+    }, 120);
   });
   document.querySelector<HTMLTextAreaElement>('#timeline-note-input')?.addEventListener('input', event => {
     timelineNoteDraft = (event.currentTarget as HTMLTextAreaElement).value;
@@ -10558,6 +10808,7 @@ function bindUi(): void {
     render();
   });
   document.querySelector<HTMLButtonElement>('#generate-moment')?.addEventListener('click', () => {
+    expandMomentComposerLayout();
     const selectedAuthorId = document.querySelector<HTMLSelectElement>('#moment-author-select')?.value || momentComposerAuthorId;
     momentComposerAuthorId = selectedAuthorId || 'user';
     momentComposerTextDraft = document.querySelector<HTMLTextAreaElement>('#moment-input')?.value ?? momentComposerTextDraft;
@@ -10830,10 +11081,19 @@ function bindUi(): void {
   });
   const closeEventComposer = () => {
     captureEventComposerDraftFromDom();
-    eventComposerOpen = false;
+    eventComposerOpen = true;
+    eventComposerDropClosing = true;
     preserveScrollForNextRender();
     saveUiSessionSnapshot();
     renderWithUiTransition('overlay-out');
+    window.setTimeout(() => {
+      if (!eventComposerDropClosing) return;
+      eventComposerOpen = false;
+      eventComposerDropClosing = false;
+      preserveScrollForNextRender();
+      saveUiSessionSnapshot({ captureDom: false });
+      render();
+    }, Math.max(0, EVENT_COMPOSER_DROP_CLOSE_MS - 40));
   };
   document.querySelector<HTMLButtonElement>('#close-event-composer')?.addEventListener('click', closeEventComposer);
   document.querySelector<HTMLButtonElement>('#close-event-composer-backdrop')?.addEventListener('click', closeEventComposer);
