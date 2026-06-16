@@ -15929,7 +15929,7 @@ summary:focus-visible {
 .ui-fallback-transition[data-ui-transition]:not([data-ui-transition^="world-"]) .mobile-page,
 .ui-fallback-transition[data-ui-transition]:not([data-ui-transition^="world-"]) .mobile-list-page,
 .ui-fallback-transition[data-ui-transition]:not([data-ui-transition^="world-"]) .mobile-chat-detail,
-.ui-fallback-transition[data-ui-transition]:not([data-ui-transition^="world-"]) .moments-page > *:not(.moments-publisher),
+.ui-fallback-transition[data-ui-transition]:not([data-ui-transition^="world-"]) .moments-page,
 .ui-fallback-transition[data-ui-transition]:not([data-ui-transition^="world-"]) .events-page,
 .ui-fallback-transition[data-ui-transition]:not([data-ui-transition^="world-"]) .timeline-page,
 .ui-fallback-transition[data-ui-transition]:not([data-ui-transition^="world-"]) .group-list-page,
@@ -16719,6 +16719,8 @@ html[data-ui-transition]:not([data-ui-transition^="main-"]) .moment-compose-fab 
 }
 
 .world-insight-tabs {
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
@@ -17286,9 +17288,9 @@ html[data-ui-transition]:not([data-ui-transition^="main-"]) .moment-compose-fab 
 
 @media (max-width: 780px) {
   .world-insight-tabs {
-    position: sticky;
-    top: 0;
-    z-index: 6;
+    position: relative;
+    top: auto;
+    z-index: 1;
   }
 
   .world-relationship-insight {

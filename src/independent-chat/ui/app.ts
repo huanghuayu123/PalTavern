@@ -374,6 +374,11 @@ type UiScrollSnapshot = {
   mobileChatOpen: boolean;
   mobileGroupChatOpen?: boolean;
 };
+type MobileListScrollSnapshot = {
+  section: Extract<MobileSection, 'messages' | 'contacts'>;
+  top: number;
+  left: number;
+};
 type UiSessionSnapshot = {
   savedAt: number;
   settingsOpen?: boolean;
@@ -416,6 +421,7 @@ type UiSessionSnapshot = {
   momentCommentDrafts?: Record<string, string>;
   momentCommentReplyTargetDrafts?: Record<string, string>;
   scroll?: UiScrollSnapshot;
+  mobileListScroll?: MobileListScrollSnapshot;
 };
 
 const CARD_IMPORT_ACCEPT = '.json,.png,application/json,image/png,application/octet-stream,*/*';
@@ -607,6 +613,7 @@ let pendingIdleRender = false;
 let pendingIdleInput: HTMLTextAreaElement | HTMLInputElement | null = null;
 let pendingIdleRenderFlush: (() => void) | null = null;
 let pendingScrollRestore: UiScrollSnapshot | null = null;
+let mobileListScrollRestore: MobileListScrollSnapshot | null = null;
 let scrollCharacterPanelToTopAfterRender = false;
 
 const SETTINGS_SECTIONS: SettingsSection[] = ['world', 'drafts', 'stickers', 'model', 'prompts', 'relationship', 'interactions', 'proactive', 'chat', 'notifications', 'data'];
@@ -777,6 +784,48 @@ function captureScrollSnapshot(): UiScrollSnapshot | undefined {
   };
 }
 
+function currentMobileListScrollSection(): MobileListScrollSnapshot['section'] | null {
+  if (!compactMedia.matches || mobileChatOpen || mobileGroupChatOpen) return null;
+  return mobileSection === 'messages' || mobileSection === 'contacts' ? mobileSection : null;
+}
+
+function captureMobileListScrollSnapshot(): MobileListScrollSnapshot | null {
+  const section = currentMobileListScrollSection();
+  const container = document.querySelector<HTMLElement>('.mobile-shell > .mobile-list-page');
+  if (!section || !container) return null;
+  return {
+    section,
+    top: container.scrollTop,
+    left: container.scrollLeft,
+  };
+}
+
+function rememberMobileListScroll(): void {
+  mobileListScrollRestore = captureMobileListScrollSnapshot() ?? mobileListScrollRestore;
+}
+
+function clearMobileListScrollRestore(): void {
+  mobileListScrollRestore = null;
+}
+
+function restoreMobileListScrollIfNeeded(): boolean {
+  const snapshot = mobileListScrollRestore;
+  if (!snapshot || currentMobileListScrollSection() !== snapshot.section) return false;
+  const container = document.querySelector<HTMLElement>('.mobile-shell > .mobile-list-page');
+  if (!container) return false;
+  mobileListScrollRestore = null;
+  container.scrollTop = snapshot.top;
+  container.scrollLeft = snapshot.left;
+  window.setTimeout(() => {
+    if (currentMobileListScrollSection() !== snapshot.section) return;
+    const current = document.querySelector<HTMLElement>('.mobile-shell > .mobile-list-page');
+    if (!current) return;
+    current.scrollTop = snapshot.top;
+    current.scrollLeft = snapshot.left;
+  }, 0);
+  return true;
+}
+
 function captureUiSessionSnapshot({ captureDom = true } = {}): UiSessionSnapshot {
   if (captureDom) captureVisibleDraftsFromDom();
   return {
@@ -820,6 +869,7 @@ function captureUiSessionSnapshot({ captureDom = true } = {}): UiSessionSnapshot
     momentCommentDrafts: Object.fromEntries(momentCommentDrafts),
     momentCommentReplyTargetDrafts: Object.fromEntries(momentCommentReplyTargetDrafts),
     scroll: captureScrollSnapshot(),
+    mobileListScroll: mobileListScrollRestore ?? captureMobileListScrollSnapshot() ?? undefined,
   };
 }
 
@@ -896,6 +946,16 @@ function installUiSessionPersistence(): void {
 function isSessionScrollSnapshotRestorable(snapshot: UiScrollSnapshot | undefined | null): snapshot is UiScrollSnapshot {
   if (!snapshot || typeof snapshot.key !== 'string') return false;
   return snapshot.key !== 'messages' && !snapshot.key.startsWith('groups:');
+}
+
+function isMobileListScrollSnapshot(value: unknown): value is MobileListScrollSnapshot {
+  if (!value || typeof value !== 'object') return false;
+  const snapshot = value as Partial<MobileListScrollSnapshot>;
+  return (snapshot.section === 'messages' || snapshot.section === 'contacts')
+    && typeof snapshot.top === 'number'
+    && Number.isFinite(snapshot.top)
+    && typeof snapshot.left === 'number'
+    && Number.isFinite(snapshot.left);
 }
 
 function requestConversationOpenAtBottom(): void {
@@ -1012,6 +1072,7 @@ function restoreUiSessionSnapshot(): void {
       if (value) momentCommentReplyTargetDrafts.set(key, value);
     });
     pendingScrollRestore = isSessionScrollSnapshotRestorable(parsed.scroll) ? parsed.scroll : null;
+    mobileListScrollRestore = isMobileListScrollSnapshot(parsed.mobileListScroll) ? parsed.mobileListScroll : null;
     if (parsed.scroll && typeof parsed.scroll.key === 'string' && !isSessionScrollSnapshotRestorable(parsed.scroll)) {
       requestChatStickToBottom();
     }
@@ -1141,6 +1202,12 @@ function hasMobileBackTarget(): boolean {
 function pushMobileHistory(layer: MobileHistoryLayer): void {
   if (!compactMedia.matches) return;
   window.history.pushState({ ...(window.history.state ?? {}), tavernSocialLayer: layer }, '');
+}
+
+function clearMobileHistoryLayer(): void {
+  if (!compactMedia.matches || !window.history.state?.tavernSocialLayer) return;
+  const { tavernSocialLayer: _layer, ...rest } = window.history.state;
+  window.history.replaceState(rest, '');
 }
 
 function ensureMobileHistoryForState(): void {
@@ -1317,6 +1384,21 @@ function backMobileLayer(): void {
     return;
   }
   if (closeMobileLayer()) renderWithUiTransition('detail-out');
+}
+
+function closeMobileGroupListWithTransition(): void {
+  captureVisibleDraftsFromDom();
+  clearMobileHistoryLayer();
+  mobileSection = 'messages';
+  setActiveView('chat');
+  mobileChatOpen = false;
+  mobileGroupChatOpen = false;
+  desktopGroupChatOpen = false;
+  groupSettingsOpen = false;
+  groupSettingsMode = 'create';
+  mobileSettingsDetail = false;
+  saveUiSessionSnapshot();
+  renderWithUiTransition('detail-out');
 }
 
 function forceRestartAllServices(): void {
@@ -2297,6 +2379,7 @@ function openPrivateChatByCharacterId(characterId: string, options: { pushHistor
     renderWithUiTransition('detail-out');
     return;
   }
+  rememberMobileListScroll();
   captureVisibleDraftsFromDom();
   state.activeCharacterId = character.id;
   setActiveView('chat');
@@ -7461,6 +7544,7 @@ export function render(): void {
       scrollCharacterPanelToTopAfterRender = false;
       document.querySelector<HTMLElement>('.character-panel')?.scrollTo({ top: 0, behavior: 'auto' });
     }
+    restoreMobileListScrollIfNeeded();
     scheduleUiSessionSnapshotSave();
   });
   if (!mediaListenerInstalled) {
@@ -8228,6 +8312,7 @@ function bindUi(): void {
   document.querySelectorAll<HTMLButtonElement>('[data-mobile-section]').forEach(button => {
     button.addEventListener('click', () => {
       captureVisibleDraftsFromDom();
+      clearMobileListScrollRestore();
       closeTransientOverlaysForPageChange();
       const nextSection = button.dataset.mobileSection;
       const fromSection = visibleMobileSection();
@@ -8361,6 +8446,7 @@ function bindUi(): void {
   document.querySelectorAll<HTMLButtonElement>('[data-open-groups]').forEach(button => {
     button.addEventListener('click', () => {
       captureVisibleDraftsFromDom();
+      clearMobileListScrollRestore();
       const fromView = state.activeView;
       setActiveView('groups');
       desktopGroupChatOpen = false;
@@ -8436,7 +8522,7 @@ function bindUi(): void {
     renderWithUiTransition('detail-out');
   });
   document.querySelector<HTMLButtonElement>('[data-mobile-group-list-back]')?.addEventListener('click', () => {
-    backMobileLayer();
+    closeMobileGroupListWithTransition();
   });
   document.querySelectorAll<HTMLButtonElement>('[data-group-chat-id]').forEach(button => {
     button.addEventListener('click', () => {
@@ -8760,6 +8846,7 @@ function bindUi(): void {
   document.querySelectorAll<HTMLSelectElement>('#world-select, [data-world-select]').forEach(select => {
     select.addEventListener('change', event => {
       captureVisibleDraftsFromDom();
+      clearMobileListScrollRestore();
       preserveScrollForNextRender();
       saveUiSessionSnapshot();
       setActiveWorld((event.currentTarget as HTMLSelectElement).value);
@@ -8864,6 +8951,7 @@ function bindUi(): void {
       const target = event.currentTarget as HTMLInputElement;
       const preferGroupSearch = Boolean(target.closest('.group-list-page'));
       contactQuery = target.value;
+      clearMobileListScrollRestore();
       preserveScrollForNextRender();
       render();
       const inputs = Array.from(document.querySelectorAll<HTMLInputElement>('#contact-search'));
