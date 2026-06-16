@@ -13554,6 +13554,110 @@ html[data-ui-transition="overlay-in"] .event-composer-dialog {
   border-radius: 16px 16px 6px;
 }
 
+.world-rp-action-message {
+  position: relative;
+  outline: none;
+  touch-action: manipulation;
+}
+
+.world-rp-action-message.is-actions-open {
+  z-index: 7;
+}
+
+.world-rp-assistant-turn {
+  display: grid;
+  width: min(680px, 100%);
+  gap: 8px;
+  justify-self: center;
+}
+
+.world-rp-message-actions {
+  position: absolute;
+  top: -40px;
+  right: 0;
+  display: flex;
+  overflow: hidden;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: var(--shadow-soft);
+}
+
+.world-rp-assistant-turn .world-rp-message-actions {
+  right: auto;
+  left: 54px;
+}
+
+.world-rp-message-actions button {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 11px;
+  color: var(--text);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  font-size: 12px;
+  font-weight: 760;
+  white-space: nowrap;
+}
+
+.world-rp-message-actions button + button {
+  border-left: 1px solid var(--line);
+}
+
+.world-rp-message-actions button:hover {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+
+.world-rp-variant-bar {
+  display: inline-grid;
+  grid-template-columns: 28px auto 28px;
+  gap: 2px;
+  align-items: center;
+  width: max-content;
+  margin-top: -4px;
+  color: var(--text-soft);
+  font-size: 11px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.world-rp-variant-bar.is-user {
+  justify-self: end;
+}
+
+.world-rp-variant-bar.is-assistant {
+  justify-self: start;
+  margin-left: 54px;
+}
+
+.world-rp-variant-bar button {
+  display: grid;
+  width: 28px;
+  height: 26px;
+  place-items: center;
+  color: var(--text-soft);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+}
+
+.world-rp-variant-bar button:hover {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+
+.world-rp-variant-bar span {
+  min-width: 42px;
+  text-align: center;
+  font-weight: 760;
+}
+
 .dialogue-turn {
   width: min(680px, 100%);
 }

@@ -41,6 +41,7 @@ export interface PromptEvalCase {
   path: string;
   scenario: string;
   userInput?: string;
+  groupReplyLiveliness?: 'quiet' | 'natural' | 'lively';
   hardRules: PromptHardRules;
   judgeCriteria: string[];
   expectedRisks: string[];
@@ -200,10 +201,10 @@ export const PROMPT_EVAL_CASES: PromptEvalCase[] = [
     category: 'group_chat',
     target: 'group_reply',
     path: 'group route -> group reply prompt',
-    scenario: '用户在群里丢出一句普通吐槽，最多两个角色自然接话。',
+    scenario: '用户在群里丢出一句普通吐槽，热闹档下可以有 2-3 个角色自然接话。',
     userInput: '我刚刚差点把咖啡倒键盘上。',
-    hardRules: { ...BASE_CHAT_RULES, maxMsgCount: 3 },
-    judgeCriteria: ['最多两个角色接话', '像真实群聊', '不所有人抢答', '不要长回复'],
+    hardRules: { ...BASE_CHAT_RULES, maxMsgCount: 8 },
+    judgeCriteria: ['2-3 个角色接话', '像真实群聊', '不是全员抢答', '每个人短句接话'],
     expectedRisks: ['全员回复', '长篇独白', '每个人都围着用户'],
   },
   {
@@ -240,6 +241,7 @@ export const PROMPT_EVAL_CASES: PromptEvalCase[] = [
     path: 'buildGroupSpeakerRoutePrompt -> JSON speakerIds',
     scenario: '上一条消息很轻，真实群聊可以没人回，路由应允许 speakerIds 为空。',
     userInput: '嗯。',
+    groupReplyLiveliness: 'natural',
     hardRules: {
       requireJson: true,
       requiredJsonFields: ['speakerIds', 'reason'],
@@ -256,6 +258,7 @@ export const PROMPT_EVAL_CASES: PromptEvalCase[] = [
     path: 'route speakerIds filter + max cap',
     scenario: '上一条消息可接，但路由最多应该选择两个角色。',
     userInput: '今天谁有空帮我看一下这个小问题？',
+    groupReplyLiveliness: 'natural',
     hardRules: {
       requireJson: true,
       requiredJsonFields: ['speakerIds', 'reason'],

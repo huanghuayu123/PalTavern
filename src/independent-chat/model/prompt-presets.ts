@@ -238,7 +238,8 @@ const TAVERN_SOCIAL_DEFAULT_GROUP_PROMPTS: DefaultPromptDefinition[] = [
     role: 'system',
     content: [
       '消息表现必须像真实手机群聊：短、自然、接上一条话，不要写成长篇独白。',
-      '一轮群聊总共最多 3 个气泡；当前角色通常只发 1 条，确实需要补充时最多 2 条。不要为了热闹强行展开。',
+      '群聊热闹度由应用设置决定：安静档可以没人接话；自然档保持旧节奏；热闹档普通用户消息会优先 2-3 位角色短句接话。',
+      '热闹档下当前角色通常只发 1 条，短句确实需要拆开时最多 3 个气泡；整轮总量由应用运行时限制，不要写成长篇。',
       '角色接角色消息时，只顺着上一条消息本身聊；除非上一条明确提到用户，不要硬把话题拉回用户。',
       '优先让不同角色轮流说话；如果上一条已经是当前角色自己说的，应该跳过，不要自说自话。',
       '空输入刷新或角色续聊模式下，本轮不要提 user，不要向 user 抛问题，只让角色们自然接话。',
@@ -619,6 +620,14 @@ function upgradeTavernSocialDefaultPromptPreset(preset: PromptPreset): PromptPre
       && defaultStrategy
       && strategy.content.includes('如果当前角色没有必要发言，前置的意愿判断会让本轮沉默')
       && !strategy.content.includes('[跳过]')
+    ) {
+      strategy.content = defaultStrategy.content;
+    }
+    if (
+      strategy
+      && defaultStrategy
+      && strategy.content.includes('消息表现必须像真实手机群聊')
+      && strategy.content.includes('不要为了热闹强行展开')
     ) {
       strategy.content = defaultStrategy.content;
     }

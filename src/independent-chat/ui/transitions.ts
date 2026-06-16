@@ -231,7 +231,7 @@ function setRevealMask(snapshot: HTMLDivElement, anchor: ChatRevealAnchor, radiu
   snapshot.style.maskRepeat = 'no-repeat';
 }
 
-function createRevealLayer(anchor: ChatRevealAnchor, mode: 'enter' | 'exit'): RevealLayerParts | null {
+function createRevealLayer(_anchor: ChatRevealAnchor, mode: 'enter' | 'exit'): RevealLayerParts | null {
   document.querySelectorAll('.pt-chat-reveal-layer').forEach(element => element.remove());
   const app = document.getElementById('app');
   if (!app) return null;
@@ -577,14 +577,15 @@ function playActionExpand(renderPage: () => void): boolean {
   const insetBottom = Math.max(0, window.innerHeight - anchor.top - anchor.height);
   const insetLeft = Math.max(0, anchor.left);
   const startClip = `inset(${insetTop}px ${insetRight}px ${insetBottom}px ${insetLeft}px round ${anchor.radius}px)`;
+  const prefixedSnapshotStyle = snapshot.style as CSSStyleDeclaration & { webkitClipPath: string };
   snapshot.style.clipPath = startClip;
-  snapshot.style.webkitClipPath = startClip;
+  prefixedSnapshotStyle.webkitClipPath = startClip;
   snapshot.style.opacity = '1';
 
   requestAnimationFrame(() => {
     layer.classList.add('is-running');
     snapshot.style.clipPath = 'inset(0 0 0 0 round 0px)';
-    snapshot.style.webkitClipPath = 'inset(0 0 0 0 round 0px)';
+    prefixedSnapshotStyle.webkitClipPath = 'inset(0 0 0 0 round 0px)';
   });
   actionExpandTimer = window.setTimeout(() => {
     if (actionExpandSerial !== serial) return;

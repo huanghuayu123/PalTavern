@@ -133,8 +133,28 @@ function mockModelResponses(responses: string[]) {
     || created.participantCharacterIds.length !== 2
     || stateModule.state.activeGroupChatId !== created.id
     || created.allowModelInitiatedMessages !== false
+    || created.replyLiveliness !== 'lively'
   ) {
     throw new Error('Creating a group chat did not select valid participants or activate the group.');
+  }
+
+  const normalizedLegacyGroupState = stateModule.normalizeState({
+    worlds: [{ id: 'legacy_group_world', name: 'Legacy Group World', description: '', createdAt: 1, updatedAt: 1 }],
+    activeWorldId: 'legacy_group_world',
+    groupChats: [{
+      id: 'legacy_group_chat',
+      worldId: 'legacy_group_world',
+      title: 'Legacy group',
+      participantCharacterIds: ['group_character_a', 'group_character_b'],
+      selectedSpeakerId: 'user',
+      replyAllOnUserMessage: false,
+      allowModelInitiatedMessages: false,
+      createdAt: 1,
+      updatedAt: 1,
+    }],
+  });
+  if (normalizedLegacyGroupState.groupChats[0]?.replyLiveliness !== 'lively') {
+    throw new Error('Legacy group chats without replyLiveliness should normalize to lively.');
   }
 
   stateModule.setCommunicationActor('world_default', 'group_character_a');
@@ -278,6 +298,7 @@ function mockModelResponses(responses: string[]) {
     'group_character_b',
     'group_character_c',
   ]);
+  groupChat.updateGroupChat(routedGroup.id, { replyLiveliness: 'natural' });
   const routedAnchor = groupChat.sendGroupUserMessage('这条消息看看谁想接。', routedGroup.id);
   let mock = mockModelResponses([
     '{"speakerIds":["group_character_b","group_character_a","group_character_c"],"reason":"前两位最想接"}',
@@ -361,6 +382,111 @@ function mockModelResponses(responses: string[]) {
   }
   mock.restore();
 
+  const livelyGroup = groupChat.createGroupChat('Lively route group', [
+    'group_character_a',
+    'group_character_b',
+    'group_character_c',
+  ]);
+  const livelyAnchor = groupChat.sendGroupUserMessage('lively route should allow three speakers', livelyGroup.id);
+  mock = mockModelResponses([
+    '{"speakerIds":["group_character_a","group_character_b","group_character_c"],"reason":"three natural speakers"}',
+    '<msg>a one</msg>',
+    '<msg>b one</msg>',
+    '<msg>c one</msg>',
+  ]);
+  const livelyThreeReplies = await groupChat.generateGroupReplyForLatest(livelyGroup.id);
+  if (
+    livelyThreeReplies.length !== 3
+    || livelyThreeReplies.map((message: any) => message.speakerCharacterId).join(',') !== 'group_character_a,group_character_b,group_character_c'
+    || !livelyThreeReplies.every((message: any) => message.replyToId === livelyAnchor.id)
+  ) {
+    throw new Error('Lively group replies should keep up to three routed speakers.');
+  }
+  mock.restore();
+
+  const livelySpeakerCapAnchor = groupChat.sendGroupUserMessage('single lively speaker can split into three bubbles', livelyGroup.id);
+  mock = mockModelResponses(['<msg>a1</msg><msg>a2</msg><msg>a3</msg><msg>a4</msg>']);
+  const livelySingleSpeakerReplies = await groupChat.generateGroupReply(
+    livelyGroup.id,
+    'group_character_a',
+    false,
+    livelySpeakerCapAnchor.id,
+  );
+  if (
+    livelySingleSpeakerReplies.length !== 3
+    || livelySingleSpeakerReplies.some((message: any) => message.content === 'a4')
+  ) {
+    throw new Error('Lively single-speaker replies should cap one character at three bubbles.');
+  }
+  mock.restore();
+
+  groupChat.updateGroupChat(livelyGroup.id, { replyAllOnUserMessage: true });
+  const livelyRoundAnchor = groupChat.sendGroupUserMessage('reply all should still obey the lively total cap', livelyGroup.id);
+  mock = mockModelResponses([
+    '<msg>a round 1</msg><msg>a round 2</msg><msg>a round 3</msg>',
+    '<msg>b round 1</msg><msg>b round 2</msg><msg>b round 3</msg>',
+    '<msg>c round 1</msg><msg>c round 2</msg><msg>c round 3</msg>',
+  ]);
+  const livelyRoundReplies = await groupChat.generateGroupRoundReply(livelyGroup.id, false, livelyRoundAnchor.id);
+  const livelyRoundCounts = livelyRoundReplies.reduce((counts: Record<string, number>, message: any) => {
+    counts[message.speakerCharacterId] = (counts[message.speakerCharacterId] ?? 0) + 1;
+    return counts;
+  }, {});
+  if (
+    livelyRoundReplies.length !== 8
+    || !livelyRoundReplies.every((message: any) => message.replyToId === livelyRoundAnchor.id)
+    || Object.values(livelyRoundCounts).some(count => count > 3)
+  ) {
+    throw new Error('Lively reply-all rounds should cap the turn at eight bubbles and each member at three.');
+  }
+  mock.restore();
+
+  const livelyEmptyRouteGroup = groupChat.createGroupChat('Lively empty route group', [
+    'group_character_a',
+    'group_character_b',
+    'group_character_c',
+  ]);
+  const livelyEmptyAnchor = groupChat.sendGroupUserMessage('empty route should locally choose two speakers', livelyEmptyRouteGroup.id);
+  mock = mockModelResponses([
+    '{"speakerIds":[],"reason":"none"}',
+    '<msg>fallback one</msg>',
+    '<msg>fallback two</msg>',
+  ]);
+  const livelyEmptyRouteReplies = await groupChat.generateGroupReplyForLatest(livelyEmptyRouteGroup.id);
+  if (
+    livelyEmptyRouteReplies.length !== 2
+    || new Set(livelyEmptyRouteReplies.map((message: any) => message.speakerCharacterId)).size !== 2
+    || !livelyEmptyRouteReplies.every((message: any) => message.replyToId === livelyEmptyAnchor.id)
+  ) {
+    throw new Error('Lively empty speaker routes should fall back to two local speakers.');
+  }
+  mock.restore();
+
+  const livelyContinueGroup = groupChat.createGroupChat('Lively continue group', [
+    'group_character_a',
+    'group_character_b',
+    'group_character_c',
+  ]);
+  const livelyContinueAnchor = groupChat.sendGroupUserMessage('continue should not pull user back in', livelyContinueGroup.id);
+  mock = mockModelResponses(['<msg>continue 1</msg><msg>continue 2</msg><msg>continue 3</msg><msg>continue 4</msg>']);
+  const livelyContinueReplies = await groupChat.generateGroupReply(
+    livelyContinueGroup.id,
+    'group_character_b',
+    false,
+    livelyContinueAnchor.id,
+    'continue',
+  );
+  const livelyContinuePromptText = mock.calls
+    .flatMap(call => call.messages.map(message => message.content))
+    .join('\n');
+  if (
+    livelyContinueReplies.length !== 3
+    || !livelyContinuePromptText.includes('不提 user')
+  ) {
+    throw new Error('Lively continue turns should avoid pulling user back in and allow three bubbles.');
+  }
+  mock.restore();
+
   const managedGroup = groupChat.createGroupChat('管理测试群', [
     'group_character_b',
     'group_character_c',
@@ -438,6 +564,14 @@ function mockModelResponses(responses: string[]) {
     characterFollowupLimited: true,
     routedReply: true,
     routedTotalBubbleCap: true,
+    defaultLivelyGroup: true,
+    legacyGroupLivelinessNormalization: true,
+    naturalLivelinessCaps: true,
+    livelyThreeSpeakers: true,
+    livelySingleSpeakerBubbleCap: true,
+    livelyTotalBubbleCap: true,
+    livelyEmptyRouteFallback: true,
+    livelyContinueBubbleCap: true,
     quietRoute: true,
     skippedRoutedSpeaker: true,
     invalidRouteFallback: true,

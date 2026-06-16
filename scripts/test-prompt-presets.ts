@@ -129,7 +129,9 @@ if (
   || !defaultGroupStrategy
   || defaultGroupStrategy.marker
   || !defaultGroupStrategy.content.includes('真实手机群聊')
-  || !defaultGroupStrategy.content.includes('总共最多 3 个气泡')
+  || !defaultGroupStrategy.content.includes('群聊热闹度')
+  || !defaultGroupStrategy.content.includes('最多 3 个气泡')
+  || defaultGroupStrategy.content.includes('不要为了热闹强行展开')
   || !defaultGroupStrategy.content.includes('[跳过]')
   || !defaultGroupStrategy.content.includes('不要承诺应用不支持的动作')
   || !defaultGroupPreset.prompts.some((prompt: { identifier: string; marker: boolean }) =>
@@ -250,6 +252,10 @@ if (
   !migratedGroupPreset
   || !migratedGroupPreset.prompts.find((prompt: { identifier: string }) =>
     prompt.identifier === 'tavern_social_group_strategy')?.content.includes('[跳过]')
+  || !migratedGroupPreset.prompts.find((prompt: { identifier: string }) =>
+    prompt.identifier === 'tavern_social_group_strategy')?.content.includes('群聊热闹度')
+  || !migratedGroupPreset.prompts.find((prompt: { identifier: string }) =>
+    prompt.identifier === 'tavern_social_group_strategy')?.content.includes('最多 3 个气泡')
   || !migratedGroupPreset.prompts.find((prompt: { identifier: string }) =>
     prompt.identifier === 'tavern_social_group_output_format')?.content.includes('[跳过]')
 ) {

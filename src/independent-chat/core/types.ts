@@ -364,12 +364,15 @@ export interface ConversationProfile {
   lastReadAt: number;
 }
 
+export type GroupReplyLiveliness = 'quiet' | 'natural' | 'lively';
+
 export interface GroupChatProfile {
   id: string;
   worldId: string;
   title: string;
   participantCharacterIds: string[];
   selectedSpeakerId: string;
+  replyLiveliness: GroupReplyLiveliness;
   replyAllOnUserMessage: boolean;
   allowModelInitiatedMessages: boolean;
   backgroundImage?: string;
@@ -516,8 +519,16 @@ export interface WorldEventRpMessage {
   content: string;
   characterId?: string;
   speaker?: string;
+  variants?: WorldEventRpMessageVariant[];
+  activeVariantIndex?: number;
   createdAt: number;
   source: 'manual' | 'model' | 'system';
+}
+
+export interface WorldEventRpMessageVariant {
+  id: string;
+  content: string;
+  createdAt: number;
 }
 
 export interface WorldEventLeadActor {

@@ -1,6 +1,24 @@
 export {};
 declare const require: (id: string) => any;
 
+const fs = require('fs');
+const path = require('path');
+
+const appSource = fs.readFileSync(path.join(__dirname, '../src/independent-chat/ui/app.ts'), 'utf8');
+const styleSource = fs.readFileSync(path.join(__dirname, '../src/independent-chat/styles.css'), 'utf8');
+if (
+  !appSource.includes("let worldRpMessageActionId = ''")
+  || !appSource.includes('data-regenerate-world-rp-message')
+  || !appSource.includes('data-delete-world-rp-message')
+  || !appSource.includes('data-world-rp-message-variant-prev')
+  || !appSource.includes('data-world-rp-action-message')
+  || !appSource.includes('regenerateWorldEventRpMessage')
+  || !styleSource.includes('.world-rp-message-actions')
+  || !styleSource.includes('.world-rp-variant-bar')
+) {
+  throw new Error('World RP UI should expose long-press actions, reroll, delete, and variant switching.');
+}
+
 const values = new Map<string, string>();
 Object.defineProperty(globalThis, 'localStorage', {
   value: {
@@ -105,6 +123,10 @@ if (
   || typeof events.appendWorldEventRpMessage !== 'function'
   || typeof events.worldEventRpMessages !== 'function'
   || typeof events.editWorldEventRpMessage !== 'function'
+  || typeof events.regenerateWorldEventRpMessage !== 'function'
+  || typeof events.selectWorldEventRpMessageVariant !== 'function'
+  || typeof events.worldEventRpMessageVariantInfo !== 'function'
+  || typeof events.deleteWorldEventRpMessage !== 'function'
 ) {
   throw new Error('World event RP log helpers are missing.');
 }
@@ -137,6 +159,59 @@ if (
   || worldRpLog[1].characterId !== character.id
 ) {
   throw new Error('World event RP turns were not stored on the event log.');
+}
+
+async function assertWorldRpMessageActions() {
+  let rerollPayload: any;
+  (globalThis as any).fetch = async (_input: string, init?: { body?: string }) => {
+    rerollPayload = init?.body ? JSON.parse(init.body) : undefined;
+    return new Response(JSON.stringify({
+      choices: [{ message: { content: '<msg>@bubble:Event Character|gentle|Rerolled world reply.</msg>' } }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  const rerolledWorldTurn = await events.regenerateWorldEventRpMessage(assistantWorldTurn.id, character);
+  const rerollPromptText = rerollPayload?.messages?.map((message: { content: string }) => message.content).join('\n') ?? '';
+  const rerolledInfo = events.worldEventRpMessageVariantInfo(rerolledWorldTurn);
+  let rerollTimelineEntry = stateModule.state.timelineEntries.find((entry: any) =>
+    entry.source?.type === 'event' && entry.source?.id === `${worldRpEvent.id}:rp:${assistantWorldTurn.id}`,
+  );
+  if (
+    rerolledWorldTurn.id !== assistantWorldTurn.id
+    || rerolledWorldTurn.content !== '@bubble:Event Character|gentle|Rerolled world reply.'
+    || rerolledInfo.count !== 2
+    || rerolledInfo.index !== 1
+    || !rerollPromptText.includes('I revise the note beside the umbrella.')
+    || rerollPromptText.includes('I saw the note.')
+    || !rerollTimelineEntry?.summary.includes('Rerolled world reply.')
+    || rerollTimelineEntry?.summary.includes('I saw the note.')
+  ) {
+    throw new Error('World event RP reroll should replace the active message with a second selectable variant and refresh memory context.');
+  }
+  if (!events.selectWorldEventRpMessageVariant(assistantWorldTurn.id, -1)) {
+    throw new Error('World event RP variants should be selectable.');
+  }
+  const restoredWorldTurn = events.worldEventRpMessages(worldRpEvent.id).find((message: any) => message.id === assistantWorldTurn.id);
+  rerollTimelineEntry = stateModule.state.timelineEntries.find((entry: any) =>
+    entry.source?.type === 'event' && entry.source?.id === `${worldRpEvent.id}:rp:${assistantWorldTurn.id}`,
+  );
+  if (
+    restoredWorldTurn?.content !== '@bubble:Event Character|gentle|I saw the note.'
+    || events.worldEventRpMessageVariantInfo(restoredWorldTurn).index !== 0
+    || !rerollTimelineEntry?.summary.includes('I saw the note.')
+    || rerollTimelineEntry?.summary.includes('Rerolled world reply.')
+  ) {
+    throw new Error('Selecting an older world RP variant should update the visible message and mirrored timeline memory.');
+  }
+  if (!events.deleteWorldEventRpMessage(assistantWorldTurn.id)) {
+    throw new Error('World event RP messages should be deletable from the action menu.');
+  }
+  const deletedWorldTurn = events.worldEventRpMessages(worldRpEvent.id).find((message: any) => message.id === assistantWorldTurn.id);
+  rerollTimelineEntry = stateModule.state.timelineEntries.find((entry: any) =>
+    entry.source?.type === 'event' && entry.source?.id === `${worldRpEvent.id}:rp:${assistantWorldTurn.id}`,
+  );
+  if (deletedWorldTurn || (rerollTimelineEntry && (!rerollTimelineEntry.revokedAt || rerollTimelineEntry.includeInContext))) {
+    throw new Error('Deleting a world RP message should remove it from the event log and revoke its mirrored timeline memory.');
+  }
 }
 
 const worldPromptPreset = promptPresets.parseSillyTavernPromptPreset(JSON.stringify({
@@ -434,6 +509,7 @@ const eventOutcomeFetch = async () => new Response(JSON.stringify({
 }), { status: 200, headers: { 'content-type': 'application/json' } });
 
 async function main() {
+  await assertWorldRpMessageActions();
   await assertExplicitEventGeneration();
   await assertWorldPresetGeneration();
   await assertPrivateChatEventSuggestions();

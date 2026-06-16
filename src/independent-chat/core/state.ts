@@ -25,6 +25,7 @@ import type {
   DailyBrief,
   GroupChatMessage,
   GroupChatProfile,
+  GroupReplyLiveliness,
   ImpactRecord,
   ImpactTargetType,
   MemorySummary,
@@ -680,6 +681,10 @@ function normalizeDrafts(value: unknown): CharacterCardDraft[] {
   });
 }
 
+function normalizeGroupReplyLiveliness(value: unknown): GroupReplyLiveliness {
+  return value === 'quiet' || value === 'natural' || value === 'lively' ? value : 'lively';
+}
+
 function normalizeGroupChats(value: unknown, fallbackWorldId: string): GroupChatProfile[] {
   if (!Array.isArray(value)) return [];
   return value.filter(isRecord).map(chat => {
@@ -694,6 +699,7 @@ function normalizeGroupChats(value: unknown, fallbackWorldId: string): GroupChat
       title: typeof chat.title === 'string' && chat.title.trim() ? chat.title.trim() : '群聊',
       participantCharacterIds,
       selectedSpeakerId,
+      replyLiveliness: normalizeGroupReplyLiveliness(chat.replyLiveliness),
       replyAllOnUserMessage: chat.replyAllOnUserMessage === true,
       allowModelInitiatedMessages: chat.allowModelInitiatedMessages === true,
       backgroundImage: normalizeChatBackgroundImage(chat.backgroundImage),
@@ -1259,15 +1265,39 @@ function defaultEventChoices(type: WorldEventType, affinityDelta: number): World
 
 function normalizeWorldEventRpMessages(value: unknown): WorldEvent['rpMessages'] {
   if (!Array.isArray(value)) return [];
-  return value.filter(isRecord).map((message): WorldEvent['rpMessages'][number] => ({
-    id: typeof message.id === 'string' ? message.id : nowId('event_rp'),
-    role: message.role === 'assistant' || message.role === 'system' ? message.role : 'user',
-    content: typeof message.content === 'string' ? message.content : '',
-    characterId: typeof message.characterId === 'string' ? message.characterId : undefined,
-    speaker: typeof message.speaker === 'string' ? message.speaker : undefined,
-    createdAt: typeof message.createdAt === 'number' ? message.createdAt : Date.now(),
-    source: message.source === 'model' || message.source === 'system' ? message.source : 'manual',
-  })).filter(message => message.content.trim().length > 0);
+  return value.filter(isRecord).map((message): WorldEvent['rpMessages'][number] => {
+    const content = typeof message.content === 'string' ? message.content : '';
+    const createdAt = typeof message.createdAt === 'number' ? message.createdAt : Date.now();
+    const variants = Array.isArray(message.variants)
+      ? message.variants.filter(isRecord).map(variant => ({
+        id: typeof variant.id === 'string' ? variant.id : nowId('variant'),
+        content: typeof variant.content === 'string' ? variant.content : content,
+        createdAt: typeof variant.createdAt === 'number' ? variant.createdAt : createdAt,
+      })).filter(variant => variant.content.trim())
+      : [];
+    const normalizedVariants = variants.length > 0
+      ? variants
+      : [{
+        id: nowId('variant'),
+        content,
+        createdAt,
+      }];
+    const activeVariantIndex = typeof message.activeVariantIndex === 'number'
+      ? Math.max(0, Math.min(normalizedVariants.length - 1, Math.round(message.activeVariantIndex)))
+      : normalizedVariants.length - 1;
+    const activeVariant = normalizedVariants[activeVariantIndex] ?? normalizedVariants[0];
+    return {
+      id: typeof message.id === 'string' ? message.id : nowId('event_rp'),
+      role: message.role === 'assistant' || message.role === 'system' ? message.role : 'user',
+      content: activeVariant.content,
+      characterId: typeof message.characterId === 'string' ? message.characterId : undefined,
+      speaker: typeof message.speaker === 'string' ? message.speaker : undefined,
+      variants: normalizedVariants,
+      activeVariantIndex,
+      createdAt,
+      source: message.source === 'model' || message.source === 'system' ? message.source : 'manual',
+    };
+  }).filter(message => message.content.trim().length > 0);
 }
 
 function normalizeWorldEventLeadActor(value: unknown): WorldEvent['leadActor'] {
@@ -1840,10 +1870,11 @@ export function ensureGroupChat(): GroupChatProfile {
   const chat: GroupChatProfile = {
     id: `group_${stableHash(`${world.id}:default`)}`,
     worldId: world.id,
-    title: `${world.name} 群聊`,
-    participantCharacterIds: characterIds,
-    selectedSpeakerId: 'user',
-    replyAllOnUserMessage: false,
+      title: `${world.name} 群聊`,
+      participantCharacterIds: characterIds,
+      selectedSpeakerId: 'user',
+      replyLiveliness: 'lively',
+      replyAllOnUserMessage: false,
     allowModelInitiatedMessages: false,
     createdAt: now,
     updatedAt: now,

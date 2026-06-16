@@ -12,6 +12,7 @@ import type {
   CompanionTimeMode,
   GroupChatMessage,
   GroupChatProfile,
+  GroupReplyLiveliness,
   ModelMessage,
   ModelProvider,
   MemorySummary,
@@ -27,13 +28,13 @@ import type {
   TimelineEntry,
   WorldEvent,
   WorldEventLeadActor,
+  WorldEventRpMessage,
   WorldWeatherLocation,
 } from '../core/types';
 import {
   bindAuthoringUi,
   bindDraftManager,
   isAuthoringOpen,
-  openAuthoringChooser,
   renderAuthoringScreen,
   renderDraftManager,
 } from './authoring-ui';
@@ -133,12 +134,16 @@ import {
   generateWorldEvent,
   generateWorldEventRpReply,
   appendWorldEventRpMessage,
+  deleteWorldEventRpMessage,
   editWorldEventRpMessage,
   ensureWorldRpEvent,
   markPrivateChatEventSuggestionAccepted,
   pendingPrivateChatEventSuggestionsForThread,
+  regenerateWorldEventRpMessage,
   resolveWorldEvent,
   resolveWorldEventChoice,
+  selectWorldEventRpMessageVariant,
+  worldEventRpMessageVariantInfo,
   worldEventRpMessages,
 } from '../social/events';
 import {
@@ -515,6 +520,7 @@ let activeWorldRpEventId = '';
 let worldRpRenderMode: 'narration' | 'bubble' = 'narration';
 let worldRpReplyMode: ChatReplyMode = 'auto';
 let worldRpMessageEditId = '';
+let worldRpMessageActionId = '';
 let worldRpActorId = 'user';
 let eventComposerDraft: EventComposerDraft = { mode: 'auto', title: '', description: '', participantIds: [], affinityDelta: '0' };
 const momentCommentDrafts = new Map<string, string>();
@@ -1116,6 +1122,7 @@ function hasMobileBackTarget(): boolean {
     || characterPanelOpen
     || eventComposerOpen
     || Boolean(worldRpMessageEditId)
+    || Boolean(worldRpMessageActionId)
     || Boolean(activeWorldRpEventId)
     || momentComposerOpen
     || stickerPickerOpen
@@ -1235,10 +1242,16 @@ function closeMobileLayer(): boolean {
     saveUiSessionSnapshot();
     return true;
   }
+  if (worldRpMessageActionId) {
+    worldRpMessageActionId = '';
+    saveUiSessionSnapshot();
+    return true;
+  }
   if (activeWorldRpEventId) {
     activeWorldRpEventId = '';
     worldRpInputDraft = '';
     worldRpMessageEditId = '';
+    worldRpMessageActionId = '';
     saveUiSessionSnapshot();
     return true;
   }
@@ -3202,10 +3215,32 @@ function renderGroupManagementSection(chat: GroupChatProfile): string {
   `;
 }
 
+const GROUP_REPLY_LIVELINESS_OPTIONS: Array<{ value: GroupReplyLiveliness; label: string; description: string }> = [
+  { value: 'lively', label: '热闹', description: '优先 2-3 位角色短句接话，单人最多 3 个气泡。' },
+  { value: 'natural', label: '自然', description: '保持旧节奏，最多 2 位角色、整轮最多 3 个气泡。' },
+  { value: 'quiet', label: '安静', description: '最多 1 位角色接话，也可以没人接。' },
+];
+
+function groupReplyLivelinessValue(value: unknown): GroupReplyLiveliness {
+  return value === 'quiet' || value === 'natural' || value === 'lively' ? value : 'lively';
+}
+
+function renderGroupReplyLivelinessOptions(selected: GroupReplyLiveliness): string {
+  return GROUP_REPLY_LIVELINESS_OPTIONS.map(option =>
+    `<option value="${option.value}" ${option.value === selected ? 'selected' : ''}>${option.label}</option>`,
+  ).join('');
+}
+
+function groupReplyLivelinessDescription(value: GroupReplyLiveliness): string {
+  return GROUP_REPLY_LIVELINESS_OPTIONS.find(option => option.value === value)?.description
+    ?? GROUP_REPLY_LIVELINESS_OPTIONS[0].description;
+}
+
 function renderGroupSettingsPanel(chat?: GroupChatProfile): string {
   if (!groupSettingsOpen) return '';
   const title = chat?.title ?? `${activeWorld().name} 群聊`;
   const activeGenerationDisabled = !chat?.allowModelInitiatedMessages || isGroupGenerating();
+  const replyLiveliness = groupReplyLivelinessValue(chat?.replyLiveliness);
   const mode = chat ? 'edit' : 'create';
   const panelClasses = [
     'group-settings-panel',
@@ -3251,6 +3286,13 @@ function renderGroupSettingsPanel(chat?: GroupChatProfile): string {
               <strong>群聊回复</strong>
               <span>指定谁说话，或让所有成员回复上一条</span>
             </div>
+            <label class="field">
+              <span>群聊热闹度</span>
+              <select id="group-reply-liveliness">
+                ${renderGroupReplyLivelinessOptions(replyLiveliness)}
+              </select>
+              <small>${escapeHtml(groupReplyLivelinessDescription(replyLiveliness))}</small>
+            </label>
             <label class="group-reply-toggle">
               <span>
                 <strong>每位成员回复上一条</strong>
@@ -4433,6 +4475,42 @@ function editableWorldRpMessage() {
   return event?.rpMessages.find(message => message.id === worldRpMessageEditId && message.role === 'user');
 }
 
+function worldRpRerollTarget(messageId: string): WorldEventRpMessage | undefined {
+  const event = selectedWorldRpEvent();
+  if (!event) return undefined;
+  const messages = worldEventRpMessages(event.id);
+  const index = messages.findIndex(message => message.id === messageId);
+  if (index < 0) return undefined;
+  const message = messages[index];
+  if (message.role === 'assistant') return message;
+  return messages.slice(index + 1).find(item => item.role === 'assistant');
+}
+
+function renderWorldRpMessageActions(message: WorldEventRpMessage): string {
+  if (worldRpMessageActionId !== message.id || message.role === 'system') return '';
+  const canEdit = message.role === 'user';
+  const canReroll = Boolean(worldRpRerollTarget(message.id));
+  return `
+    <div class="world-rp-message-actions" role="menu">
+      ${canEdit ? `<button type="button" data-edit-world-rp-message="${escapeHtml(message.id)}"><span>✎</span>修改</button>` : ''}
+      ${canReroll ? `<button type="button" data-regenerate-world-rp-message="${escapeHtml(message.id)}"><span>↻</span>重roll</button>` : ''}
+      <button type="button" data-delete-world-rp-message="${escapeHtml(message.id)}"><span>⌫</span>删除</button>
+    </div>
+  `;
+}
+
+function renderWorldRpVariantBar(message: WorldEventRpMessage): string {
+  const variantInfo = worldEventRpMessageVariantInfo(message);
+  if (variantInfo.count <= 1) return '';
+  return `
+    <div class="world-rp-variant-bar ${message.role === 'assistant' ? 'is-assistant' : 'is-user'}">
+      <button type="button" data-world-rp-message-variant-prev="${escapeHtml(message.id)}" aria-label="上一个版本">‹</button>
+      <span>&lt;${variantInfo.index + 1}/${variantInfo.count}&gt;</span>
+      <button type="button" data-world-rp-message-variant-next="${escapeHtml(message.id)}" aria-label="下一个版本">›</button>
+    </div>
+  `;
+}
+
 function renderWorldRpMessageEditDialog(): string {
   const message = editableWorldRpMessage();
   if (!message) return '';
@@ -4552,23 +4630,33 @@ function renderWorldDialogueStream(event: WorldEvent, character?: CharacterProfi
       if (message.role === 'user') {
         const actionLabel = message.speaker?.trim() || '你的行动';
         return `
-          <article class="player-action-card" data-world-rp-message-id="${escapeHtml(message.id)}">
+          <article class="player-action-card world-rp-action-message ${worldRpMessageActionId === message.id ? 'is-actions-open' : ''}"
+            data-world-rp-action-message="${escapeHtml(message.id)}" data-world-rp-message-id="${escapeHtml(message.id)}" tabindex="0">
+            ${renderWorldRpMessageActions(message)}
             <div class="player-action-head">
               <span class="render-label">${escapeHtml(actionLabel)}</span>
-              <button class="plain-button" data-edit-world-rp-message="${escapeHtml(message.id)}" type="button">修改</button>
             </div>
             <p class="narrative-text">${escapeHtml(message.content)}</p>
           </article>
+          ${renderWorldRpVariantBar(message)}
         `;
       }
       if (message.role === 'system') {
         return `<div class="system-note">${escapeHtml(message.content)}</div>`;
       }
-      return parseRpRenderSegments(message.content, {
+      const renderedSegments = parseRpRenderSegments(message.content, {
         fallbackSpeaker: character?.name ?? '角色',
         fallbackEmotion: '回应',
         plainTextMode: 'narration',
       }).map(segment => renderRpSegment(segment, character)).join('');
+      return `
+        <div class="world-rp-assistant-turn world-rp-action-message ${worldRpMessageActionId === message.id ? 'is-actions-open' : ''}"
+          data-world-rp-action-message="${escapeHtml(message.id)}" data-world-rp-message-id="${escapeHtml(message.id)}" tabindex="0">
+          ${renderWorldRpMessageActions(message)}
+          ${renderedSegments}
+        </div>
+        ${renderWorldRpVariantBar(message)}
+      `;
     }).join('');
   return `
     <article class="narrative-card world-scene-note">
@@ -5112,6 +5200,7 @@ function renderWorldWorkbenchPage(mobile = false): string {
   const character = worldRpActiveCharacter();
   const selectedEvent = selectedWorldRpEvent();
   const worldEvents = eventsForActiveWorld();
+  const memorySummaryDrawer = worldInsightTab === 'events' && selectedEvent ? '' : renderMemorySummaryDrawer();
   const insightBody = worldInsightTab === 'relationships'
     ? renderWorldRelationshipInsight()
     : worldInsightTab === 'timeline'
@@ -5139,7 +5228,7 @@ function renderWorldWorkbenchPage(mobile = false): string {
       </header>
       <section class="world-workbench-scroll">
         <div class="world-workbench-column">
-          ${renderMemorySummaryDrawer()}
+          ${memorySummaryDrawer}
           <div class="world-insight-transition-frame" data-world-insight-transition="${worldInsightTab}">
             ${insightBody}
           </div>
@@ -6941,6 +7030,7 @@ function closeTransientOverlaysForPageChange(): void {
   messageProfileAnchor = null;
   messageActionId = '';
   groupMessageActionId = '';
+  worldRpMessageActionId = '';
   worldGearPanelOpen = false;
   worldGearPanelClosing = false;
   window.clearTimeout(worldGearPanelCloseTimer);
@@ -6960,6 +7050,16 @@ function closeMessageActionMenuInPlace(): void {
     message.classList.remove('actions-open-above', 'actions-open-below');
   });
   document.querySelectorAll<HTMLElement>('.message-actions').forEach(menu => {
+    menu.remove();
+  });
+}
+
+function closeWorldRpMessageActionMenuInPlace(): void {
+  worldRpMessageActionId = '';
+  document.querySelectorAll<HTMLElement>('.world-rp-action-message.is-actions-open').forEach(message => {
+    message.classList.remove('is-actions-open');
+  });
+  document.querySelectorAll<HTMLElement>('.world-rp-message-actions').forEach(menu => {
     menu.remove();
   });
 }
@@ -8145,6 +8245,7 @@ function bindUi(): void {
       if (mobileSection === 'world') {
         activeWorldRpEventId = '';
         worldRpMessageEditId = '';
+        worldRpMessageActionId = '';
       }
       if (mobileSection === 'moments') openMomentsTutorialIfNeeded();
       if (mobileSection !== 'moments') {
@@ -8172,6 +8273,7 @@ function bindUi(): void {
       mobileSection = 'world';
       activeWorldRpEventId = '';
       worldRpMessageEditId = '';
+      worldRpMessageActionId = '';
       mobileChatOpen = false;
       mobileGroupChatOpen = false;
       groupSettingsOpen = false;
@@ -8237,6 +8339,7 @@ function bindUi(): void {
       if (nextView === 'world') {
         activeWorldRpEventId = '';
         worldRpMessageEditId = '';
+        worldRpMessageActionId = '';
       }
       if (nextView === 'groups') desktopGroupChatOpen = false;
       if (nextView === 'moments') openMomentsTutorialIfNeeded();
@@ -8416,6 +8519,7 @@ function bindUi(): void {
       ? updateGroupChat(editingChat.id, {
         title: fieldValue('#group-title-input'),
         participantCharacterIds: participantIds,
+        replyLiveliness: groupReplyLivelinessValue(fieldValue('#group-reply-liveliness')),
         replyAllOnUserMessage: checked('#group-reply-all-on-user-message'),
         allowModelInitiatedMessages: checked('#group-allow-model-initiated-messages'),
       })
@@ -10072,6 +10176,7 @@ function bindUi(): void {
         activeWorldRpEventId = '';
         worldRpInputDraft = '';
         worldRpMessageEditId = '';
+        worldRpMessageActionId = '';
       }
       preserveScrollForNextRender();
       saveUiSessionSnapshot({ captureDom: false });
@@ -10233,6 +10338,7 @@ function bindUi(): void {
       mobileSection = 'world';
       activeWorldRpEventId = worldEvent.id;
       worldRpInputDraft = '';
+      worldRpMessageActionId = '';
       saveUiSessionSnapshot({ captureDom: false });
       requestChatStickToBottom();
       renderWithUiTransition('detail-in');
@@ -10242,6 +10348,7 @@ function bindUi(): void {
     activeWorldRpEventId = '';
     worldRpInputDraft = '';
     worldRpMessageEditId = '';
+    worldRpMessageActionId = '';
     saveUiSessionSnapshot({ captureDom: false });
     renderWithUiTransition('detail-out');
   });
@@ -10255,6 +10362,7 @@ function bindUi(): void {
       activeWorldRpEventId = '';
       worldRpInputDraft = '';
       worldRpMessageEditId = '';
+      worldRpMessageActionId = '';
       preserveScrollForNextRender();
       saveUiSessionSnapshot({ captureDom: false });
       setStatusText(`事件已结束并写入时间线：${archived.title}`);
@@ -10263,9 +10371,116 @@ function bindUi(): void {
     }
     renderWithUiTransition('detail-out');
   });
+  if (worldRpMessageActionId) {
+    document.addEventListener('pointerdown', event => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('.world-rp-message-actions') || target?.closest('[data-world-rp-action-message]')) return;
+      closeWorldRpMessageActionMenuInPlace();
+    }, { capture: true, once: true });
+  }
+  document.querySelectorAll<HTMLElement>('[data-world-rp-action-message]').forEach(message => {
+    let pointerId = -1;
+    let pointerStartX = 0;
+    let pointerStartY = 0;
+    let longPressTimer: ReturnType<typeof setTimeout> | undefined;
+    const clearLongPress = () => {
+      if (longPressTimer) clearTimeout(longPressTimer);
+      longPressTimer = undefined;
+    };
+    const openActions = () => {
+      const messageId = message.dataset.worldRpActionMessage ?? '';
+      if (!messageId) return;
+      worldRpMessageActionId = messageId;
+      renderWithUiTransition('quiet');
+    };
+    message.addEventListener('pointerdown', event => {
+      if ((event.target as HTMLElement | null)?.closest('button')) return;
+      pointerId = event.pointerId;
+      pointerStartX = event.clientX;
+      pointerStartY = event.clientY;
+      clearLongPress();
+      longPressTimer = setTimeout(openActions, 360);
+    });
+    message.addEventListener('pointermove', event => {
+      if (event.pointerId !== pointerId) return;
+      if (Math.hypot(event.clientX - pointerStartX, event.clientY - pointerStartY) > 10) {
+        clearLongPress();
+      }
+    });
+    message.addEventListener('pointerup', clearLongPress);
+    message.addEventListener('pointercancel', clearLongPress);
+    message.addEventListener('contextmenu', event => {
+      event.preventDefault();
+      openActions();
+    });
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-delete-world-rp-message]').forEach(button => {
+    button.addEventListener('click', () => {
+      const messageId = button.dataset.deleteWorldRpMessage ?? '';
+      if (deleteWorldEventRpMessage(messageId)) {
+        if (worldRpMessageEditId === messageId) worldRpMessageEditId = '';
+        worldRpMessageActionId = '';
+        preserveScrollForNextRender();
+        setStatusText('世界 RP 记录已删除。');
+        render();
+      }
+    });
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-regenerate-world-rp-message]').forEach(button => {
+    button.addEventListener('click', () => {
+      const messageId = button.dataset.regenerateWorldRpMessage ?? '';
+      const target = worldRpRerollTarget(messageId);
+      const character = target?.characterId
+        ? state.characters.find(item => item.id === target.characterId && item.worldId === activeWorld().id) ?? worldRpActiveCharacter()
+        : worldRpActiveCharacter();
+      if (!target || !character) {
+        setStatusText('这条行动后面还没有可重roll的 AI 续写。');
+        worldRpMessageActionId = '';
+        render();
+        return;
+      }
+      if (worldRpGenerating) {
+        setStatusText('上一条世界 RP 还在生成中。');
+        return;
+      }
+      worldRpMessageActionId = '';
+      worldRpGenerating = true;
+      preserveScrollForNextRender();
+      setStatusText('正在重roll世界 RP…');
+      render();
+      void regenerateWorldEventRpMessage(target.id, character)
+        .then(() => {
+          setStatusText('世界 RP 已重roll，可用下方版本切换查看旧回复。');
+        })
+        .catch(error => {
+          setStatusText(error instanceof Error ? error.message : String(error));
+        })
+        .finally(() => {
+          worldRpGenerating = false;
+          render();
+        });
+    });
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-world-rp-message-variant-prev]').forEach(button => {
+    button.addEventListener('click', () => {
+      if (selectWorldEventRpMessageVariant(button.dataset.worldRpMessageVariantPrev ?? '', -1)) {
+        preserveScrollForNextRender();
+        render();
+      }
+    });
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-world-rp-message-variant-next]').forEach(button => {
+    button.addEventListener('click', () => {
+      if (selectWorldEventRpMessageVariant(button.dataset.worldRpMessageVariantNext ?? '', 1)) {
+        preserveScrollForNextRender();
+        render();
+      }
+    });
+  });
   document.querySelectorAll<HTMLButtonElement>('[data-edit-world-rp-message]').forEach(button => {
     button.addEventListener('click', () => {
       worldRpMessageEditId = button.dataset.editWorldRpMessage ?? '';
+      worldRpMessageActionId = '';
       renderWithUiTransition('overlay-in');
       window.requestAnimationFrame(() => {
         const input = document.querySelector<HTMLTextAreaElement>('#world-rp-message-edit-input');
@@ -10276,6 +10491,7 @@ function bindUi(): void {
   });
   const closeWorldRpMessageEdit = () => {
     worldRpMessageEditId = '';
+    worldRpMessageActionId = '';
     renderWithUiTransition('overlay-out');
   };
   document.querySelector<HTMLButtonElement>('#close-world-rp-message-edit')?.addEventListener('click', closeWorldRpMessageEdit);
@@ -10288,6 +10504,7 @@ function bindUi(): void {
       setStatusText('世界 RP 记录已修改。');
     }
     worldRpMessageEditId = '';
+    worldRpMessageActionId = '';
     renderWithUiTransition('overlay-out');
   });
   document.querySelector<HTMLFormElement>('#world-rp-composer')?.addEventListener('submit', event => {

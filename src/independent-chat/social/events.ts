@@ -511,6 +511,82 @@ export function worldEventRpMessages(eventId: string): WorldEventRpMessage[] {
     .sort((left, right) => left.createdAt - right.createdAt);
 }
 
+function findWorldEventRpMessage(messageId: string): { event: WorldEvent; message: WorldEventRpMessage } | undefined {
+  const event = state.worldEvents.find(item =>
+    item.worldId === activeWorld().id
+    && Array.isArray(item.rpMessages)
+    && item.rpMessages.some(message => message.id === messageId),
+  );
+  const message = event?.rpMessages.find(item => item.id === messageId);
+  return event && message ? { event, message } : undefined;
+}
+
+function ensureWorldEventRpMessageVariants(message: WorldEventRpMessage): NonNullable<WorldEventRpMessage['variants']> {
+  if (!message.variants || message.variants.length === 0) {
+    message.variants = [{
+      id: nowId('variant'),
+      content: message.content,
+      createdAt: message.createdAt,
+    }];
+    message.activeVariantIndex = 0;
+  }
+  const activeIndex = typeof message.activeVariantIndex === 'number'
+    ? Math.max(0, Math.min(message.variants.length - 1, Math.round(message.activeVariantIndex)))
+    : message.variants.length - 1;
+  message.activeVariantIndex = activeIndex;
+  return message.variants;
+}
+
+function setWorldEventRpMessageActiveVariant(message: WorldEventRpMessage, index: number): void {
+  const variants = ensureWorldEventRpMessageVariants(message);
+  const nextIndex = Math.max(0, Math.min(variants.length - 1, Math.round(index)));
+  const variant = variants[nextIndex];
+  message.activeVariantIndex = nextIndex;
+  message.content = variant.content;
+}
+
+function addWorldEventRpMessageVariant(message: WorldEventRpMessage, content: string): void {
+  const variants = ensureWorldEventRpMessageVariants(message);
+  variants.push({
+    id: nowId('variant'),
+    content,
+    createdAt: Date.now(),
+  });
+  setWorldEventRpMessageActiveVariant(message, variants.length - 1);
+}
+
+export function worldEventRpMessageVariantInfo(message: WorldEventRpMessage): { index: number; count: number } {
+  const count = message.variants?.length ?? 1;
+  const index = typeof message.activeVariantIndex === 'number'
+    ? Math.max(0, Math.min(count - 1, Math.round(message.activeVariantIndex)))
+    : 0;
+  return { index, count };
+}
+
+export function selectWorldEventRpMessageVariant(messageId: string, direction: -1 | 1): boolean {
+  const found = findWorldEventRpMessage(messageId);
+  if (!found) return false;
+  const variants = ensureWorldEventRpMessageVariants(found.message);
+  if (variants.length <= 1) return false;
+  const current = found.message.activeVariantIndex ?? 0;
+  const next = (current + direction + variants.length) % variants.length;
+  setWorldEventRpMessageActiveVariant(found.message, next);
+  found.event.updatedAt = Date.now();
+  upsertWorldRpTimelineEntry(found.event, found.message);
+  saveState();
+  return true;
+}
+
+export function deleteWorldEventRpMessage(messageId: string): boolean {
+  const found = findWorldEventRpMessage(messageId);
+  if (!found) return false;
+  found.event.rpMessages = found.event.rpMessages.filter(message => message.id !== messageId);
+  found.event.updatedAt = Date.now();
+  revokeTimelineSource('event', `${found.event.id}:rp:${messageId}`);
+  saveState();
+  return true;
+}
+
 export function ensureWorldRpEvent(character?: CharacterProfile): WorldEvent {
   const world = activeWorld();
   const existing = state.worldEvents
@@ -553,6 +629,12 @@ export function appendWorldEventRpMessage(
     content,
     characterId: input.characterId,
     speaker: input.speaker,
+    variants: [{
+      id: nowId('variant'),
+      content,
+      createdAt,
+    }],
+    activeVariantIndex: 0,
     createdAt,
     source: input.source ?? (input.role === 'assistant' ? 'model' : input.role === 'system' ? 'system' : 'manual'),
   };
@@ -574,7 +656,7 @@ export function editWorldEventRpMessage(messageId: string, content: string): boo
   );
   const message = event?.rpMessages.find(item => item.id === messageId);
   if (!event || !message || message.role !== 'user') return false;
-  message.content = trimmed;
+  addWorldEventRpMessageVariant(message, trimmed);
   event.updatedAt = Date.now();
   upsertWorldRpTimelineEntry(event, message);
   saveState();
@@ -605,18 +687,23 @@ function worldRpParticipants(event: WorldEvent, fallbackCharacter: CharacterProf
   return participants.length > 0 ? participants : [fallbackCharacter];
 }
 
-function worldRpHistoryText(event: WorldEvent): string {
-  return worldEventRpMessages(event.id).slice(-12).map(rpMessageContextLine).join('\n')
+function worldRpHistoryText(event: WorldEvent, historyMessages = worldEventRpMessages(event.id)): string {
+  return historyMessages.slice(-12).map(rpMessageContextLine).join('\n')
     || '暂无事件内 RP 记录。';
 }
 
-function lastWorldUserMessage(event: WorldEvent): string {
-  return [...worldEventRpMessages(event.id)]
+function lastWorldUserMessage(event: WorldEvent, historyMessages = worldEventRpMessages(event.id)): string {
+  return [...historyMessages]
     .reverse()
     .find(message => message.role === 'user')?.content ?? '';
 }
 
-function renderWorldPresetMacros(content: string, event: WorldEvent, character: CharacterProfile): string {
+function renderWorldPresetMacros(
+  content: string,
+  event: WorldEvent,
+  character: CharacterProfile,
+  historyMessages?: WorldEventRpMessage[],
+): string {
   const randomPattern = /\{\{random::([^}]+)\}\}/gi;
   // 小注释：这里只处理 SillyTavern 常见轻量宏，变量宏保留正文值但不创建额外状态。
   return content
@@ -627,7 +714,7 @@ function renderWorldPresetMacros(content: string, event: WorldEvent, character: 
       const list = String(choices).split('::').map(item => item.trim()).filter(Boolean);
       return list.length > 0 ? list[Math.floor(Math.random() * list.length)] : '';
     })
-    .replace(/\{\{lastUserMessage\}\}/gi, lastWorldUserMessage(event))
+    .replace(/\{\{lastUserMessage\}\}/gi, lastWorldUserMessage(event, historyMessages))
     .replace(/\{\{char\}\}/gi, character.nickname || character.name)
     .replace(/\{\{user\}\}/gi, state.userName || '我')
     .replace(/<user>/gi, state.userName || '我')
@@ -693,6 +780,7 @@ function worldPresetMarkerContent(
   identifier: string,
   event: WorldEvent,
   character: CharacterProfile,
+  historyMessages?: WorldEventRpMessage[],
 ): string {
   const world = activeWorld();
   const participants = worldRpParticipants(event, character);
@@ -732,7 +820,7 @@ function worldPresetMarkerContent(
     case 'tavernSocialWorldParticipants':
       return `Participants:\n${participants.map(characterBrief).join('\n\n')}`;
     case 'chatHistory':
-      return `World RP history:\n${worldRpHistoryText(event)}`;
+      return `World RP history:\n${worldRpHistoryText(event, historyMessages)}`;
     default:
       return '';
   }
@@ -766,6 +854,7 @@ function cleanWorldRpModelOutput(raw: string): string {
 function buildPresetWorldEventRpReplyMessages(
   event: WorldEvent,
   character: CharacterProfile,
+  historyMessages?: WorldEventRpMessage[],
 ): ModelMessage[] | undefined {
   const preset = activeWorldPromptPreset();
   if (!preset) return undefined;
@@ -774,26 +863,30 @@ function buildPresetWorldEventRpReplyMessages(
   for (const prompt of preset.prompts) {
     if (!prompt.enabled) continue;
     if (prompt.marker || isPromptMarker(prompt.identifier)) {
-      const markerContent = worldPresetMarkerContent(prompt.identifier, event, character);
+      const markerContent = worldPresetMarkerContent(prompt.identifier, event, character, historyMessages);
       if (markerContent.trim()) messages.push({ role: 'system', content: markerContent });
       continue;
     }
-    const content = renderWorldPresetMacros(prompt.content, event, character);
+    const content = renderWorldPresetMacros(prompt.content, event, character, historyMessages);
     if (content.trim()) messages.push({ role: prompt.role, content });
   }
   messages.push({ role: 'system', content: worldRpRuntimeProtection() });
   return messages.length > 0 ? messages : undefined;
 }
 
-function worldEventRpReplyMessages(event: WorldEvent, character: CharacterProfile): ModelMessage[] {
+function worldEventRpReplyMessages(
+  event: WorldEvent,
+  character: CharacterProfile,
+  historyMessages = worldEventRpMessages(event.id),
+): ModelMessage[] {
   const world = activeWorld();
-  const presetMessages = buildPresetWorldEventRpReplyMessages(event, character);
+  const presetMessages = buildPresetWorldEventRpReplyMessages(event, character, historyMessages);
   if (presetMessages) return presetMessages;
   const participants = event.participantCharacterIds
     .map(id => state.characters.find(item => item.id === id && item.worldId === world.id))
     .filter((item): item is CharacterProfile => Boolean(item));
   const visibleParticipants = participants.length > 0 ? participants : [character];
-  const history = worldEventRpMessages(event.id).slice(-12).map(rpMessageContextLine).join('\n') || '暂无事件内对话。';
+  const history = historyMessages.slice(-12).map(rpMessageContextLine).join('\n') || '暂无事件内对话。';
   return [
     {
       role: 'system',
@@ -827,6 +920,13 @@ function worldEventRpReplyMessages(event: WorldEvent, character: CharacterProfil
   ];
 }
 
+function worldEventRpMessagesBefore(event: WorldEvent, target: WorldEventRpMessage): WorldEventRpMessage[] {
+  const messages = worldEventRpMessages(event.id);
+  const targetIndex = messages.findIndex(message => message.id === target.id);
+  if (targetIndex >= 0) return messages.slice(0, targetIndex);
+  return messages.filter(message => message.createdAt < target.createdAt);
+}
+
 export async function generateWorldEventRpReply(
   eventId: string,
   character: CharacterProfile,
@@ -845,6 +945,30 @@ export async function generateWorldEventRpReply(
     content,
     source: 'model',
   });
+}
+
+export async function regenerateWorldEventRpMessage(
+  messageId: string,
+  character: CharacterProfile,
+): Promise<WorldEventRpMessage> {
+  const found = findWorldEventRpMessage(messageId);
+  if (!found || found.event.status !== 'active' || found.message.role !== 'assistant') {
+    throw new Error('找不到可重新生成的世界 RP 回复。');
+  }
+  const targetCharacter = found.message.characterId
+    ? state.characters.find(item => item.id === found.message.characterId && item.worldId === found.event.worldId) ?? character
+    : character;
+  const historyMessages = worldEventRpMessagesBefore(found.event, found.message);
+  const raw = await callAuthoringModel(worldEventRpReplyMessages(found.event, targetCharacter, historyMessages), { countBudget: true });
+  const content = cleanWorldRpModelOutput(applyPromptPresetRegexScripts(raw, activeWorldPromptPreset()));
+  if (!content) throw new Error('模型没有返回可用世界 RP 正文。');
+  addWorldEventRpMessageVariant(found.message, content);
+  found.message.characterId = targetCharacter.id;
+  found.message.speaker = targetCharacter.name;
+  found.event.updatedAt = Date.now();
+  upsertWorldRpTimelineEntry(found.event, found.message);
+  saveState();
+  return found.message;
 }
 
 function companionsFor(character: CharacterProfile): CharacterProfile[] {

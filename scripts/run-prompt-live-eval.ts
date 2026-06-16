@@ -378,6 +378,7 @@ async function runTarget(testCase: import('./prompt-test-cases').PromptEvalCase,
 
     if (testCase.target.startsWith('group_')) {
       const chat = groupChat.createGroupChat(`提示词体检群-${testCase.id}`, [main.id, friend.id, quiet.id]);
+      groupChat.updateGroupChat(chat.id, { replyLiveliness: testCase.groupReplyLiveliness ?? 'lively' });
       if (testCase.target === 'group_active') {
         groupChat.updateGroupChat(chat.id, { allowModelInitiatedMessages: true });
         await groupChat.generateGroupReplyForLatest(chat.id, true, 'active');

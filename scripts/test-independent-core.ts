@@ -1846,6 +1846,13 @@ const globalUiResetBlock = styleSource
 const worldWorkbenchBlock = uiSource
   .split('function renderWorldWorkbenchPage')[1]
   ?.split('function renderDesktop')[0] ?? '';
+if (
+  worldWorkbenchBlock.includes('${renderMemorySummaryDrawer()}')
+  || !worldWorkbenchBlock.includes("const memorySummaryDrawer = worldInsightTab === 'events' && selectedEvent ? '' : renderMemorySummaryDrawer();")
+  || !worldWorkbenchBlock.includes('${memorySummaryDrawer}')
+) {
+  throw new Error('World event detail should not render the memory drawer in the main stream.');
+}
 const worldEventLobbyBlock = uiSource
   .split('function renderWorldEventLobby')[1]
   ?.split('function renderWorldDialogueStream')[0] ?? '';
@@ -3405,12 +3412,15 @@ if (
   || !worldSettingsPanelBlock.includes('renderWorldEventSettingsPanel')
   || !worldSettingsPanelBlock.includes('renderWorldDrawerTimeline')
   || !uiSource.includes('activeWorldRpEventId')
+  || worldWorkbenchBlock.includes('${renderMemorySummaryDrawer()}')
+  || !worldWorkbenchBlock.includes("const memorySummaryDrawer = worldInsightTab === 'events' && selectedEvent ? '' : renderMemorySummaryDrawer();")
+  || !worldWorkbenchBlock.includes('${memorySummaryDrawer}')
   || !styleSource.includes('.world-stage-composer')
   || !styleSource.includes('.world-event-narration')
   || !styleSource.includes('.world-event-lobby')
   || !styleSource.includes('.world-drawer-section')
 ) {
-  throw new Error('World tab should list daily/event entries first and open RP dialogue only after selecting one.');
+  throw new Error('World tab should list daily/event entries first and keep the memory drawer out of event detail.');
 }
 if (
   !worldDialogueBody.includes('data-edit-world-rp-message')
