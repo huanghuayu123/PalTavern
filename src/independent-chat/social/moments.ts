@@ -407,7 +407,7 @@ export async function generateCharacterComment(
     const budget = characterInteractionBudget(moment.worldId, character.id);
     if (!budget.ok) throw new Error(budget.reason ?? '今天角色之间的互动已经够多。');
   }
-  const latestComment = moment.comments.at(-1);
+  const latestComment = moment.comments[moment.comments.length - 1];
   const hasTargetComment = Boolean(targetCommentId && moment.comments.some(comment => comment.id === targetCommentId));
   const replyingAsAuthor = moment.characterId === character.id
     && (hasTargetComment || latestComment?.authorType === 'user');

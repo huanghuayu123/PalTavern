@@ -12,7 +12,7 @@ export default (_env, argv) => ({
   },
   devtool: argv.mode === 'production' ? 'source-map' : 'eval-source-map',
   entry: path.join(root, 'src', 'independent-chat', 'index.ts'),
-  target: 'browserslist',
+  target: ['web', 'es2019'],
   output: {
     filename: 'index.js',
     path: path.join(root, 'dist', 'independent-chat'),
@@ -31,6 +31,7 @@ export default (_env, argv) => ({
           transpileOnly: true,
           onlyCompileBundledFiles: true,
           compilerOptions: {
+            target: 'ES2019',
             noUnusedLocals: false,
             noUnusedParameters: false,
           },
@@ -66,8 +67,8 @@ export default (_env, argv) => ({
       new TerserPlugin({
         extractComments: false,
         terserOptions: argv.mode === 'production'
-          ? { format: { quote_style: 1 } }
-          : { format: { beautify: true, indent_level: 2 }, compress: false, mangle: false },
+          ? { ecma: 2019, compress: { ecma: 2019 }, format: { ecma: 2019, quote_style: 1 } }
+          : { ecma: 2019, format: { ecma: 2019, beautify: true, indent_level: 2 }, compress: false, mangle: false },
       }),
     ],
   },

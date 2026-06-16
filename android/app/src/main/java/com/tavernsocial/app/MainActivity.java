@@ -2,6 +2,7 @@ package com.tavernsocial.app;
 
 import android.os.Bundle;
 import androidx.activity.OnBackPressedCallback;
+import androidx.core.splashscreen.SplashScreen;
 import com.getcapacitor.BridgeActivity;
 import java.lang.ref.WeakReference;
 
@@ -10,6 +11,7 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        SplashScreen.installSplashScreen(this);
         registerPlugin(TavernSocialBackgroundPlugin.class);
         super.onCreate(savedInstanceState);
         currentActivity = new WeakReference<>(this);

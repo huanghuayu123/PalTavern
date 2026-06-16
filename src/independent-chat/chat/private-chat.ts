@@ -626,7 +626,7 @@ export function appendAssistantReply(
     };
   });
   state.messages.push(...messages);
-  conversation.updatedAt = messages.at(-1)?.createdAt ?? baseTime;
+  conversation.updatedAt = messages[messages.length - 1]?.createdAt ?? baseTime;
   rebuildPrivateChatAutoMemory(character, conversation);
   return messages;
 }

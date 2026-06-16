@@ -1865,7 +1865,9 @@ function characterDirectPeerThread(
 
 function characterDirectLatestMessageFor(character: CharacterProfile): CharacterDirectMessage | undefined {
   const thread = characterDirectThreadForTarget(character);
-  return thread ? characterDirectMessagesFor(thread.id).at(-1) : undefined;
+  if (!thread) return undefined;
+  const messages = characterDirectMessagesFor(thread.id);
+  return messages[messages.length - 1];
 }
 
 function characterDirectUnreadCount(thread: CharacterDirectThread | undefined, actorCharacterId: string): number {
@@ -2195,7 +2197,8 @@ function renderContacts(mode: 'contacts' | 'recent' = 'contacts'): string {
   const directThreads = speaker ? characterDirectThreadsForActor(speaker.id, activeWorld().id) : [];
   return characters.map(character => {
     const directThread = speaker ? characterDirectPeerThread(speaker, character, directThreads) : undefined;
-    const directLatest = directThread ? characterDirectMessagesFor(directThread.id).at(-1) : undefined;
+    const directMessages = directThread ? characterDirectMessagesFor(directThread.id) : [];
+    const directLatest = directMessages[directMessages.length - 1];
     const latest = lastMessageFor(character);
     const unread = speaker
       ? characterDirectUnreadCount(directThread, speaker.id)
@@ -2386,7 +2389,8 @@ function openPrivateChatByCharacterId(characterId: string, options: { pushHistor
   const directSpeaker = privateChatIdentityCharacter();
   if (directSpeaker) {
     const thread = ensureCharacterDirectThread(character.worldId, directSpeaker.id, character.id);
-    const latest = characterDirectMessagesFor(thread.id).at(-1);
+    const directMessages = characterDirectMessagesFor(thread.id);
+    const latest = directMessages[directMessages.length - 1];
     markCharacterDirectThreadRead(thread.id, directSpeaker.id, latest?.createdAt ?? Date.now());
   } else {
     markConversationRead(character.id, Date.now(), privateConversationActorId(character));
@@ -2635,7 +2639,7 @@ function renderCharacterDirectMessages(character: CharacterProfile): string {
     return '<div class="empty-chat"><strong>请选择通讯身份</strong><p>切换为某个角色后，可以查看 TA 与其他角色的私聊。</p></div>';
   }
   const messages = characterDirectMessagesFor(thread.id);
-  const latest = messages.at(-1);
+  const latest = messages[messages.length - 1];
   if (latest) markCharacterDirectThreadRead(thread.id, speaker.id, latest.createdAt);
   if (messages.length === 0) {
     return `
@@ -10665,7 +10669,8 @@ function bindUi(): void {
     if (directSpeaker && character && directSpeaker.id !== character.id) {
       void (async () => {
         const thread = ensureCharacterDirectThread(character.worldId, directSpeaker.id, character.id);
-        const latest = characterDirectMessagesFor(thread.id).at(-1);
+        const directMessages = characterDirectMessagesFor(thread.id);
+        const latest = directMessages[directMessages.length - 1];
         if (!latest) {
           setStatusText(`先用 ${directSpeaker.name} 的身份发一句，再让 ${character.name} 回复。`);
           return;
