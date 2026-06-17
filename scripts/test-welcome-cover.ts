@@ -24,6 +24,7 @@ Object.defineProperty(globalThis, 'localStorage', {
 });
 
 const welcomeCover = require('../src/independent-chat/ui/welcome-cover');
+const firstRunGuide = require('../src/independent-chat/ui/first-run-guide');
 
 values.clear();
 if (!welcomeCover.shouldShowWelcomeCover()) {
@@ -48,6 +49,35 @@ if (!html.includes('id="enter-welcome-cover"')) {
   throw new Error('Welcome cover should provide an enter button.');
 }
 
+values.clear();
+const firstRunState = {
+  modelDone: false,
+  characterDone: false,
+  contentDone: false,
+  dismissed: firstRunGuide.isFirstRunGuideDismissed(),
+};
+if (!firstRunGuide.shouldShowFirstRunGuide(firstRunState)) {
+  throw new Error('First-run guide should show while setup is incomplete and not dismissed.');
+}
+const guideHtml = firstRunGuide.renderFirstRunGuide(firstRunState);
+if (
+  !guideHtml.includes('id="dismiss-first-run-guide"')
+  || !guideHtml.includes('aria-label="关闭新手引导"')
+  || !guideHtml.includes('三步就能跑起来')
+) {
+  throw new Error('First-run guide should render a dismiss button beside the setup copy.');
+}
+firstRunGuide.markFirstRunGuideDismissed();
+if (values.get(firstRunGuide.FIRST_RUN_GUIDE_DISMISSED_KEY) !== 'done') {
+  throw new Error('First-run guide did not persist the dismissed state.');
+}
+if (!firstRunGuide.isFirstRunGuideDismissed()) {
+  throw new Error('First-run guide dismissed state should be readable from storage.');
+}
+if (firstRunGuide.shouldShowFirstRunGuide({ ...firstRunState, dismissed: true })) {
+  throw new Error('First-run guide should stay hidden after dismissal.');
+}
+
 const uiSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/ui/app.ts'), 'utf8');
 if (
   !uiSource.includes('renderWelcomeCover()')
@@ -56,10 +86,18 @@ if (
 ) {
   throw new Error('UI should render the welcome cover and dismiss it through the enter button.');
 }
+if (
+  !uiSource.includes('markFirstRunGuideDismissed()')
+  || !uiSource.includes("'#dismiss-first-run-guide'")
+  || !uiSource.includes('dismissed: isFirstRunGuideDismissed()')
+) {
+  throw new Error('UI should render and persistently dismiss the first-run guide.');
+}
 
 console.log(JSON.stringify({
   firstOpen: true,
   dismissedState: true,
+  firstRunGuideDismissedState: true,
   requestedBrandOrder: true,
   uiBinding: true,
 }));

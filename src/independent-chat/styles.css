@@ -4729,7 +4729,10 @@ textarea::placeholder {
 
 .world-event-empty-actions button {
   min-height: 38px;
-  gap: 6px;
+  gap: 5px;
+  padding-inline: 12px;
+  font-size: 13px;
+  line-height: 1.1;
 }
 
 .world-event-lobby,
@@ -6617,14 +6620,32 @@ textarea::placeholder {
   z-index: 79;
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   width: min(620px, calc(100vw - 36px));
   max-height: calc(100dvh - 48px);
-  overflow: auto;
+  overflow: hidden;
   background: color-mix(in srgb, var(--surface-solid) 96%, transparent);
   border: 1px solid color-mix(in srgb, var(--line) 82%, white 5%);
   border-radius: 24px;
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  overscroll-behavior: contain;
+  scrollbar-gutter: auto;
   transform: translate(-50%, -50%);
+}
+
+.moments-publisher.is-open::-webkit-scrollbar,
+.moments-publisher.is-open *::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.moments-publisher.is-open,
+.moments-publisher.is-open * {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 html[data-ui-transition="overlay-in"] .moments-publisher.is-open,
@@ -6654,8 +6675,11 @@ html[data-ui-transition="overlay-in"] .moments-publisher.is-open,
   letter-spacing: -0.02em;
 }
 
-.moments-publisher-body {
+.moments-publisher.is-open .moments-publisher-body {
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   flex: 1;
 }
 
@@ -13006,50 +13030,7 @@ html[data-ui-transition="overlay-in"] .event-composer-dialog {
 }
 
 /* 大注释：消息页原型落地层。
-   移动端消息首屏只保留身份选择、角色快捷头像和私信列表，去掉旧的“今日变化”工作台感。 */
-.mobile-character-story-strip {
-  display: grid;
-  grid-auto-columns: 74px;
-  grid-auto-flow: column;
-  gap: 12px;
-  overflow-x: auto;
-  padding: 16px 18px 12px;
-  scrollbar-width: none;
-}
-
-.mobile-character-story-strip::-webkit-scrollbar {
-  display: none;
-}
-
-.mobile-character-story {
-  display: grid;
-  justify-items: center;
-  gap: 7px;
-  min-width: 0;
-  padding: 0;
-  color: var(--text-soft);
-  text-align: center;
-  background: transparent;
-  border: 0;
-}
-
-.mobile-character-story .avatar {
-  width: 58px;
-  height: 58px;
-  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
-  border-radius: 50%;
-  box-shadow: 0 0 0 3px var(--surface-solid), 0 0 0 4px color-mix(in srgb, var(--accent) 20%, transparent);
-}
-
-.mobile-character-story small {
-  max-width: 100%;
-  overflow: hidden;
-  font-size: 12px;
-  line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
+   移动端消息首屏只保留身份选择和私信列表，去掉旧的“今日变化”工作台感。 */
 .mobile-inbox-private-panel {
   padding: 0 18px 14px;
   background: transparent;
@@ -14779,13 +14760,6 @@ summary:focus-visible {
   border-color: transparent;
 }
 
-.mobile-character-story .avatar[data-avatar-tone] {
-  border-color: color-mix(in srgb, var(--avatar-tone-ring) 82%, var(--line));
-  box-shadow:
-    0 0 0 3px var(--surface-solid),
-    0 0 0 5px color-mix(in srgb, var(--avatar-tone-ring) 48%, transparent);
-}
-
 .mobile-inbox-private-panel .contact .avatar[data-avatar-tone],
 .world-event-entry-card .event-avatar[data-avatar-tone] {
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 46%, transparent);
@@ -15399,6 +15373,13 @@ summary:focus-visible {
     will-change: transform, opacity;
   }
 
+  .group-settings-panel.is-exiting,
+  .group-settings-panel[data-group-settings-mode="create"].is-exiting {
+    animation: worldGearPanelOut 180ms cubic-bezier(0.55, 0.02, 0.74, 0.22) forwards;
+    pointer-events: none;
+    will-change: transform, opacity;
+  }
+
   .world-gear-panel.is-closing .world-gear-trigger {
     pointer-events: none;
   }
@@ -15926,6 +15907,18 @@ summary:focus-visible {
   }
 }
 
+@keyframes groupSettingsDrawerOut {
+  0% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(34px);
+  }
+}
+
 .ui-fallback-transition[data-ui-transition]:not([data-ui-transition^="world-"]) .mobile-page,
 .ui-fallback-transition[data-ui-transition]:not([data-ui-transition^="world-"]) .mobile-list-page,
 .ui-fallback-transition[data-ui-transition]:not([data-ui-transition^="world-"]) .mobile-chat-detail,
@@ -16126,6 +16119,39 @@ summary:focus-visible {
   animation: groupCreateRollOut 180ms cubic-bezier(0.55, 0.02, 0.74, 0.22) forwards;
 }
 
+.group-settings-panel.is-exiting {
+  animation: groupSettingsDrawerOut 180ms cubic-bezier(0.55, 0.02, 0.74, 0.22) forwards;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+@media (max-width: 980px), (max-height: 560px) and (orientation: landscape) {
+  .mobile-group-list-page.is-closing {
+    animation: worldGearPanelOut 180ms cubic-bezier(0.55, 0.02, 0.74, 0.22) forwards;
+    pointer-events: none;
+    will-change: transform, opacity;
+  }
+
+  .group-settings-panel.is-exiting,
+  .group-settings-panel[data-group-settings-mode="create"].is-exiting {
+    animation: worldGearPanelOut 180ms cubic-bezier(0.55, 0.02, 0.74, 0.22) forwards;
+    pointer-events: none;
+    will-change: transform, opacity;
+  }
+}
+
+.world-event-empty-actions button,
+.event-settings-generate {
+  gap: 4px;
+  padding-inline: 10px;
+  font-size: 12px;
+  line-height: 1.12;
+}
+
+.event-settings-generate {
+  min-height: 38px;
+}
+
 .moment-compose-fab *,
 .bottom-nav,
 .bottom-nav * {
@@ -16142,6 +16168,103 @@ html[data-ui-transition]:not([data-ui-transition^="main-"]) .moment-compose-fab 
 .bottom-nav button:active {
   transform: scale(0.88) !important;
   transition: transform 100ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+
+@media (max-width: 980px), (hover: none), (pointer: coarse) {
+  .bottom-nav {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0;
+    align-items: end;
+    width: 100%;
+    height: calc(66px + env(safe-area-inset-bottom));
+    padding: 0 max(6px, env(safe-area-inset-right)) max(0px, env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left));
+    overflow: visible;
+    background: color-mix(in srgb, var(--surface-solid) 96%, transparent);
+    border-top: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+    box-shadow: 0 -10px 22px rgba(23, 31, 35, 0.08);
+    backdrop-filter: blur(14px);
+  }
+
+  .bottom-nav button {
+    position: relative;
+    display: grid;
+    grid-template-rows: 28px 15px;
+    gap: 1px;
+    align-content: center;
+    justify-items: center;
+    width: 100%;
+    min-width: 0;
+    height: 60px;
+    min-height: 60px;
+    padding: 6px 0 5px;
+    color: color-mix(in srgb, var(--text-soft) 92%, var(--text));
+    text-align: center;
+    background: color-mix(in srgb, var(--surface-solid) 82%, transparent);
+    border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+    border-right-width: 0;
+    border-radius: 0;
+    box-shadow: none;
+    transform: translateY(0) scale(1);
+    transition:
+      transform 380ms cubic-bezier(0.2, 1.45, 0.32, 1),
+      background-color 220ms ease,
+      border-color 220ms ease,
+      box-shadow 260ms ease,
+      color 220ms ease;
+    will-change: transform;
+  }
+
+  .bottom-nav button:last-child {
+    border-right-width: 1px;
+  }
+
+  .bottom-nav button.is-active {
+    z-index: 1;
+    color: var(--accent-strong);
+    background: color-mix(in srgb, var(--accent) 14%, var(--surface-solid));
+    border-color: color-mix(in srgb, var(--accent) 24%, var(--line));
+    box-shadow: 0 8px 18px rgba(15, 143, 131, 0.16), 0 -8px 18px rgba(23, 31, 35, 0.08);
+    transform: translateY(-10px) scale(1.02);
+  }
+
+  .bottom-nav .nav-icon {
+    display: grid;
+    width: 32px;
+    height: 26px;
+    place-items: center;
+    background: transparent !important;
+    border-radius: 0;
+    transform: translateY(0);
+    transition: transform 380ms cubic-bezier(0.2, 1.45, 0.32, 1), color 220ms ease;
+  }
+
+  .bottom-nav button.is-active .nav-icon {
+    background: transparent !important;
+    transform: translateY(-1px);
+  }
+
+  .bottom-nav .ui-icon {
+    width: 21px;
+    height: 21px;
+    stroke-width: 1.9;
+  }
+
+  .bottom-nav button small {
+    max-width: 100%;
+    margin: 0;
+    overflow: hidden;
+    font-size: 10px;
+    font-weight: 740;
+    line-height: 1.1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition: transform 380ms cubic-bezier(0.2, 1.45, 0.32, 1), color 220ms ease;
+  }
+
+  .bottom-nav button.is-active small {
+    transform: translateY(-1px);
+  }
 }
 
 .moments-scroll,
@@ -16280,6 +16403,45 @@ html[data-ui-transition]:not([data-ui-transition^="main-"]) .moment-compose-fab 
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
+}
+
+.first-run-guide header {
+  align-items: center;
+}
+
+.first-run-guide header > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  padding-right: 8px;
+}
+
+.first-run-guide header > div strong {
+  padding-right: 28px;
+}
+
+.first-run-guide-dismiss {
+  display: grid;
+  flex: 0 0 auto;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  place-items: center;
+  color: var(--text-soft);
+  font-size: 18px;
+  line-height: 1;
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+  border-radius: 10px;
+}
+
+.first-run-guide-dismiss:hover,
+.first-run-guide-dismiss:focus-visible {
+  color: var(--text);
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
 }
 
 .first-run-guide h3,

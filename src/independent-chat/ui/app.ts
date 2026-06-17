@@ -271,7 +271,12 @@ import { clampVirtualTimeMinutes, companionTimeModeLabel, formatClockMinutes, fo
 import { compactText, escapeHtml, nowId } from '../core/utils';
 import { markWelcomeCoverSeen, renderWelcomeCover, shouldShowWelcomeCover } from './welcome-cover';
 import { renderCardImportDiagnostics } from './card-import-diagnostics';
-import { renderFirstRunGuide, type FirstRunGuideState } from './first-run-guide';
+import {
+  isFirstRunGuideDismissed,
+  markFirstRunGuideDismissed,
+  renderFirstRunGuide,
+  type FirstRunGuideState,
+} from './first-run-guide';
 import {
   refreshWorldWeather,
   searchWeatherLocations,
@@ -471,11 +476,15 @@ let activeSettingsSection: SettingsSection = 'world';
 let mobileSection: MobileSection = 'messages';
 let mobileChatOpen = false;
 let mobileGroupChatOpen = false;
+let mobileGroupListClosing = false;
+let mobileGroupListCloseTimer: number | undefined;
 let desktopGroupChatOpen = false;
 let groupSettingsOpen = false;
 let groupSettingsMode: GroupSettingsMode = 'create';
 let groupSettingsOpening = false;
+let groupSettingsClosing = false;
 let groupSettingsOpeningTimer: number | undefined;
+let groupSettingsCloseTimer: number | undefined;
 let editingPromptPresetId = '';
 let mobileSettingsDetail = false;
 let characterPanelOpen = false;
@@ -547,6 +556,8 @@ const MOMENT_COMPOSER_CLOSE_KEYBOARD_MS = 360;
 const MOMENT_COMPOSER_LAYOUT_TRANSITION_MS = 260;
 const EVENT_COMPOSER_DROP_CLOSE_MS = 360;
 const WORLD_GEAR_CLOSE_MS = 180;
+const GROUP_SETTINGS_CLOSE_MS = 180;
+const MOBILE_GROUP_LIST_CLOSE_MS = 180;
 let messageComposerKeyboardHoldCharacterId = '';
 let focusMessageInputAfterRenderCharacterId = '';
 let focusGroupInputAfterRenderChatId = '';
@@ -1327,9 +1338,7 @@ function closeMobileLayer(): boolean {
     return true;
   }
   if (groupSettingsOpen) {
-    groupSettingsOpen = false;
-    groupSettingsMode = 'create';
-    saveUiSessionSnapshot();
+    closeGroupSettingsPanel(true);
     return true;
   }
   if (mobileChatOpen) {
@@ -1343,8 +1352,7 @@ function closeMobileLayer(): boolean {
   }
   if (mobileGroupChatOpen) {
     mobileGroupChatOpen = false;
-    groupSettingsOpen = false;
-    groupSettingsMode = 'create';
+    resetGroupSettingsState();
     if (mobileSection !== 'groups') setActiveView('chat');
     clearVisibleStatus();
     saveUiSessionSnapshot();
@@ -1355,13 +1363,16 @@ function closeMobileLayer(): boolean {
     saveUiSessionSnapshot();
     return true;
   }
+  if (mobileSection === 'groups') {
+    closeMobileGroupListWithTransition();
+    return false;
+  }
   if (mobileSection !== 'messages') {
     mobileSection = 'messages';
     mobileChatOpen = false;
     messageComposerKeyboardHoldCharacterId = '';
     mobileGroupChatOpen = false;
-    groupSettingsOpen = false;
-    groupSettingsMode = 'create';
+    resetGroupSettingsState();
     mobileSettingsDetail = false;
     momentComposerOpen = false;
     momentGenerationStatus = '';
@@ -1383,22 +1394,39 @@ function backMobileLayer(): void {
     window.history.back();
     return;
   }
+  if (mobileSection === 'groups' && !mobileGroupChatOpen && !groupSettingsOpen) {
+    closeMobileGroupListWithTransition();
+    return;
+  }
   if (closeMobileLayer()) renderWithUiTransition('detail-out');
 }
 
 function closeMobileGroupListWithTransition(): void {
+  if (mobileGroupListClosing) return;
   captureVisibleDraftsFromDom();
   clearMobileHistoryLayer();
-  mobileSection = 'messages';
-  setActiveView('chat');
   mobileChatOpen = false;
   mobileGroupChatOpen = false;
   desktopGroupChatOpen = false;
-  groupSettingsOpen = false;
-  groupSettingsMode = 'create';
+  resetGroupSettingsState();
   mobileSettingsDetail = false;
-  saveUiSessionSnapshot();
-  renderWithUiTransition('detail-out');
+  mobileGroupListClosing = true;
+  render();
+  window.clearTimeout(mobileGroupListCloseTimer);
+  mobileGroupListCloseTimer = window.setTimeout(() => {
+    mobileGroupListCloseTimer = undefined;
+    mobileGroupListClosing = false;
+    mobileSection = 'messages';
+    setActiveView('chat');
+    saveUiSessionSnapshot();
+    render();
+  }, MOBILE_GROUP_LIST_CLOSE_MS);
+}
+
+function resetMobileGroupListClosing(): void {
+  window.clearTimeout(mobileGroupListCloseTimer);
+  mobileGroupListCloseTimer = undefined;
+  mobileGroupListClosing = false;
 }
 
 function forceRestartAllServices(): void {
@@ -1909,8 +1937,7 @@ function closeMessageDetailAfterCommunicationIdentityChange(): void {
   mobileChatOpen = false;
   mobileGroupChatOpen = false;
   desktopGroupChatOpen = false;
-  groupSettingsOpen = false;
-  groupSettingsMode = 'create';
+  resetGroupSettingsState();
   messageComposerKeyboardHoldCharacterId = '';
   quotedMessageId = '';
   messageActionId = '';
@@ -2322,8 +2349,13 @@ function renderGroupListPage(mobile = false): string {
   ).join('');
   const rows = renderGroupConversationRows();
   const hasGroups = groupChatsForPrivateIdentity().length > 0;
+  const pageClass = [
+    'group-list-page',
+    mobile ? 'mobile-page mobile-group-list-page' : '',
+    mobile && mobileGroupListClosing ? 'is-closing' : '',
+  ].filter(Boolean).join(' ');
   return `
-    <main class="group-list-page ${mobile ? 'mobile-page mobile-group-list-page' : ''}">
+    <main class="${pageClass}">
       <header class="${mobile ? 'mobile-topbar group-list-topbar' : 'group-list-header'}">
         ${mobile ? '<button class="header-back" data-mobile-group-list-back aria-label="返回消息">‹</button>' : ''}
         <div>
@@ -2357,22 +2389,6 @@ function renderInboxConversations(): string {
   return `${groupRows}${characterRows}`;
 }
 
-function renderMobileCharacterStoryStrip(): string {
-  // 小注释：移动端消息页的头像横条是轻入口，点击后沿用联系人列表的私聊打开逻辑。
-  const characters = privateChatContactCharacters('contacts').slice(0, 8);
-  if (characters.length === 0) return '';
-  return `
-    <section class="mobile-character-story-strip" aria-label="角色快捷入口">
-      ${characters.map(character => `
-        <button class="mobile-character-story" data-character-id="${escapeHtml(character.id)}" type="button">
-          <span class="avatar"${avatarToneAttribute(character)}>${renderAvatar(character)}</span>
-          <small>${escapeHtml(character.name)}</small>
-        </button>
-      `).join('')}
-    </section>
-  `;
-}
-
 function openPrivateChatByCharacterId(characterId: string, options: { pushHistory?: boolean } = {}): void {
   const character = state.characters.find(item => item.id === characterId && item.worldId === activeWorld().id);
   if (!character) return;
@@ -2403,7 +2419,7 @@ function openPrivateChatByCharacterId(characterId: string, options: { pushHistor
   if (compactMedia.matches) {
     mobileChatOpen = true;
     mobileGroupChatOpen = false;
-    groupSettingsOpen = false;
+    resetGroupSettingsState();
     if (options.pushHistory !== false) pushMobileHistory('chat');
   }
   saveState();
@@ -3324,7 +3340,7 @@ function groupReplyLivelinessDescription(value: GroupReplyLiveliness): string {
 }
 
 function renderGroupSettingsPanel(chat?: GroupChatProfile): string {
-  if (!groupSettingsOpen) return '';
+  if (!groupSettingsOpen && !groupSettingsClosing) return '';
   const title = chat?.title ?? `${activeWorld().name} 群聊`;
   const activeGenerationDisabled = !chat?.allowModelInitiatedMessages || isGroupGenerating();
   const replyLiveliness = groupReplyLivelinessValue(chat?.replyLiveliness);
@@ -3332,6 +3348,7 @@ function renderGroupSettingsPanel(chat?: GroupChatProfile): string {
   const panelClasses = [
     'group-settings-panel',
     mode === 'create' && groupSettingsOpening ? 'is-entering' : '',
+    groupSettingsClosing ? 'is-exiting' : '',
   ].filter(Boolean).join(' ');
   return `
     <div class="group-settings-overlay" role="dialog" aria-modal="true" aria-label="群聊设置">
@@ -6581,6 +6598,7 @@ function firstRunGuideState(compact = false): FirstRunGuideState {
     modelDone: modelIsReady(),
     characterDone,
     contentDone,
+    dismissed: isFirstRunGuideDismissed(),
     compact,
   };
 }
@@ -6689,7 +6707,6 @@ function renderMobile(character?: CharacterProfile): string {
           </div>
         </header>
         ${renderFirstRunGuide(firstRunGuideState())}
-        ${renderMobileCharacterStoryStrip()}
         <section class="mobile-inbox-panel mobile-inbox-private-panel">
           <div class="mobile-section-label">
             <strong>私信</strong>
@@ -7088,7 +7105,7 @@ function deleteActiveCharacterFromUi(): void {
       if (compactMedia.matches) {
         mobileChatOpen = false;
         mobileGroupChatOpen = false;
-        groupSettingsOpen = false;
+        resetGroupSettingsState();
         mobileSection = state.characters.some(item => item.worldId === activeWorld().id) ? 'contacts' : 'settings';
       }
       setStatusText(`已删除角色：${deleted.name}`);
@@ -7103,8 +7120,8 @@ function preserveScrollForNextRender(): void {
 function closeTransientOverlaysForPageChange(): void {
   settingsOpen = false;
   characterPanelOpen = false;
-  groupSettingsOpen = false;
-  resetGroupSettingsOpening();
+  resetGroupSettingsState();
+  resetMobileGroupListClosing();
   stickerPickerOpen = false;
   eventComposerOpen = false;
   eventComposerDropClosing = false;
@@ -7469,6 +7486,42 @@ function resetGroupSettingsOpening(): void {
   groupSettingsOpening = false;
 }
 
+function resetGroupSettingsClosing(): void {
+  window.clearTimeout(groupSettingsCloseTimer);
+  groupSettingsCloseTimer = undefined;
+  groupSettingsClosing = false;
+}
+
+function resetGroupSettingsState(): void {
+  resetGroupSettingsOpening();
+  resetGroupSettingsClosing();
+  groupSettingsOpen = false;
+  groupSettingsMode = 'create';
+}
+
+function closeGroupSettingsPanel(renderTransition = true): void {
+  if (groupSettingsClosing || !groupSettingsOpen) return;
+  resetGroupSettingsOpening();
+  window.clearTimeout(groupSettingsCloseTimer);
+  groupSettingsCloseTimer = undefined;
+  captureVisibleDraftsFromDom();
+  groupSettingsClosing = true;
+  const finishClose = () => {
+    groupSettingsCloseTimer = undefined;
+    groupSettingsOpen = false;
+    groupSettingsClosing = false;
+    groupSettingsMode = 'create';
+    saveUiSessionSnapshot({ captureDom: false });
+    render();
+  };
+  if (renderTransition) {
+    render();
+    groupSettingsCloseTimer = window.setTimeout(finishClose, GROUP_SETTINGS_CLOSE_MS);
+    return;
+  }
+  finishClose();
+}
+
 function updateKeyboardOffset(): void {
   const viewport = window.visualViewport;
   const offset = viewport
@@ -7738,6 +7791,11 @@ function bindUi(): void {
   document.querySelector<HTMLButtonElement>('#enter-welcome-cover')?.addEventListener('click', () => {
     markWelcomeCoverSeen();
     welcomeCoverOpen = false;
+    render();
+  });
+  document.querySelector<HTMLButtonElement>('#dismiss-first-run-guide')?.addEventListener('click', () => {
+    markFirstRunGuideDismissed();
+    saveUiSessionSnapshot({ captureDom: false });
     render();
   });
   const completeModelOnboarding = () => {
@@ -8059,8 +8117,7 @@ function bindUi(): void {
       mobileChatOpen = false;
       mobileGroupChatOpen = false;
       desktopGroupChatOpen = false;
-      groupSettingsOpen = false;
-      groupSettingsMode = 'create';
+      resetGroupSettingsState();
       mobileSettingsDetail = false;
       pushMobileHistory('section');
     } else {
@@ -8345,8 +8402,7 @@ function bindUi(): void {
       mobileChatOpen = false;
       mobileGroupChatOpen = false;
       desktopGroupChatOpen = false;
-      groupSettingsOpen = false;
-      groupSettingsMode = 'create';
+      resetGroupSettingsState();
       mobileSettingsDetail = false;
       if (mobileSection !== 'messages') pushMobileHistory('section');
       saveUiSessionSnapshot();
@@ -8365,7 +8421,7 @@ function bindUi(): void {
       worldRpMessageActionId = '';
       mobileChatOpen = false;
       mobileGroupChatOpen = false;
-      groupSettingsOpen = false;
+      resetGroupSettingsState();
       mobileSettingsDetail = false;
       momentComposerOpen = false;
       momentGenerationStatus = '';
@@ -8403,9 +8459,7 @@ function bindUi(): void {
       return;
     }
     if (event.key === 'Escape' && groupSettingsOpen) {
-      groupSettingsOpen = false;
-      groupSettingsMode = 'create';
-      renderWithUiTransition('overlay-out');
+      closeGroupSettingsPanel(true);
       return;
     }
     if (event.key === 'Escape' && settingsOpen) {
@@ -8440,8 +8494,7 @@ function bindUi(): void {
       if (nextView !== 'groups') {
         desktopGroupChatOpen = false;
         mobileGroupChatOpen = false;
-        groupSettingsOpen = false;
-        groupSettingsMode = 'create';
+        resetGroupSettingsState();
       }
       saveUiSessionSnapshot();
       renderWithUiTransition(desktopViewTransition(fromView, nextView));
@@ -8451,11 +8504,11 @@ function bindUi(): void {
     button.addEventListener('click', () => {
       captureVisibleDraftsFromDom();
       clearMobileListScrollRestore();
+      resetMobileGroupListClosing();
       const fromView = state.activeView;
       setActiveView('groups');
       desktopGroupChatOpen = false;
-      groupSettingsOpen = false;
-      groupSettingsMode = 'create';
+      resetGroupSettingsState();
       if (compactMedia.matches) {
         mobileSection = 'groups';
         mobileChatOpen = false;
@@ -8469,6 +8522,7 @@ function bindUi(): void {
   });
   document.querySelectorAll<HTMLButtonElement>('[data-open-group-create]').forEach(button => {
     button.addEventListener('click', () => {
+      resetGroupSettingsClosing();
       groupSettingsMode = 'create';
       groupSettingsOpen = true;
       groupSettingsOpening = true;
@@ -8484,6 +8538,7 @@ function bindUi(): void {
   });
   document.querySelectorAll<HTMLButtonElement>('#open-group-settings, [data-open-group-settings]').forEach(button => {
     button.addEventListener('click', () => {
+      resetGroupSettingsClosing();
       groupSettingsMode = 'edit';
       groupSettingsOpen = true;
       resetGroupSettingsOpening();
@@ -8494,25 +8549,13 @@ function bindUi(): void {
     });
   });
   document.querySelector<HTMLButtonElement>('#close-group-settings')?.addEventListener('click', () => {
-    resetGroupSettingsOpening();
-    groupSettingsOpen = false;
-    groupSettingsMode = 'create';
-    saveUiSessionSnapshot();
-    renderWithUiTransition('overlay-out');
+    closeGroupSettingsPanel(true);
   });
   document.querySelector<HTMLButtonElement>('#close-group-settings-backdrop')?.addEventListener('click', () => {
-    resetGroupSettingsOpening();
-    groupSettingsOpen = false;
-    groupSettingsMode = 'create';
-    saveUiSessionSnapshot();
-    renderWithUiTransition('overlay-out');
+    closeGroupSettingsPanel(true);
   });
   document.querySelector<HTMLButtonElement>('#cancel-group-settings')?.addEventListener('click', () => {
-    resetGroupSettingsOpening();
-    groupSettingsOpen = false;
-    groupSettingsMode = 'create';
-    saveUiSessionSnapshot();
-    renderWithUiTransition('overlay-out');
+    closeGroupSettingsPanel(true);
   });
   document.querySelector<HTMLButtonElement>('[data-mobile-group-back]')?.addEventListener('click', () => {
     backMobileLayer();
@@ -8520,8 +8563,7 @@ function bindUi(): void {
   document.querySelector<HTMLButtonElement>('[data-group-list-back]')?.addEventListener('click', () => {
     captureVisibleDraftsFromDom();
     desktopGroupChatOpen = false;
-    groupSettingsOpen = false;
-    groupSettingsMode = 'create';
+    resetGroupSettingsState();
     saveUiSessionSnapshot();
     renderWithUiTransition('detail-out');
   });
@@ -8538,8 +8580,7 @@ function bindUi(): void {
       ensureGroupChatForSpeaker();
       setActiveView('groups');
       desktopGroupChatOpen = true;
-      groupSettingsOpen = false;
-      groupSettingsMode = 'create';
+      resetGroupSettingsState();
       if (compactMedia.matches) {
         mobileChatOpen = false;
         mobileGroupChatOpen = true;
@@ -8566,9 +8607,7 @@ function bindUi(): void {
       mobileChatOpen = false;
       mobileGroupChatOpen = false;
     }
-    resetGroupSettingsOpening();
-    groupSettingsOpen = false;
-    groupSettingsMode = 'create';
+    resetGroupSettingsState();
     setVisibleStatus(`已创建群聊：${group.title}`);
     renderWithUiTransition('overlay-out');
   });
@@ -8624,9 +8663,7 @@ function bindUi(): void {
         mobileChatOpen = false;
         mobileGroupChatOpen = Boolean(editingChat);
       }
-      resetGroupSettingsOpening();
-      groupSettingsOpen = false;
-      groupSettingsMode = 'create';
+      resetGroupSettingsState();
       saveState();
       saveUiSessionSnapshot();
       setVisibleStatus(`${editingChat ? '群聊已保存' : '已创建群聊'}：${saved.title}`);
@@ -8677,8 +8714,7 @@ function bindUi(): void {
         if (result.ok) {
           setActiveView('groups');
           desktopGroupChatOpen = false;
-          groupSettingsOpen = false;
-          groupSettingsMode = 'create';
+          resetGroupSettingsState();
           if (compactMedia.matches) {
             mobileSection = 'groups';
             mobileChatOpen = false;
@@ -8857,8 +8893,7 @@ function bindUi(): void {
       desktopGroupChatOpen = false;
       mobileChatOpen = false;
       mobileGroupChatOpen = false;
-      groupSettingsOpen = false;
-      groupSettingsMode = 'create';
+      resetGroupSettingsState();
       render();
     });
   });

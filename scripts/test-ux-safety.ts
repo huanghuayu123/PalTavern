@@ -236,6 +236,70 @@ if (
   throw new Error('Moment detail and delete actions should stay side by side in the card header.');
 }
 
+if (
+  appSource.includes('renderMobileCharacterStoryStrip')
+  || styleSource.includes('mobile-character-story-strip')
+  || styleSource.includes('.mobile-character-story')
+) {
+  throw new Error('Mobile messages should not render the redundant circular character shortcut strip above private messages.');
+}
+
+const momentsPublisherOpenBlock = styleSource.match(/\.moments-publisher\.is-open\s*\{[\s\S]*?\}/)?.[0] ?? '';
+if (
+  !momentsPublisherOpenBlock.includes('scrollbar-width: none')
+  || !momentsPublisherOpenBlock.includes('-ms-overflow-style: none')
+  || !momentsPublisherOpenBlock.includes('overflow: hidden')
+  || !styleSource.includes('.moments-publisher.is-open::-webkit-scrollbar')
+  || !styleSource.includes('.moments-publisher.is-open *::-webkit-scrollbar')
+  || !styleSource.includes('.moments-publisher.is-open .moments-publisher-body')
+) {
+  throw new Error('Moment composer should hide visible scrollbars on the shell while keeping the body scrollable.');
+}
+
+const worldGenerateOverrideBlock = styleSource.match(/\.world-event-empty-actions\s+button,\s*\.event-settings-generate\s*\{[\s\S]*?\}/)?.[0] ?? '';
+if (
+  !worldGenerateOverrideBlock.includes('font-size: 12px')
+  || !worldGenerateOverrideBlock.includes('padding-inline: 10px')
+  || !worldGenerateOverrideBlock.includes('gap: 4px')
+  || !styleSource.includes('.event-settings-generate')
+) {
+  throw new Error('World generate buttons should use visibly smaller, breathable text.');
+}
+
+if (
+  !appSource.includes('let groupSettingsClosing = false')
+  || !appSource.includes('const GROUP_SETTINGS_CLOSE_MS = 180')
+  || !appSource.includes('function closeGroupSettingsPanel')
+  || !appSource.includes("groupSettingsClosing ? 'is-exiting' : ''")
+  || !styleSource.includes('@keyframes groupSettingsDrawerOut')
+  || !styleSource.includes('.group-settings-panel.is-exiting')
+  || !styleSource.includes('.group-settings-panel[data-group-settings-mode="create"].is-exiting')
+  || !styleSource.includes('animation: worldGearPanelOut 180ms')
+) {
+  throw new Error('Group settings should keep an exiting state and animate closed like the world settings panel on mobile.');
+}
+
+if (
+  !appSource.includes('let mobileGroupListClosing = false')
+  || !appSource.includes('const MOBILE_GROUP_LIST_CLOSE_MS = 180')
+  || !appSource.includes("mobile && mobileGroupListClosing ? 'is-closing' : ''")
+  || !styleSource.includes('.mobile-group-list-page.is-closing')
+  || !styleSource.includes('animation: worldGearPanelOut 180ms')
+) {
+  throw new Error('Mobile group list should keep a closing state and animate closed like the world settings panel.');
+}
+
+if (
+  !styleSource.includes('grid-template-columns: repeat(5, minmax(0, 1fr))')
+  || !styleSource.includes('gap: 0')
+  || !styleSource.includes('.bottom-nav button.is-active')
+  || !styleSource.includes('transform: translateY(-10px) scale(1.02)')
+  || !styleSource.includes('cubic-bezier(0.2, 1.45, 0.32, 1)')
+  || !styleSource.includes('.bottom-nav button.is-active .nav-icon')
+) {
+  throw new Error('Bottom nav should use five attached square tabs with elastic raised active state.');
+}
+
 console.log(JSON.stringify({
   backupImportConfirm: true,
   timelineSearch: true,
@@ -244,5 +308,10 @@ console.log(JSON.stringify({
   groupAvatarLayout: true,
   authoringProgressRail: true,
   momentHeaderActions: true,
+  mobileStoryStripRemoved: true,
+  momentComposerScrollbarHidden: true,
+  groupSettingsCloseAnimation: true,
+  worldGenerateButtonBreathingRoom: true,
+  bottomNavSquareTabs: true,
   naturalContactSubtitle: true,
 }));

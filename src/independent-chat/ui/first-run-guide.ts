@@ -6,11 +6,45 @@ export type FirstRunGuideState = {
   modelDone: boolean;
   characterDone: boolean;
   contentDone: boolean;
+  dismissed: boolean;
   compact?: boolean;
 };
 
+type FirstRunGuideStorage = {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+};
+
+export const FIRST_RUN_GUIDE_DISMISSED_KEY = 'tavern-social-first-run-guide-dismissed-v1';
+
+function resolvedStorage(storage?: FirstRunGuideStorage): FirstRunGuideStorage | null {
+  if (storage) return storage;
+  if (typeof localStorage === 'undefined') return null;
+  return localStorage;
+}
+
+export function isFirstRunGuideDismissed(storage?: FirstRunGuideStorage): boolean {
+  const targetStorage = resolvedStorage(storage);
+  if (!targetStorage) return false;
+  try {
+    return targetStorage.getItem(FIRST_RUN_GUIDE_DISMISSED_KEY) === 'done';
+  } catch {
+    return false;
+  }
+}
+
+export function markFirstRunGuideDismissed(storage?: FirstRunGuideStorage): void {
+  const targetStorage = resolvedStorage(storage);
+  if (!targetStorage) return;
+  try {
+    targetStorage.setItem(FIRST_RUN_GUIDE_DISMISSED_KEY, 'done');
+  } catch {
+    // If storage is blocked, keep the guide dismissible for the current render cycle only.
+  }
+}
+
 export function shouldShowFirstRunGuide(state: FirstRunGuideState): boolean {
-  return !state.modelDone || !state.characterDone || !state.contentDone;
+  return !state.dismissed && (!state.modelDone || !state.characterDone || !state.contentDone);
 }
 
 export function renderFirstRunGuide(state: FirstRunGuideState): string {
@@ -23,8 +57,11 @@ export function renderFirstRunGuide(state: FirstRunGuideState): string {
   return `
     <section class="first-run-guide ${state.compact ? 'is-compact' : ''}" aria-label="新手上手路径">
       <header>
-        <span>开始使用 PalTavern</span>
-        <strong>三步就能跑起来</strong>
+        <div>
+          <span>开始使用 PalTavern</span>
+          <strong>三步就能跑起来</strong>
+        </div>
+        <button class="first-run-guide-dismiss" id="dismiss-first-run-guide" type="button" aria-label="关闭新手引导">×</button>
       </header>
       <div class="first-run-steps">
         ${steps.map(([id, title, done, copy], index) => `
