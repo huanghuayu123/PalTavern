@@ -316,6 +316,8 @@ if (
   || !styleSource.includes('.private-chat-identity-option.is-active')
   || !styleSource.includes('@keyframes privateIdentityMenuIn')
   || !styleSource.includes('.private-chat-identity-select summary')
+  || !appSource.includes("${icon('chevronDown')}")
+  || !styleSource.includes('.private-chat-identity-chevron .ui-icon')
 ) {
   throw new Error('Private chat identity selector should use a polished custom dropdown menu instead of the native select popup.');
 }
@@ -386,6 +388,24 @@ if (
   throw new Error('Bottom nav shell should not paint an extra visual wrapper outside the clickable button tabs.');
 }
 
+const tabletLandscapeShellBlock = appSource
+  .split('function renderTabletLandscape(character?: CharacterProfile)')[1]
+  ?.split('function renderMobile(character?: CharacterProfile)')[0] ?? '';
+if (
+  !appSource.includes('const tabletLandscapeMedia = window.matchMedia')
+  || !appSource.includes("type LayoutMode = 'mobile' | 'tabletLandscape' | 'desktop'")
+  || !tabletLandscapeShellBlock.includes('tablet-landscape-shell')
+  || !tabletLandscapeShellBlock.includes('renderTabletLandscapeNav()')
+  || tabletLandscapeShellBlock.includes('bottom-nav')
+  || !styleSource.includes('.tablet-landscape-shell')
+  || !styleSource.includes('.tablet-landscape-nav')
+  || !styleSource.includes('.tablet-landscape-nav-button.is-active')
+  || !styleSource.includes('.tablet-landscape-split')
+  || !styleSource.includes('.tablet-landscape-detail .header-back')
+) {
+  throw new Error('Tablet landscape should use a dedicated left-rail shell without reusing the mobile bottom nav.');
+}
+
 console.log(JSON.stringify({
   backupImportConfirm: true,
   timelineSearch: true,
@@ -399,5 +419,6 @@ console.log(JSON.stringify({
   groupSettingsCloseAnimation: true,
   worldGenerateButtonBreathingRoom: true,
   bottomNavSquareTabs: true,
+  tabletLandscapeShell: true,
   naturalContactSubtitle: true,
 }));

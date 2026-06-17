@@ -346,6 +346,7 @@ const appRoot = app;
 // 小注释：UI 层只负责读状态、渲染和派发动作，不在这里改业务存储结构。
 type SettingsSection = 'world' | 'drafts' | 'stickers' | 'model' | 'prompts' | 'relationship' | 'interactions' | 'proactive' | 'chat' | 'notifications' | 'data';
 type MobileSection = 'messages' | 'contacts' | 'groups' | 'world' | 'moments' | 'settings';
+type LayoutMode = 'mobile' | 'tabletLandscape' | 'desktop';
 type MobileHistoryLayer = 'section' | 'chat' | 'settings-detail' | 'modal';
 type StickerLibraryScope = 'character' | 'common' | 'user';
 type CharacterPanelPage = 'worldbook' | 'worldbook-editor' | 'status';
@@ -617,6 +618,7 @@ let modelOnboardingDraft = {
   apiKey: state.modelConfig.apiKey,
   model: state.modelConfig.model,
 };
+const tabletLandscapeMedia = window.matchMedia('(orientation: landscape) and (min-width: 900px) and (min-height: 600px) and (max-width: 1368px)');
 const compactMedia = window.matchMedia('(max-width: 980px), (max-height: 560px) and (orientation: landscape)');
 let mediaListenerInstalled = false;
 let mobileHistoryInstalled = false;
@@ -634,8 +636,38 @@ let scrollCharacterPanelToTopAfterRender = false;
 
 const SETTINGS_SECTIONS: SettingsSection[] = ['world', 'drafts', 'stickers', 'model', 'prompts', 'relationship', 'interactions', 'proactive', 'chat', 'notifications', 'data'];
 const MOBILE_SECTIONS: MobileSection[] = ['messages', 'contacts', 'groups', 'world', 'moments', 'settings'];
+const MAIN_NAV_ITEMS: Array<{ id: MobileSection; label: string; iconName: IconName }> = [
+  { id: 'messages', label: '消息', iconName: 'message' },
+  { id: 'contacts', label: '角色', iconName: 'contacts' },
+  { id: 'world', label: '世界', iconName: 'world' },
+  { id: 'moments', label: '动态', iconName: 'moments' },
+  { id: 'settings', label: '设置', iconName: 'settings' },
+];
 const BOTTOM_NAV_PRESS_MS = 100;
 const BOTTOM_NAV_LIFT_MS = 240;
+
+function hasTabletTouchInput(): boolean {
+  const navigatorInfo = window.navigator;
+  const touchPoints = typeof navigatorInfo?.maxTouchPoints === 'number' ? navigatorInfo.maxTouchPoints : 0;
+  const userAgent = navigatorInfo?.userAgent ?? '';
+  return touchPoints > 0 && (
+    /Android|iPad|Tablet/i.test(userAgent)
+    || (/Macintosh/i.test(userAgent) && touchPoints > 1)
+  );
+}
+
+function isTabletLandscapeViewport(): boolean {
+  return tabletLandscapeMedia.matches && hasTabletTouchInput();
+}
+
+function isCompactViewport(): boolean {
+  return compactMedia.matches || isTabletLandscapeViewport();
+}
+
+function getViewportLayoutMode(): LayoutMode {
+  if (isTabletLandscapeViewport()) return 'tabletLandscape';
+  return isCompactViewport() ? 'mobile' : 'desktop';
+}
 
 function isSettingsSection(value: unknown): value is SettingsSection {
   return typeof value === 'string' && SETTINGS_SECTIONS.includes(value as SettingsSection);
@@ -849,13 +881,14 @@ function captureScrollSnapshot(): UiScrollSnapshot | undefined {
 }
 
 function currentMobileListScrollSection(): MobileListScrollSnapshot['section'] | null {
-  if (!compactMedia.matches || mobileChatOpen || mobileGroupChatOpen) return null;
+  if (!isCompactViewport()) return null;
+  if (getViewportLayoutMode() !== 'tabletLandscape' && (mobileChatOpen || mobileGroupChatOpen)) return null;
   return mobileSection === 'messages' || mobileSection === 'contacts' ? mobileSection : null;
 }
 
 function captureMobileListScrollSnapshot(): MobileListScrollSnapshot | null {
   const section = currentMobileListScrollSection();
-  const container = document.querySelector<HTMLElement>('.mobile-shell > .mobile-list-page');
+  const container = document.querySelector<HTMLElement>('.mobile-shell > .mobile-list-page, .tablet-landscape-list-scroll');
   if (!section || !container) return null;
   return {
     section,
@@ -875,14 +908,14 @@ function clearMobileListScrollRestore(): void {
 function restoreMobileListScrollIfNeeded(): boolean {
   const snapshot = mobileListScrollRestore;
   if (!snapshot || currentMobileListScrollSection() !== snapshot.section) return false;
-  const container = document.querySelector<HTMLElement>('.mobile-shell > .mobile-list-page');
+  const container = document.querySelector<HTMLElement>('.mobile-shell > .mobile-list-page, .tablet-landscape-list-scroll');
   if (!container) return false;
   mobileListScrollRestore = null;
   container.scrollTop = snapshot.top;
   container.scrollLeft = snapshot.left;
   window.setTimeout(() => {
     if (currentMobileListScrollSection() !== snapshot.section) return;
-    const current = document.querySelector<HTMLElement>('.mobile-shell > .mobile-list-page');
+    const current = document.querySelector<HTMLElement>('.mobile-shell > .mobile-list-page, .tablet-landscape-list-scroll');
     if (!current) return;
     current.scrollTop = snapshot.top;
     current.scrollLeft = snapshot.left;
@@ -1035,13 +1068,13 @@ function restoreUiSessionSnapshot(): void {
     if (!parsed || typeof parsed.savedAt !== 'number' || Date.now() - parsed.savedAt > UI_SESSION_MAX_AGE) return;
     if (isSettingsSection(parsed.activeSettingsSection)) activeSettingsSection = parsed.activeSettingsSection;
     if (isMobileSection(parsed.mobileSection)) mobileSection = parsed.mobileSection;
-    settingsOpen = Boolean(parsed.settingsOpen) && !compactMedia.matches;
-    mobileChatOpen = Boolean(parsed.mobileChatOpen) && compactMedia.matches;
-    mobileGroupChatOpen = Boolean(parsed.mobileGroupChatOpen) && compactMedia.matches;
-    desktopGroupChatOpen = Boolean(parsed.desktopGroupChatOpen) && !compactMedia.matches;
+    settingsOpen = Boolean(parsed.settingsOpen) && !isCompactViewport();
+    mobileChatOpen = Boolean(parsed.mobileChatOpen) && isCompactViewport();
+    mobileGroupChatOpen = Boolean(parsed.mobileGroupChatOpen) && isCompactViewport();
+    desktopGroupChatOpen = Boolean(parsed.desktopGroupChatOpen) && !isCompactViewport();
     groupSettingsOpen = Boolean(parsed.groupSettingsOpen);
     groupSettingsMode = parsed.groupSettingsMode === 'edit' ? 'edit' : 'create';
-    mobileSettingsDetail = Boolean(parsed.mobileSettingsDetail) && compactMedia.matches;
+    mobileSettingsDetail = Boolean(parsed.mobileSettingsDetail) && isCompactViewport();
     characterPanelOpen = Boolean(parsed.characterPanelOpen);
     characterPanelPage = parsed.characterPanelPage === 'status'
       ? 'status'
@@ -1236,7 +1269,7 @@ type MomentInputFocusSnapshot = {
 type ChatScrollSettleResult = 'none' | 'restored' | 'bottom' | 'snapshot';
 
 function hasMobileBackTarget(): boolean {
-  return compactMedia.matches && (
+  return isCompactViewport() && (
     Boolean(pendingCardRecognition)
     || Boolean(pendingWorldBundleImport)
     || Boolean(pendingStickerImport)
@@ -1264,12 +1297,12 @@ function hasMobileBackTarget(): boolean {
 }
 
 function pushMobileHistory(layer: MobileHistoryLayer): void {
-  if (!compactMedia.matches) return;
+  if (!isCompactViewport()) return;
   window.history.pushState({ ...(window.history.state ?? {}), tavernSocialLayer: layer }, '');
 }
 
 function clearMobileHistoryLayer(): void {
-  if (!compactMedia.matches || !window.history.state?.tavernSocialLayer) return;
+  if (!isCompactViewport() || !window.history.state?.tavernSocialLayer) return;
   const { tavernSocialLayer: _layer, ...rest } = window.history.state;
   window.history.replaceState(rest, '');
 }
@@ -2488,7 +2521,7 @@ function openPrivateChatByCharacterId(characterId: string, options: { pushHistor
   quotedMessageId = '';
   messageActionId = '';
   requestConversationOpenAtBottom();
-  if (compactMedia.matches) {
+  if (isCompactViewport()) {
     mobileChatOpen = true;
     mobileGroupChatOpen = false;
     resetGroupSettingsState();
@@ -2720,7 +2753,7 @@ function renderPrivateChatTargetSelector(): string {
           <strong>${escapeHtml(selectedName)}</strong>
           <small>选择通讯身份</small>
         </span>
-        <span class="private-chat-identity-chevron" aria-hidden="true">⌄</span>
+        <span class="private-chat-identity-chevron" aria-hidden="true">${icon('chevronDown')}</span>
       </summary>
       <div class="private-chat-identity-menu" role="listbox" aria-label="选择通讯身份">
         ${optionItems.map(option => `
@@ -4398,7 +4431,7 @@ function renderWorldSettingsPanel(): string {
   const world = activeWorld();
   const panelClasses = ['world-gear-panel', worldGearPanelClosing ? 'is-closing' : ''].filter(Boolean).join(' ');
   const panelOpen = worldGearPanelOpen || worldGearPanelClosing;
-  const trigger = compactMedia.matches
+  const trigger = isCompactViewport()
     ? `<button class="icon-button world-gear-trigger" data-open-world-gear type="button" aria-label="涓栫晫涓庢椂闂寸嚎璁剧疆">${icon('settings')}</button>`
     : '';
   return `
@@ -6765,6 +6798,158 @@ function renderMobileSettings(character?: CharacterProfile): string {
   `;
 }
 
+function renderTabletLandscapeNav(): string {
+  return `
+    <nav class="tablet-landscape-nav" aria-label="平板横屏主导航">
+      <div class="tablet-landscape-brand" aria-label="PalTavern">PT</div>
+      <div class="tablet-landscape-nav-items">
+        ${MAIN_NAV_ITEMS.map(({ id, label, iconName }) => {
+          const active = mobileSection === id || (mobileSection === 'groups' && id === 'messages');
+          return `
+            <button class="tablet-landscape-nav-button ${active ? 'is-active' : ''}" data-mobile-section="${id}" type="button" aria-label="${escapeHtml(label)}">
+              <span class="nav-icon">${icon(iconName)}</span>
+              <small>${escapeHtml(label)}</small>
+            </button>
+          `;
+        }).join('')}
+      </div>
+    </nav>
+  `;
+}
+
+function renderTabletLandscapeEmptyDetail(title: string, body: string, action = ''): string {
+  return `
+    <section class="tablet-landscape-empty-detail">
+      <div>
+        <span class="eyebrow">PalTavern</span>
+        <h2>${escapeHtml(title)}</h2>
+        <p>${escapeHtml(body)}</p>
+        ${action}
+      </div>
+    </section>
+  `;
+}
+
+function renderTabletLandscapeInbox(): string {
+  const worldOptions = state.worlds.map(world =>
+    `<option value="${escapeHtml(world.id)}" ${world.id === activeWorld().id ? 'selected' : ''}>${escapeHtml(world.name)}</option>`,
+  ).join('');
+  const detail = mobileGroupChatOpen
+    ? renderGroupChatPage(true)
+    : mobileChatOpen
+      ? renderChatPane(activePrivateChatTarget(), true)
+      : renderTabletLandscapeEmptyDetail('选择一个会话', '从左侧列表打开私聊或群聊，横屏下会在这里继续对话。');
+  return `
+    <section class="tablet-landscape-page tablet-landscape-split tablet-landscape-messages" aria-label="消息">
+      <aside class="tablet-landscape-list tablet-landscape-inbox-list">
+        <header class="tablet-landscape-list-header">
+          ${renderPrivateChatTargetSelector() || `<div><span class="eyebrow">${escapeHtml(activeWorld().name)}</span><h1>消息</h1><p>私聊和群聊会话。</p></div>`}
+          <button class="icon-button inbox-create-group" data-open-groups type="button" aria-label="新建群聊">${icon('add')}</button>
+        </header>
+        <div class="tablet-landscape-list-tools">
+          <label class="world-switcher"><span>当前世界</span><select data-world-select aria-label="选择消息世界">${worldOptions}</select></label>
+          <label class="contact-search">${icon('search')}<input id="contact-search" value="${escapeHtml(contactQuery)}" placeholder="搜索会话" /></label>
+        </div>
+        ${renderFirstRunGuide(firstRunGuideState(true))}
+        <section class="tablet-landscape-list-scroll mobile-conversation-list">${renderInboxConversations()}</section>
+      </aside>
+      <section class="tablet-landscape-detail">${detail}</section>
+    </section>
+  `;
+}
+
+function renderTabletLandscapeContacts(): string {
+  const worldOptions = state.worlds.map(world =>
+    `<option value="${escapeHtml(world.id)}" ${world.id === activeWorld().id ? 'selected' : ''}>${escapeHtml(world.name)}</option>`,
+  ).join('');
+  const detail = mobileChatOpen
+    ? renderChatPane(activePrivateChatTarget(), true)
+    : renderTabletLandscapeEmptyDetail(
+      '选择一个角色',
+      '从左侧联系人打开独立私聊；角色卡写作和导入入口也保留在这里。',
+      state.characters.length === 0
+        ? '<button class="primary" data-open-authoring type="button">写第一张角色卡</button>'
+        : '',
+    );
+  return `
+    <section class="tablet-landscape-page tablet-landscape-split tablet-landscape-contacts" aria-label="角色">
+      <aside class="tablet-landscape-list">
+        <header class="tablet-landscape-list-header">
+          <div><span class="eyebrow">${escapeHtml(activeWorld().name)}</span><h1>角色</h1><p>选择一个角色进入私聊。</p></div>
+        </header>
+        <div class="tablet-landscape-list-tools">
+          <label class="world-switcher"><span>当前世界</span><select data-world-select aria-label="选择联系人世界">${worldOptions}</select></label>
+          <label class="contact-search">${icon('search')}<input id="contact-search" value="${escapeHtml(contactQuery)}" placeholder="搜索角色" /></label>
+          ${renderPrivateChatTargetSelector()}
+          <div class="tablet-landscape-inline-actions">
+            <button class="primary" data-open-authoring type="button">写角色卡</button>
+            <label class="file-button card-import-button">${icon('import')}<span>导入角色卡</span><input class="card-import" type="file" accept="${CARD_IMPORT_ACCEPT}" /></label>
+          </div>
+        </div>
+        <section class="tablet-landscape-list-scroll mobile-conversation-list">${renderContacts('contacts')}</section>
+      </aside>
+      <section class="tablet-landscape-detail">${detail}</section>
+    </section>
+  `;
+}
+
+function renderTabletLandscapeGroups(): string {
+  const worldOptions = state.worlds.map(world =>
+    `<option value="${escapeHtml(world.id)}" ${world.id === activeWorld().id ? 'selected' : ''}>${escapeHtml(world.name)}</option>`,
+  ).join('');
+  const rows = renderGroupConversationRows();
+  const hasGroups = groupChatsForPrivateIdentity().length > 0;
+  const detail = mobileGroupChatOpen
+    ? renderGroupChatPage(true)
+    : renderTabletLandscapeEmptyDetail(
+      hasGroups ? '选择一个群聊' : '还没有群聊',
+      hasGroups ? '从左侧打开群聊，或创建新的多人频道。' : '先创建一个群聊，再把角色拉进来。',
+      '<button class="primary" data-open-group-create type="button">创建群聊</button>',
+    );
+  return `
+    <section class="tablet-landscape-page tablet-landscape-split tablet-landscape-groups" aria-label="群聊">
+      <aside class="tablet-landscape-list">
+        <header class="tablet-landscape-list-header">
+          <div><span class="eyebrow">${escapeHtml(activeWorld().name)}</span><h1>群聊</h1><p>多人频道和群聊设置。</p></div>
+          <button class="icon-button" data-open-group-create type="button" aria-label="创建群聊">${icon('add')}</button>
+        </header>
+        <div class="tablet-landscape-list-tools">
+          <label class="world-switcher"><span>当前世界</span><select data-world-select aria-label="选择群聊世界">${worldOptions}</select></label>
+          <label class="contact-search">${icon('search')}<input id="contact-search" value="${escapeHtml(contactQuery)}" placeholder="搜索群聊或成员" /></label>
+        </div>
+        <section class="tablet-landscape-list-scroll group-list-rows">
+          ${rows || `<div class="list-empty group-list-empty"><strong>${hasGroups ? '没有找到匹配的群聊' : '还没有群聊'}</strong><p>${hasGroups ? '换个关键词试试。' : '先创建一个群聊，再从列表点进去聊天。'}</p></div>`}
+        </section>
+      </aside>
+      <section class="tablet-landscape-detail">${detail}</section>
+      ${mobileGroupChatOpen ? '' : renderGroupSettingsPanel(groupSettingsMode === 'edit' ? activeGroupChat() : undefined)}
+    </section>
+  `;
+}
+
+function renderTabletLandscapeContent(character?: CharacterProfile): string {
+  if (characterPanelOpen && character) {
+    return `<section class="tablet-landscape-page tablet-landscape-single">${renderCharacterPanel(character)}</section>`;
+  }
+  if (mobileSection === 'groups') return renderTabletLandscapeGroups();
+  if (mobileSection === 'contacts') return renderTabletLandscapeContacts();
+  if (mobileSection === 'moments') return `<section class="tablet-landscape-page tablet-landscape-single">${renderMomentsPage(true)}</section>`;
+  if (mobileSection === 'world') return `<section class="tablet-landscape-page tablet-landscape-single">${renderWorldWorkbenchPage(true)}</section>`;
+  if (mobileSection === 'settings') return `<section class="tablet-landscape-page tablet-landscape-single">${renderMobileSettings(character)}</section>`;
+  return renderTabletLandscapeInbox();
+}
+
+function renderTabletLandscape(character?: CharacterProfile): string {
+  return `
+    <div class="tablet-landscape-shell">
+      ${renderTabletLandscapeNav()}
+      <div class="tablet-landscape-content">
+        ${renderTabletLandscapeContent(character)}
+      </div>
+    </div>
+  `;
+}
+
 function renderMobile(character?: CharacterProfile): string {
   const worldOptions = state.worlds.map(world =>
     `<option value="${escapeHtml(world.id)}" ${world.id === activeWorld().id ? 'selected' : ''}>${escapeHtml(world.name)}</option>`,
@@ -6832,21 +7017,15 @@ function renderMobile(character?: CharacterProfile): string {
       ${content}
       ${hideNavigation ? '' : `
         <nav class="bottom-nav" aria-label="主导航">
-          ${[
-            ['messages', '消息', 'message'],
-            ['contacts', '角色', 'contacts'],
-            ['world', '世界', 'world'],
-            ['moments', '动态', 'moments'],
-            ['settings', '设置', 'settings'],
-          ].map(([id, label, iconName]) => {
-            const navSection = id as MobileSection;
+          ${MAIN_NAV_ITEMS.map(({ id, label, iconName }) => {
+            const navSection = id;
             const classes = [
               mobileSection === id || (mobileSection === 'groups' && id === 'messages') ? 'is-active' : '',
               bottomNavPressedSection === navSection ? 'is-pressing' : '',
             ].filter(Boolean).join(' ');
             return `
               <button class="${classes}" data-mobile-section="${id}">
-                <span class="nav-icon">${icon(iconName as IconName)}</span><small>${label}</small>
+                <span class="nav-icon">${icon(iconName)}</span><small>${label}</small>
               </button>
             `;
           }).join('')}
@@ -7214,7 +7393,7 @@ function deleteActiveCharacterFromUi(): void {
       characterPanelPage = 'worldbook';
       scrollCharacterPanelToTopAfterRender = false;
       closeMessageProfilePopover();
-      if (compactMedia.matches) {
+      if (isCompactViewport()) {
         mobileChatOpen = false;
         mobileGroupChatOpen = false;
         resetGroupSettingsState();
@@ -7468,7 +7647,7 @@ function setMomentComposerKeyboardFocus(active: boolean): void {
   const touchLike = window.matchMedia('(pointer: coarse)').matches;
   document.documentElement.classList.toggle(
     'moment-composer-keyboard-focus',
-    active && (compactMedia.matches || touchLike),
+    active && (isCompactViewport() || touchLike),
   );
 }
 
@@ -7692,7 +7871,7 @@ export function render(): void {
     return;
   }
   ensureGroupChatForSpeaker();
-  if (state.activeView === 'groups' && !compactMedia.matches && !activeGroupChat()) {
+  if (state.activeView === 'groups' && !isCompactViewport() && !activeGroupChat()) {
     desktopGroupChatOpen = false;
   }
   if (mobileGroupChatOpen && !activeGroupChat()) mobileGroupChatOpen = false;
@@ -7701,7 +7880,13 @@ export function render(): void {
   const onboardingLayer = welcomeCoverOpen
     ? renderWelcomeCover()
     : renderOnboardingLayer();
-  appRoot.innerHTML = `${compactMedia.matches ? renderMobile(character) : renderDesktop(character)}${renderGlobalStatus()}${onboardingLayer}${renderCardRecognitionDialog()}${renderWorldBundleImportDialog()}${renderStickerImportDialog()}${renderAppDialog()}`;
+  const layoutMode = getViewportLayoutMode();
+  const appShell = layoutMode === 'tabletLandscape'
+    ? renderTabletLandscape(character)
+    : layoutMode === 'mobile'
+      ? renderMobile(character)
+      : renderDesktop(character);
+  appRoot.innerHTML = `${appShell}${renderGlobalStatus()}${onboardingLayer}${renderCardRecognitionDialog()}${renderWorldBundleImportDialog()}${renderStickerImportDialog()}${renderAppDialog()}`;
   applyCharacterAccent(character);
   bindUi();
   bindAppDialog(() => renderWithUiTransition('overlay-out'));
@@ -7737,6 +7922,7 @@ export function render(): void {
   });
   if (!mediaListenerInstalled) {
     compactMedia.addEventListener('change', () => render());
+    tabletLandscapeMedia.addEventListener('change', () => render());
     mediaListenerInstalled = true;
   }
   if (!mobileHistoryInstalled) {
@@ -7889,7 +8075,7 @@ function bindUi(): void {
   };
   document.querySelector<HTMLButtonElement>('#close-moment-composer')?.addEventListener('click', closeMomentComposer);
   document.querySelector<HTMLButtonElement>('#close-moment-composer-backdrop')?.addEventListener('click', closeMomentComposer);
-  if (worldGearPanelOpen && compactMedia.matches) {
+  if (worldGearPanelOpen && isCompactViewport()) {
     document.addEventListener('pointerdown', event => {
       const target = event.target as HTMLElement | null;
       if (target?.closest('.world-gear-panel, [data-open-world-gear]')) return;
@@ -8244,7 +8430,7 @@ function bindUi(): void {
     closeTransientOverlaysForPageChange();
     momentGenerationStatus = '';
     const fromSection = mobileSection;
-    if (compactMedia.matches) {
+    if (isCompactViewport()) {
       mobileSection = 'settings';
       mobileChatOpen = false;
       mobileGroupChatOpen = false;
@@ -8255,7 +8441,7 @@ function bindUi(): void {
     } else {
       settingsOpen = true;
     }
-    renderWithUiTransition(compactMedia.matches ? mainSectionTransition(fromSection, 'settings') : 'detail-in');
+    renderWithUiTransition(isCompactViewport() ? mainSectionTransition(fromSection, 'settings') : 'detail-in');
   };
   document.querySelector<HTMLButtonElement>('#open-settings')?.addEventListener('click', openSettings);
   document.querySelector<HTMLButtonElement>('#open-settings-bottom')?.addEventListener('click', openSettings);
@@ -8492,7 +8678,7 @@ function bindUi(): void {
       const section = button.dataset.settingsSection as SettingsSection | undefined;
       preserveScrollForNextRender();
       if (section) activeSettingsSection = section;
-      if (compactMedia.matches) {
+      if (isCompactViewport()) {
         mobileSettingsDetail = true;
         pushMobileHistory('settings-detail');
       }
@@ -8581,9 +8767,9 @@ function bindUi(): void {
       momentComposerOpen = false;
       momentGenerationStatus = '';
       resetMomentComposerKeyboardState();
-      if (compactMedia.matches) pushMobileHistory('section');
+      if (isCompactViewport()) pushMobileHistory('section');
       saveUiSessionSnapshot();
-      renderWithUiTransition(compactMedia.matches ? mainSectionTransition(fromSection, 'world') : desktopViewTransition(fromView, 'world'));
+      renderWithUiTransition(isCompactViewport() ? mainSectionTransition(fromSection, 'world') : desktopViewTransition(fromView, 'world'));
     });
   });
   document.querySelector<HTMLButtonElement>('[data-mobile-back]')?.addEventListener('click', () => {
@@ -8592,7 +8778,7 @@ function bindUi(): void {
   document.querySelectorAll<HTMLButtonElement>('[data-open-model-settings]').forEach(button => {
     button.addEventListener('click', () => {
       activeSettingsSection = 'model';
-      if (compactMedia.matches) {
+      if (isCompactViewport()) {
         mobileSection = 'settings';
         mobileSettingsDetail = true;
         pushMobileHistory('settings-detail');
@@ -8664,7 +8850,7 @@ function bindUi(): void {
       setActiveView('groups');
       desktopGroupChatOpen = false;
       resetGroupSettingsState();
-      if (compactMedia.matches) {
+      if (isCompactViewport()) {
         mobileSection = 'groups';
         mobileChatOpen = false;
         mobileGroupChatOpen = false;
@@ -8672,7 +8858,7 @@ function bindUi(): void {
         prepareActionExpandFromElement(button);
       }
       saveUiSessionSnapshot();
-      renderWithUiTransition(compactMedia.matches ? 'detail-in' : desktopViewTransition(fromView, 'groups'));
+      renderWithUiTransition(isCompactViewport() ? 'detail-in' : desktopViewTransition(fromView, 'groups'));
     });
   });
   document.querySelectorAll<HTMLButtonElement>('[data-open-group-create]').forEach(button => {
@@ -8682,7 +8868,7 @@ function bindUi(): void {
       groupSettingsOpen = true;
       groupSettingsOpening = true;
       mobileSettingsDetail = false;
-      if (compactMedia.matches) pushMobileHistory('modal');
+      if (isCompactViewport()) pushMobileHistory('modal');
       saveUiSessionSnapshot();
       renderWithUiTransition('overlay-in');
       window.requestAnimationFrame(() => {
@@ -8698,7 +8884,7 @@ function bindUi(): void {
       groupSettingsOpen = true;
       resetGroupSettingsOpening();
       mobileSettingsDetail = false;
-      if (compactMedia.matches) pushMobileHistory('modal');
+      if (isCompactViewport()) pushMobileHistory('modal');
       saveUiSessionSnapshot();
       renderWithUiTransition('overlay-in');
     });
@@ -8736,7 +8922,7 @@ function bindUi(): void {
       setActiveView('groups');
       desktopGroupChatOpen = true;
       resetGroupSettingsState();
-      if (compactMedia.matches) {
+      if (isCompactViewport()) {
         mobileChatOpen = false;
         mobileGroupChatOpen = true;
         pushMobileHistory('chat');
@@ -8757,7 +8943,7 @@ function bindUi(): void {
     saveState();
     setActiveView('groups');
     desktopGroupChatOpen = false;
-    if (compactMedia.matches) {
+    if (isCompactViewport()) {
       mobileSection = 'groups';
       mobileChatOpen = false;
       mobileGroupChatOpen = false;
@@ -8813,7 +8999,7 @@ function bindUi(): void {
       ensureGroupChatForSpeaker();
       setActiveView('groups');
       desktopGroupChatOpen = Boolean(editingChat);
-      if (compactMedia.matches) {
+      if (isCompactViewport()) {
         mobileSection = 'groups';
         mobileChatOpen = false;
         mobileGroupChatOpen = Boolean(editingChat);
@@ -8870,7 +9056,7 @@ function bindUi(): void {
           setActiveView('groups');
           desktopGroupChatOpen = false;
           resetGroupSettingsState();
-          if (compactMedia.matches) {
+          if (isCompactViewport()) {
             mobileSection = 'groups';
             mobileChatOpen = false;
             mobileGroupChatOpen = false;
@@ -9329,7 +9515,7 @@ function bindUi(): void {
   };
   appRoot.querySelectorAll<HTMLElement>('[data-open-world-gear]').forEach(trigger => {
     trigger.addEventListener('click', event => {
-      if (!compactMedia.matches) {
+      if (!isCompactViewport()) {
         window.setTimeout(() => {
           worldGearPanelOpen = Boolean(trigger.closest<HTMLDetailsElement>('.world-gear-panel')?.open);
           saveUiSessionSnapshot({ captureDom: false });
@@ -9343,7 +9529,7 @@ function bindUi(): void {
   });
   appRoot.querySelector<HTMLDetailsElement>('.world-gear-panel')?.addEventListener('toggle', event => {
     const details = event.currentTarget as HTMLDetailsElement;
-    if (!compactMedia.matches) {
+    if (!isCompactViewport()) {
       worldGearPanelOpen = details.open;
       saveUiSessionSnapshot({ captureDom: false });
       return;
@@ -10334,7 +10520,7 @@ function bindUi(): void {
     const shouldKeepKeyboard = Boolean(
       input
         && (
-          compactMedia.matches
+          isCompactViewport()
           || document.documentElement.classList.contains('keyboard-open')
           || document.activeElement === input
         ),
@@ -10965,7 +11151,7 @@ function bindUi(): void {
       const popoverWidth = 280;
       messageProfileCharacterId = button.dataset.messageProfileCharacter ?? '';
       messageProfileAnchor = {
-        left: compactMedia.matches
+        left: isCompactViewport()
           ? Math.min(Math.max(12, rect.left), window.innerWidth - popoverWidth - 12)
           : Math.min(rect.right + 10, window.innerWidth - popoverWidth - 12),
         top: Math.min(Math.max(76, rect.top - 8), window.innerHeight - 220),

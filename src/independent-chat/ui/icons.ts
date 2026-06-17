@@ -1,4 +1,4 @@
-export type IconName = 'message' | 'contacts' | 'world' | 'moments' | 'events' | 'timeline' | 'settings' | 'search' | 'send' | 'refresh' | 'import' | 'sticker' | 'add' | 'back';
+export type IconName = 'message' | 'contacts' | 'world' | 'moments' | 'events' | 'timeline' | 'settings' | 'search' | 'send' | 'refresh' | 'import' | 'sticker' | 'add' | 'back' | 'chevronDown';
 
 const ICON_PATHS: Record<IconName, string> = {
   message: '<path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/><path d="M8 9h8M8 13h5"/>',
@@ -15,6 +15,7 @@ const ICON_PATHS: Record<IconName, string> = {
   sticker: '<rect x="3" y="3" width="18" height="18" rx="5"/><path d="M8 10h.01M16 10h.01M8.5 15a5 5 0 0 0 7 0"/><path d="M15 21a6 6 0 0 1 6-6"/>',
   add: '<path d="M12 5v14M5 12h14"/>',
   back: '<path d="M15 18 9 12l6-6"/><path d="M9 12h12"/>',
+  chevronDown: '<path d="m6 9 6 6 6-6"/>',
 };
 
 export function icon(name: IconName): string {
