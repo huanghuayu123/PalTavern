@@ -202,13 +202,21 @@ if (
   throw new Error('Context preview should allow users to remove a mistaken timeline entry from model context.');
 }
 
-const groupStackBlock = styleSource.match(/\.group-conversation-row\s+\.group-avatar-stack\s*\{[\s\S]*?\}/)?.[0] ?? '';
+const groupStackBlock = styleSource.match(/\.group-avatar-stack\s*\{[\s\S]*?\}/)?.[0] ?? '';
+const groupStackAvatarBlock = styleSource.match(/\.group-avatar-stack\s+\.avatar\s*\{[\s\S]*?\}/)?.[0] ?? '';
+const groupConversationGridBlock = styleSource.match(/\.group-list-rows\s+\.group-conversation-row,\s*\.contact-list\s+\.group-conversation-row,\s*\.mobile-conversation-list\s+\.group-conversation-row\s*\{[\s\S]*?\}/)?.[0] ?? '';
 if (
-  !groupStackBlock.includes('width: 72px')
-  || !groupStackBlock.includes('min-width: 72px')
-  || !groupStackBlock.includes('overflow: visible')
+  !appSource.includes('chat.participantCharacterIds')
+  || !appSource.includes('.slice(0, 4)')
+  || !appSource.includes('data-group-avatar-count')
+  || !groupStackBlock.includes('display: grid')
+  || !groupStackBlock.includes('grid-template-columns: repeat(2, minmax(0, 1fr))')
+  || !groupStackBlock.includes('grid-template-rows: repeat(2, minmax(0, 1fr))')
+  || !groupStackBlock.includes('overflow: hidden')
+  || !groupConversationGridBlock.includes('grid-template-columns: 48px minmax(0, 1fr) auto')
+  || groupStackAvatarBlock.includes('margin-left')
 ) {
-  throw new Error('Group conversation rows should reserve enough fixed avatar-stack width so names never overlap.');
+  throw new Error('Group avatars should render as a fixed 2x2 collage of the first four invited members without overlapping text.');
 }
 
 const authoringProgressBlocks = Array.from(styleSource.matchAll(/\.authoring-progress\s*\{[^}]*\}/g), (match) => match[0]);
@@ -353,6 +361,20 @@ if (
   || !styleSource.includes('.bottom-nav button.is-active .nav-icon')
 ) {
   throw new Error('Bottom nav should use five attached square tabs with smooth raised and pressed states.');
+}
+
+const bottomNavVisualShellBlock = styleSource.match(/\/\* Bottom nav visual shell guard[\s\S]*?@keyframes bottomNavPressThenLift/)?.[0] ?? '';
+if (
+  !bottomNavVisualShellBlock.includes('background: transparent')
+  || !bottomNavVisualShellBlock.includes('border: 0')
+  || !bottomNavVisualShellBlock.includes('box-shadow: none')
+  || !bottomNavVisualShellBlock.includes('backdrop-filter: none')
+  || !bottomNavVisualShellBlock.includes('padding: 0 0 max(0px, env(safe-area-inset-bottom))')
+  || bottomNavVisualShellBlock.includes('border-right-width: 1px')
+  || bottomNavVisualShellBlock.includes('border-top: 1px')
+  || bottomNavVisualShellBlock.includes('0 -10px 22px')
+) {
+  throw new Error('Bottom nav shell should not paint an extra visual wrapper outside the clickable button tabs.');
 }
 
 console.log(JSON.stringify({

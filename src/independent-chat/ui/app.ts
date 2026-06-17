@@ -2371,12 +2371,15 @@ function ensureGroupChatForSpeaker(): void {
 }
 
 function renderGroupAvatarStack(chat: GroupChatProfile): string {
-  const participants = groupParticipants(chat).slice(0, 3);
+  const participants = chat.participantCharacterIds
+    .map(id => state.characters.find(character => character.id === id && character.worldId === chat.worldId))
+    .filter((character): character is CharacterProfile => Boolean(character))
+    .slice(0, 4);
   if (participants.length === 0) {
     return '<span class="group-avatar-stack"><span class="avatar group-avatar-fallback">群</span></span>';
   }
   return `
-    <span class="group-avatar-stack" aria-hidden="true">
+    <span class="group-avatar-stack" aria-hidden="true" data-group-avatar-count="${participants.length}">
       ${participants.map(character => `<span class="avatar"${avatarToneAttribute(character)}>${renderAvatar(character)}</span>`).join('')}
     </span>
   `;
