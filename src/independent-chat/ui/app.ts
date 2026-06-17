@@ -7889,7 +7889,7 @@ function bindUi(): void {
   if (worldGearPanelOpen && compactMedia.matches) {
     document.addEventListener('pointerdown', event => {
       const target = event.target as HTMLElement | null;
-      if (target?.closest('.world-gear-panel')) return;
+      if (target?.closest('.world-gear-panel, [data-open-world-gear]')) return;
       closeWorldGearPanel(true);
     }, { capture: true, once: true });
   }
@@ -9311,7 +9311,7 @@ function bindUi(): void {
   });
   const toggleWorldGearPanel = (trigger: HTMLElement): void => {
     document.querySelectorAll('.pt-action-expand-layer').forEach(element => element.remove());
-    const nextOpen = !worldGearPanelOpen;
+    const nextOpen = !(worldGearPanelOpen || worldGearPanelClosing);
     if (!nextOpen) {
       closeWorldGearPanel(true);
       return;
@@ -9324,25 +9324,19 @@ function bindUi(): void {
     saveUiSessionSnapshot({ captureDom: false });
     renderWithUiTransition('overlay-in');
   };
-  appRoot.querySelector<HTMLElement>('[data-open-world-gear]')?.addEventListener('pointerdown', event => {
-    if (!compactMedia.matches) return;
-    const trigger = event.currentTarget as HTMLElement;
-    if (trigger.tagName.toLowerCase() !== 'summary') return;
-    event.preventDefault();
-    event.stopPropagation();
-    toggleWorldGearPanel(trigger);
-  }, { capture: true });
-  appRoot.querySelector<HTMLElement>('[data-open-world-gear]')?.addEventListener('click', event => {
-    const trigger = event.currentTarget as HTMLElement;
-    if (!compactMedia.matches) {
-      window.setTimeout(() => {
-        worldGearPanelOpen = Boolean(trigger.closest<HTMLDetailsElement>('.world-gear-panel')?.open);
-        saveUiSessionSnapshot({ captureDom: false });
-      }, 0);
-      return;
-    }
-    event.preventDefault();
-    toggleWorldGearPanel(trigger);
+  appRoot.querySelectorAll<HTMLElement>('[data-open-world-gear]').forEach(trigger => {
+    trigger.addEventListener('click', event => {
+      if (!compactMedia.matches) {
+        window.setTimeout(() => {
+          worldGearPanelOpen = Boolean(trigger.closest<HTMLDetailsElement>('.world-gear-panel')?.open);
+          saveUiSessionSnapshot({ captureDom: false });
+        }, 0);
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      toggleWorldGearPanel(trigger);
+    });
   });
   appRoot.querySelector<HTMLDetailsElement>('.world-gear-panel')?.addEventListener('toggle', event => {
     const details = event.currentTarget as HTMLDetailsElement;
