@@ -300,6 +300,7 @@ const androidMainActivitySource = fs.readFileSync(path.join(
   'android/app/src/main/java/com/tavernsocial/app/MainActivity.java',
 ), 'utf8');
 const worldDialogueBody = functionBody(appSource, 'renderWorldDialogueStream');
+const worldRpMessageActionsBlock = functionBody(appSource, 'renderWorldRpMessageActions');
 const worldComposerBindingBody = functionBody(appSource, 'bindUi');
 const chatPaneRenderBlock = functionBody(appSource, 'renderChatPane');
 const renderMessagesBlock = functionBody(appSource, 'renderMessages');
@@ -400,16 +401,18 @@ if (
 }
 if (
   !appSource.includes('renderPrivateChatTargetSelector')
-  || !appSource.includes('id="private-chat-target-select"')
+  || !appSource.includes('data-private-chat-identity-option')
   || !appSource.includes('openPrivateChatByCharacterId')
-  || !appSource.includes("document.querySelector<HTMLSelectElement>('#private-chat-target-select')")
+  || !appSource.includes("document.querySelectorAll<HTMLButtonElement>('[data-private-chat-identity-option]')")
   || !stateSource.includes('communicationIdentityByWorldId')
   || !stateSource.includes('function normalizeCommunicationIdentityByWorldId')
   || !stateSource.includes('export function communicationActorId')
   || !stateSource.includes('export function communicationActor')
   || !stateSource.includes('export function setCommunicationActor')
-  || !appSource.includes('setCommunicationActor(activeWorld().id, selectedId)')
+  || !appSource.includes("setCommunicationActor(activeWorld().id, selectedId || 'user')")
   || !appSource.includes('closeMessageDetailAfterCommunicationIdentityChange')
+  || !appSource.includes('selectPrivateChatIdentity(selectedId)')
+  || !appSource.includes("'.private-chat-identity-select[open]'")
   || !privateTargetSelectorBlock.includes('communicationActorId(')
   || privateTargetSelectorBlock.includes('privateChatSpeakerId')
   || appSource.includes('let privateChatSpeakerId')
@@ -468,13 +471,13 @@ if (
   throw new Error('Mobile inbox should fold private identity switching into the top-left selector instead of a separate section control.');
 }
 if (
-  !appSource.includes('function renderMobileCharacterStoryStrip')
-  || !appSource.includes('${renderMobileCharacterStoryStrip()}')
+  appSource.includes('function renderMobileCharacterStoryStrip')
+  || appSource.includes('${renderMobileCharacterStoryStrip()}')
   || appSource.includes('mobile-inbox-summary')
   || stylesSource.includes('.mobile-inbox-summary')
   || stylesSource.includes('.inbox-orbit')
 ) {
-  throw new Error('Mobile inbox should match the lightweight prototype: top identity selector, character story strip, and private messages without the old daily-brief panel.');
+  throw new Error('Mobile inbox should keep the top identity selector and private messages without restoring the old story strip or daily-brief panel.');
 }
 if (
   !appSource.includes('activeWorldPromptPresetId')
@@ -1748,6 +1751,9 @@ const currentScrollKeyBlock = functionBody(uiSource, 'currentScrollKey');
 const compactMediaDeclaration = uiSource
   .split('const compactMedia = window.matchMedia(')[1]
   ?.split(');')[0] ?? '';
+const mainNavItemsBlock = uiSource
+  .split('const MAIN_NAV_ITEMS')[1]
+  ?.split('const BOTTOM_NAV_PRESS_MS')[0] ?? '';
 const openSettingsBlock = uiSource
   .split('const openSettings = () => {')[1]
   ?.split("document.querySelector<HTMLButtonElement>('#open-settings')")[0] ?? '';
@@ -1898,7 +1904,7 @@ const scrollMessagesToBottomBlock = functionBody(uiSource, 'scrollMessagesToBott
 const renderBlock = uiSource
   .split('export function render(): void')[1]
   ?.split('export function renderWhenChatInputIdle')[0] ?? '';
-const setRevealRingBlock = functionBody(transitionsSource, 'setRevealRing');
+const setRevealMaskBlock = functionBody(transitionsSource, 'setRevealMask');
 const renderSettingsContentBlock = functionBody(uiSource, 'renderSettingsContent');
 const renderDesktopSettingsPageBlock = uiSource
   .split('function renderDesktopSettingsPage')[1]
@@ -1913,6 +1919,12 @@ const renderCharacterPanelBlock = uiSource
 const renderDesktopBlock = uiSource
   .split('function renderDesktop(character?: CharacterProfile)')[1]
   ?.split('function renderMobileSettings')[0] ?? '';
+const renderTabletLandscapeBlock = sourceSlice(
+  uiSource,
+  'function renderTabletLandscape(character?: CharacterProfile)',
+  'function renderMobile(character?: CharacterProfile)',
+);
+const renderTabletLandscapeContentBlock = functionBody(uiSource, 'renderTabletLandscapeContent');
 const renderMobileBlock = uiSource
   .split('function renderMobile(character?: CharacterProfile)')[1]
   ?.split('function modelIsReady')[0] ?? '';
@@ -2087,7 +2099,7 @@ if (
 if (
   !uiSource.includes('function requestMessageComposerFocusAfterSubmit')
   || !uiSource.includes('function requestGroupComposerFocusAfterSubmit')
-  || !composerSubmitBlock.includes('compactMedia.matches')
+  || !composerSubmitBlock.includes('isCompactViewport()')
   || !composerSubmitBlock.includes("requestMessageComposerFocusAfterSubmit(character?.id ?? '');")
   || !groupComposerSubmitBlock.includes('requestGroupComposerFocusAfterSubmit(chat.id);')
   || !uiSource.includes('COMPOSER_FOCUS_KEEPALIVE_MS')
@@ -2245,12 +2257,42 @@ if (
 }
 if (
   !compactMediaDeclaration.includes('(max-height: 560px) and (orientation: landscape)')
+  || !uiSource.includes("type LayoutMode = 'mobile' | 'tabletLandscape' | 'desktop'")
+  || !uiSource.includes('const tabletLandscapeMedia = window.matchMedia')
+  || !uiSource.includes('(min-width: 900px)')
+  || !uiSource.includes('(min-height: 600px)')
+  || !uiSource.includes('(max-width: 1368px)')
+  || !uiSource.includes('function hasTabletTouchInput(): boolean')
+  || !uiSource.includes('navigatorInfo?.maxTouchPoints')
+  || !uiSource.includes('/Android|iPad|Tablet/i.test(userAgent)')
+  || !uiSource.includes('/Macintosh/i.test(userAgent) && touchPoints > 1')
+  || !uiSource.includes('function isTabletLandscapeViewport(): boolean')
+  || !uiSource.includes('tabletLandscapeMedia.matches && hasTabletTouchInput()')
+  || !uiSource.includes('function isCompactViewport(): boolean')
+  || !uiSource.includes('function getViewportLayoutMode(): LayoutMode')
+  || !uiSource.includes("layoutMode === 'tabletLandscape'")
+  || !uiSource.includes('tabletLandscapeMedia.addEventListener')
   || !styleSource.includes('@media (max-height: 560px) and (orientation: landscape)')
   || !styleSource.includes('.mobile-chat-detail .chat-header')
   || !styleSource.includes('.mobile-chat-detail .chat-status-expanded')
   || !styleSource.includes('.mobile-chat-detail .composer')
 ) {
-  throw new Error('Short landscape screens should use the mobile shell and compact chat chrome so the conversation remains usable.');
+  throw new Error('Short phone landscape should stay compact while tablet landscape uses its own layout mode.');
+}
+if (
+  !renderTabletLandscapeBlock.includes('tablet-landscape-shell')
+  || !renderTabletLandscapeBlock.includes('renderTabletLandscapeNav()')
+  || !renderTabletLandscapeBlock.includes('renderTabletLandscapeContent(character)')
+  || renderTabletLandscapeBlock.includes('bottom-nav')
+  || !renderTabletLandscapeContentBlock.includes('renderTabletLandscapeInbox()')
+  || !renderTabletLandscapeContentBlock.includes('renderTabletLandscapeContacts()')
+  || !renderTabletLandscapeContentBlock.includes('renderTabletLandscapeGroups()')
+  || !styleSource.includes('.tablet-landscape-shell')
+  || !styleSource.includes('.tablet-landscape-nav')
+  || !styleSource.includes('grid-template-columns: clamp(300px, 34vw, 390px) minmax(0, 1fr)')
+  || !styleSource.includes('.tablet-landscape-detail .header-back')
+) {
+  throw new Error('Tablet landscape should render a dedicated left-rail shell with split chat surfaces and no bottom nav.');
 }
 if (
   currentScrollContainerBlock.indexOf('settingsOpen') < 0
@@ -2533,9 +2575,9 @@ if (
   || mobileGroupListBackButtonBlock.includes("mobileSection = 'messages';")
   || !mobileBackButtonBlock.includes('backMobileLayer();')
   || !mobileGroupBackButtonBlock.includes('backMobileLayer();')
-  || !mobileGroupListBackButtonBlock.includes('backMobileLayer();')
+  || !mobileGroupListBackButtonBlock.includes('closeMobileGroupListWithTransition();')
 ) {
-  throw new Error('Mobile navigation should push section history and route visible back buttons through the single-layer back handler.');
+  throw new Error('Mobile navigation should push section history and keep visible back buttons on the intended back/close path.');
 }
 if (
   groupChatRowOpenBlock.includes("mobileSection = 'groups';")
@@ -2676,7 +2718,7 @@ if (
 if (
   !cssBlock('.moments-tutorial-overlay').includes('z-index: calc(var(--z-modal) + 30)')
   || !openMomentsTutorialHandlerBlock.includes('momentComposerOpen = false;')
-  || !openMomentsTutorialHandlerBlock.includes('setMomentComposerKeyboardFocus(false);')
+  || !openMomentsTutorialHandlerBlock.includes('resetMomentComposerKeyboardState();')
   || !openMomentComposerHandlerBlock.includes('momentsTutorialOpen = false;')
 ) {
   throw new Error('Moments tutorial should sit above and dismiss the publish moment floating window.');
@@ -2688,13 +2730,15 @@ if (
   || !desktopViewControlsBlock.includes('>世界<')
   || desktopViewControlsBlock.includes('data-view="events"')
   || desktopViewControlsBlock.includes('data-view="timeline"')
-  || !mobileBottomNavBlock.includes("['messages', '消息'")
-  || !mobileBottomNavBlock.includes("['contacts', '角色'")
-  || !mobileBottomNavBlock.includes("['world', '世界'")
-  || !mobileBottomNavBlock.includes("['moments', '动态'")
-  || !mobileBottomNavBlock.includes("['settings', '设置'")
-  || mobileBottomNavBlock.includes("['events'")
-  || mobileBottomNavBlock.includes("['timeline'")
+  || !mainNavItemsBlock.includes("id: 'messages', label: '消息'")
+  || !mainNavItemsBlock.includes("id: 'contacts', label: '角色'")
+  || !mainNavItemsBlock.includes("id: 'world', label: '世界'")
+  || !mainNavItemsBlock.includes("id: 'moments', label: '动态'")
+  || !mainNavItemsBlock.includes("id: 'settings', label: '设置'")
+  || mainNavItemsBlock.includes("id: 'events'")
+  || mainNavItemsBlock.includes("id: 'timeline'")
+  || !mobileBottomNavBlock.includes('MAIN_NAV_ITEMS.map')
+  || !renderTabletLandscapeBlock.includes('renderTabletLandscapeNav()')
 ) {
   throw new Error('Main navigation should expose messages, characters, world, moments, and settings only.');
 }
@@ -2711,7 +2755,7 @@ if (
   throw new Error('Mobile bottom navigation should lock five equal slots and centered icon/label alignment.');
 }
 if (
-  !transitionsSource.includes("export type UiTransitionKind = 'main-forward' | 'main-back' | 'detail-in' | 'detail-out' | 'overlay-in' | 'overlay-out' | 'quiet'")
+  !transitionsSource.includes("export type UiTransitionKind = 'main-forward' | 'main-back' | 'world-forward' | 'world-back' | 'detail-in' | 'detail-out' | 'overlay-in' | 'overlay-out' | 'quiet'")
   || !transitionsSource.includes('startViewTransition')
   || !transitionsSource.includes("setAttribute('data-ui-transition'")
   || uiSource.includes('function startViewTransitionRender')
@@ -2780,14 +2824,14 @@ if (
   || !transitionsSource.includes('window.setTimeout(() => callback(Date.now()), 16)')
   || !transitionsSource.includes('radial-gradient(circle at')
   || !transitionsSource.includes('data-character-id')
-  || !styleSource.includes('--fade-dur: 160ms')
-  || !styleSource.includes('--fade-out-dur: 80ms')
-  || !styleSource.includes('--block-gap: 8ms')
+  || !styleSource.includes('--fade-dur: 260ms')
+  || !styleSource.includes('--fade-out-dur: 220ms')
+  || !styleSource.includes('--block-gap: 24ms')
   || !styleSource.includes('@keyframes referencePageEnter')
   || !styleSource.includes('@keyframes referencePageExit')
-  || !styleSource.includes('[data-ui-transition-phase="enter"] .mobile-page:not(.is-exiting) > *:not(.bottom-nav):not(.moment-compose-fab)')
-  || !styleSource.includes('[data-ui-transition-phase="enter"] .moments-page:not(.is-exiting) > *:not(.bottom-nav):not(.moment-compose-fab)')
-  || !styleSource.includes('[data-ui-transition-phase="exit"] .is-exiting.mobile-page > *:not(.bottom-nav):not(.moment-compose-fab)')
+  || !styleSource.includes('.ui-fallback-transition[data-ui-transition-phase="enter"][data-ui-transition^="main-"] .mobile-page:not(.is-exiting) > *:not(.bottom-nav):not(.moment-compose-fab)')
+  || !styleSource.includes('.ui-fallback-transition[data-ui-transition-phase="enter"][data-ui-transition^="main-"] .moments-page:not(.is-exiting) > *:not(.bottom-nav):not(.moments-publisher)')
+  || !styleSource.includes('.ui-fallback-transition[data-ui-transition-phase="exit"][data-ui-transition^="main-"] .is-exiting.mobile-page > *:not(.bottom-nav):not(.moment-compose-fab)')
   || styleSource.includes('paltavern-page-enter-forward')
   || styleSource.includes('--ui-transition-duration')
   || styleSource.includes('::view-transition-old(root)')
@@ -2795,9 +2839,9 @@ if (
   || !styleSource.includes('@keyframes slideDownOut')
   || styleSource.includes('.pt-transition-exit-layer')
   || !styleSource.includes('.bottom-nav button:active')
-  || !styleSource.includes('transform: scale(0.88)')
+  || !styleSource.includes('transform: translateY(3px) scale(0.975)')
   || !styleSource.includes('.pt-chat-reveal-layer')
-  || !styleSource.includes('.pt-chat-reveal-ring')
+  || !styleSource.includes('.pt-chat-reveal-snapshot')
   || !transitionsSource.includes('let activeRevealCancel')
   || !transitionsSource.includes('cancelActiveChatReveal()')
   || !transitionsSource.includes('chatRevealAnimating = false')
@@ -2805,7 +2849,7 @@ if (
   throw new Error('Current motion should replicate the reference APK and let a back gesture take over an unfinished chat reveal.');
 }
 if (
-  !styleSource.includes('html[data-ui-transition] .moment-compose-fab')
+  !styleSource.includes('html[data-ui-transition]:not([data-ui-transition^="main-"]) .moment-compose-fab')
   || !styleSource.includes('transition: none !important;')
   || !styleSource.includes('transform: none !important;')
   || !styleSource.includes('will-change: auto;')
@@ -2813,12 +2857,13 @@ if (
   throw new Error('Moment compose FAB should stay visually pinned during tab transition motion.');
 }
 if (
-  !setRevealRingBlock.includes('--reveal-scale')
-  || setRevealRingBlock.includes('--reveal-size')
+  !setRevealMaskBlock.includes('maskImage')
+  || !setRevealMaskBlock.includes('radial-gradient(circle at')
+  || setRevealMaskBlock.includes('--reveal-size')
   || styleSource.includes('will-change: width, height, opacity')
-  || !styleSource.includes('transform: translate(-50%, -50%) scale(var(--reveal-scale, 1))')
+  || !styleSource.includes('will-change: opacity, mask-image, -webkit-mask-image')
 ) {
-  throw new Error('Chat avatar reveal should animate ring scale instead of width/height layout on every frame.');
+  throw new Error('Chat avatar reveal should animate a mask radius instead of width/height layout on every frame.');
 }
 if (
   !iconsSource.includes('export type IconName')
@@ -2951,7 +2996,7 @@ if (
   || !styleSource.includes('.moments-scroll,')
   || !styleSource.includes('overflow-x: hidden')
   || !uiSource.includes('function closeTransientOverlaysForPageChange')
-  || !uiSource.includes("'.world-gear-panel[open], .world-persona-select[open]'")
+  || !uiSource.includes("'.world-gear-panel[open], .world-persona-select[open], .private-chat-identity-select[open]'")
 ) {
   throw new Error('Mobile world topbar should stay one-row, with an avatar identity, full-page world settings, and no horizontal overflow.');
 }
@@ -3423,7 +3468,7 @@ if (
   throw new Error('World tab should list daily/event entries first and keep the memory drawer out of event detail.');
 }
 if (
-  !worldDialogueBody.includes('data-edit-world-rp-message')
+  !worldRpMessageActionsBlock.includes('data-edit-world-rp-message')
   || !worldWorkbenchBlock.includes('renderWorldRpMessageEditDialog')
   || !appSource.includes('id="world-rp-message-edit-input"')
   || !appSource.includes('editWorldEventRpMessage')
