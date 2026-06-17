@@ -634,8 +634,8 @@ let scrollCharacterPanelToTopAfterRender = false;
 
 const SETTINGS_SECTIONS: SettingsSection[] = ['world', 'drafts', 'stickers', 'model', 'prompts', 'relationship', 'interactions', 'proactive', 'chat', 'notifications', 'data'];
 const MOBILE_SECTIONS: MobileSection[] = ['messages', 'contacts', 'groups', 'world', 'moments', 'settings'];
-const BOTTOM_NAV_PRESS_MS = 120;
-const BOTTOM_NAV_LIFT_MS = 460;
+const BOTTOM_NAV_PRESS_MS = 100;
+const BOTTOM_NAV_LIFT_MS = 240;
 
 function isSettingsSection(value: unknown): value is SettingsSection {
   return typeof value === 'string' && SETTINGS_SECTIONS.includes(value as SettingsSection);
