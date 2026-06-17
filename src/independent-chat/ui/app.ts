@@ -474,6 +474,10 @@ let globalStatusHideTimer: number | undefined;
 let settingsOpen = false;
 let activeSettingsSection: SettingsSection = 'world';
 let mobileSection: MobileSection = 'messages';
+let bottomNavPressedSection: MobileSection | '' = '';
+let bottomNavLiftSection: MobileSection | '' = '';
+let bottomNavPressTimer: number | undefined;
+let bottomNavLiftTimer: number | undefined;
 let mobileChatOpen = false;
 let mobileGroupChatOpen = false;
 let mobileGroupListClosing = false;
@@ -619,6 +623,7 @@ let mobileHistoryInstalled = false;
 let mobileNativeBackInstalled = false;
 let visualViewportListenerInstalled = false;
 let uiSessionPersistenceInstalled = false;
+let privateIdentityMenuOutsideListenerInstalled = false;
 let uiSessionSaveTimer: number | undefined;
 let pendingIdleRender = false;
 let pendingIdleInput: HTMLTextAreaElement | HTMLInputElement | null = null;
@@ -629,6 +634,8 @@ let scrollCharacterPanelToTopAfterRender = false;
 
 const SETTINGS_SECTIONS: SettingsSection[] = ['world', 'drafts', 'stickers', 'model', 'prompts', 'relationship', 'interactions', 'proactive', 'chat', 'notifications', 'data'];
 const MOBILE_SECTIONS: MobileSection[] = ['messages', 'contacts', 'groups', 'world', 'moments', 'settings'];
+const BOTTOM_NAV_PRESS_MS = 120;
+const BOTTOM_NAV_LIFT_MS = 460;
 
 function isSettingsSection(value: unknown): value is SettingsSection {
   return typeof value === 'string' && SETTINGS_SECTIONS.includes(value as SettingsSection);
@@ -641,6 +648,52 @@ function isMobileSection(value: unknown): value is MobileSection {
 function visibleMobileSection(): MobileSection {
   const activeSection = document.querySelector<HTMLButtonElement>('.bottom-nav button.is-active')?.dataset.mobileSection;
   return isMobileSection(activeSection) ? activeSection : mobileSection;
+}
+
+function clearBottomNavMotionTimers(): void {
+  if (bottomNavPressTimer !== undefined) {
+    window.clearTimeout(bottomNavPressTimer);
+    bottomNavPressTimer = undefined;
+  }
+  if (bottomNavLiftTimer !== undefined) {
+    window.clearTimeout(bottomNavLiftTimer);
+    bottomNavLiftTimer = undefined;
+  }
+}
+
+function clearBottomNavMotionClasses(): void {
+  document.querySelectorAll<HTMLButtonElement>('.bottom-nav button[data-mobile-section]').forEach(button => {
+    button.classList.remove('is-pressing', 'is-lifting');
+  });
+}
+
+function clearBottomNavMotion(renderAfter = false): void {
+  clearBottomNavMotionTimers();
+  const hadMotion = Boolean(bottomNavPressedSection || bottomNavLiftSection);
+  bottomNavPressedSection = '';
+  bottomNavLiftSection = '';
+  clearBottomNavMotionClasses();
+  if (renderAfter && hadMotion) render();
+}
+
+function startBottomNavLiftMotion(section: MobileSection): void {
+  if (bottomNavLiftTimer !== undefined) {
+    window.clearTimeout(bottomNavLiftTimer);
+    bottomNavLiftTimer = undefined;
+  }
+  bottomNavPressedSection = '';
+  bottomNavLiftSection = section;
+  clearBottomNavMotionClasses();
+  const button = document.querySelector<HTMLButtonElement>(`.bottom-nav button[data-mobile-section="${section}"]`);
+  if (!button) return;
+  void button.offsetWidth;
+  button.classList.add('is-lifting');
+  bottomNavLiftTimer = window.setTimeout(() => {
+    bottomNavLiftTimer = undefined;
+    if (bottomNavLiftSection !== section) return;
+    bottomNavLiftSection = '';
+    clearBottomNavMotionClasses();
+  }, BOTTOM_NAV_LIFT_MS);
 }
 
 function nonEmptyStringMap(value: unknown): Record<string, string> {
@@ -1945,6 +1998,22 @@ function closeMessageDetailAfterCommunicationIdentityChange(): void {
   clearVisibleStatus();
 }
 
+function selectPrivateChatIdentity(selectedId: string): void {
+  captureVisibleDraftsFromDom();
+  const nextActorId = setCommunicationActor(activeWorld().id, selectedId || 'user');
+  closeMessageDetailAfterCommunicationIdentityChange();
+  ensureCommunicationIdentityViewState();
+  ensureGroupChatForSpeaker();
+  saveUiSessionSnapshot({ captureDom: false });
+  const nextCharacter = state.characters.find(character => character.id === nextActorId);
+  setStatusText(nextCharacter ? `已切换为 ${nextCharacter.name} 通讯身份。` : '已切换为 user 通讯身份。');
+  renderWithUiTransition('detail-out');
+  const character = activePrivateChatTarget();
+  if (character && !privateChatIdentityCharacter()) {
+    void generateOpeningMessage(character, render, privateConversationActorId(character));
+  }
+}
+
 function stickerManagerCharacter(): CharacterProfile | undefined {
   const characters = state.characters.filter(character => character.worldId === activeWorld().id);
   const selected = characters.find(character => character.id === stickerManagerCharacterId);
@@ -2626,19 +2695,49 @@ function renderPrivateChatTargetSelector(): string {
     : 'user';
   const selectedCharacter = characters.find(character => character.id === selectedId);
   const selectedName = selectedCharacter?.name ?? (state.userName.trim() || '我');
+  const optionItems = [
+    {
+      id: 'user',
+      name: state.userName.trim() || '我',
+      avatar: renderUserAvatar(state.userName),
+      character: undefined,
+    },
+    ...characters.map(character => ({
+      id: character.id,
+      name: character.name,
+      avatar: renderAvatar(character),
+      character,
+    })),
+  ];
   return `
-    <label class="private-chat-identity-select">
-      <span class="avatar private-chat-identity-avatar"${avatarToneAttribute(selectedCharacter)}>${selectedCharacter ? renderAvatar(selectedCharacter) : renderUserAvatar(state.userName)}</span>
-      <span class="private-chat-identity-copy">
-        <strong>${escapeHtml(selectedName)}</strong>
-        <small>选择通讯身份</small>
-      </span>
-      <select id="private-chat-target-select" aria-label="选择通讯身份">
-        <option value="user" ${selectedId === 'user' ? 'selected' : ''}>${escapeHtml(state.userName.trim() || '我')}</option>
-        ${characters.map(character => `<option value="${escapeHtml(character.id)}" ${selectedId === character.id ? 'selected' : ''}>${escapeHtml(character.name)}</option>`).join('')}
-      </select>
-      <span class="private-chat-identity-chevron">⌄</span>
-    </label>
+    <details class="private-chat-identity-select">
+      <summary aria-label="选择通讯身份">
+        <span class="avatar private-chat-identity-avatar"${avatarToneAttribute(selectedCharacter)}>${selectedCharacter ? renderAvatar(selectedCharacter) : renderUserAvatar(state.userName)}</span>
+        <span class="private-chat-identity-copy">
+          <strong>${escapeHtml(selectedName)}</strong>
+          <small>选择通讯身份</small>
+        </span>
+        <span class="private-chat-identity-chevron" aria-hidden="true">⌄</span>
+      </summary>
+      <div class="private-chat-identity-menu" role="listbox" aria-label="选择通讯身份">
+        ${optionItems.map(option => `
+          <button
+            class="private-chat-identity-option ${option.id === selectedId ? 'is-active' : ''}"
+            type="button"
+            role="option"
+            aria-selected="${option.id === selectedId ? 'true' : 'false'}"
+            data-private-chat-identity-option="${escapeHtml(option.id)}"
+          >
+            <span class="avatar private-chat-identity-option-avatar"${avatarToneAttribute(option.character)}>${option.avatar}</span>
+            <span class="private-chat-identity-option-copy">
+              <strong>${escapeHtml(option.name)}</strong>
+              <small>${option.id === selectedId ? '当前身份' : '切换身份'}</small>
+            </span>
+            <span class="private-chat-identity-option-check" aria-hidden="true">${option.id === selectedId ? '✓' : ''}</span>
+          </button>
+        `).join('')}
+      </div>
+    </details>
   `;
 }
 
@@ -6736,20 +6835,30 @@ function renderMobile(character?: CharacterProfile): string {
             ['world', '世界', 'world'],
             ['moments', '动态', 'moments'],
             ['settings', '设置', 'settings'],
-          ].map(([id, label, iconName]) => `
-            <button class="${mobileSection === id || (mobileSection === 'groups' && id === 'messages') ? 'is-active' : ''}" data-mobile-section="${id}">
-              <span class="nav-icon">${icon(iconName as IconName)}</span><small>${label}</small>
-            </button>
-          `).join('')}
+          ].map(([id, label, iconName]) => {
+            const navSection = id as MobileSection;
+            const classes = [
+              mobileSection === id || (mobileSection === 'groups' && id === 'messages') ? 'is-active' : '',
+              bottomNavPressedSection === navSection ? 'is-pressing' : '',
+            ].filter(Boolean).join(' ');
+            return `
+              <button class="${classes}" data-mobile-section="${id}">
+                <span class="nav-icon">${icon(iconName as IconName)}</span><small>${label}</small>
+              </button>
+            `;
+          }).join('')}
         </nav>
       `}
     </div>
   `;
 }
 
-function renderWithUiTransition(kind: UiTransitionKind): void {
+function renderWithUiTransition(kind: UiTransitionKind, afterRender?: () => void): void {
   // Small comment: app.ts keeps the old one-argument call shape while transitions.ts owns the browser mechanics.
-  runUiTransition(kind, render);
+  runUiTransition(kind, () => {
+    render();
+    afterRender?.();
+  });
 }
 
 function openConfirmDialog(options: Parameters<typeof openAppConfirm>[0]): void {
@@ -7139,7 +7248,7 @@ function closeTransientOverlaysForPageChange(): void {
   worldGearPanelClosing = false;
   window.clearTimeout(worldGearPanelCloseTimer);
   worldGearPanelCloseTimer = undefined;
-  document.querySelectorAll<HTMLDetailsElement>('.world-gear-panel[open], .world-persona-select[open]').forEach(details => {
+  document.querySelectorAll<HTMLDetailsElement>('.world-gear-panel[open], .world-persona-select[open], .private-chat-identity-select[open]').forEach(details => {
     if (details.classList.contains('world-gear-panel')) worldGearPanelOpen = false;
     details.open = false;
   });
@@ -7547,6 +7656,25 @@ function installVisualViewportListener(): void {
   updateKeyboardOffset();
 }
 
+function closePrivateIdentityMenus(): void {
+  document.querySelectorAll<HTMLDetailsElement>('.private-chat-identity-select[open]').forEach(details => {
+    details.open = false;
+  });
+}
+
+function installPrivateIdentityMenuOutsideListener(): void {
+  if (privateIdentityMenuOutsideListenerInstalled) return;
+  privateIdentityMenuOutsideListenerInstalled = true;
+  document.addEventListener('pointerdown', event => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest('.private-chat-identity-select')) return;
+    closePrivateIdentityMenus();
+  }, true);
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') closePrivateIdentityMenus();
+  });
+}
+
 export function render(): void {
   clearPendingIdleRender();
   const inputSnapshot = captureMessageInputFocus();
@@ -7701,6 +7829,7 @@ export function renderWhenChatInputIdle(): void {
 
 function bindUi(): void {
   installMessageProfileOutsideCloser();
+  installPrivateIdentityMenuOutsideListener();
   appRoot.onclick = event => {
     if (!messageProfileCharacterId) return;
     const target = event.target as HTMLElement | null;
@@ -8371,42 +8500,65 @@ function bindUi(): void {
     backMobileLayer();
   });
   document.querySelectorAll<HTMLButtonElement>('[data-mobile-section]').forEach(button => {
+    button.addEventListener('pointerdown', () => {
+      const nextSection = button.dataset.mobileSection;
+      if (!isMobileSection(nextSection)) return;
+      clearBottomNavMotionTimers();
+      clearBottomNavMotionClasses();
+      bottomNavPressedSection = nextSection;
+      bottomNavLiftSection = '';
+      button.classList.add('is-pressing');
+    });
+    button.addEventListener('pointercancel', () => {
+      button.classList.remove('is-pressing');
+      clearBottomNavMotion();
+    });
     button.addEventListener('click', () => {
       captureVisibleDraftsFromDom();
-      clearMobileListScrollRestore();
-      closeTransientOverlaysForPageChange();
       const nextSection = button.dataset.mobileSection;
       const fromSection = visibleMobileSection();
       const nextMobileSection = isMobileSection(nextSection) ? nextSection : 'messages';
       const transitionKind = mainSectionTransition(fromSection, nextMobileSection);
-      document.querySelectorAll<HTMLButtonElement>('.bottom-nav button[data-mobile-section]').forEach(navButton => {
-        navButton.classList.toggle('is-active', navButton.dataset.mobileSection === nextMobileSection);
-      });
-      mobileSection = nextMobileSection;
-      setActiveView(
-        mobileSection === 'moments' ? 'moments'
-          : mobileSection === 'world' ? 'world'
-            : 'chat',
-      );
-      if (mobileSection === 'world') {
-        activeWorldRpEventId = '';
-        worldRpMessageEditId = '';
-        worldRpMessageActionId = '';
-      }
-      if (mobileSection === 'moments') openMomentsTutorialIfNeeded();
-      if (mobileSection !== 'moments') {
-        momentComposerOpen = false;
-        momentGenerationStatus = '';
-        resetMomentComposerKeyboardState();
-      }
-      mobileChatOpen = false;
-      mobileGroupChatOpen = false;
-      desktopGroupChatOpen = false;
-      resetGroupSettingsState();
-      mobileSettingsDetail = false;
-      if (mobileSection !== 'messages') pushMobileHistory('section');
-      saveUiSessionSnapshot();
-      renderWithUiTransition(transitionKind);
+      clearBottomNavMotionTimers();
+      bottomNavPressedSection = nextMobileSection;
+      bottomNavLiftSection = '';
+      button.classList.add('is-pressing');
+      bottomNavPressTimer = window.setTimeout(() => {
+        bottomNavPressTimer = undefined;
+        clearMobileListScrollRestore();
+        closeTransientOverlaysForPageChange();
+        document.querySelectorAll<HTMLButtonElement>('.bottom-nav button[data-mobile-section]').forEach(navButton => {
+          const isTarget = navButton.dataset.mobileSection === nextMobileSection;
+          navButton.classList.toggle('is-active', isTarget);
+          navButton.classList.remove('is-lifting');
+          if (!isTarget) navButton.classList.remove('is-pressing');
+        });
+        mobileSection = nextMobileSection;
+        setActiveView(
+          mobileSection === 'moments' ? 'moments'
+            : mobileSection === 'world' ? 'world'
+              : 'chat',
+        );
+        if (mobileSection === 'world') {
+          activeWorldRpEventId = '';
+          worldRpMessageEditId = '';
+          worldRpMessageActionId = '';
+        }
+        if (mobileSection === 'moments') openMomentsTutorialIfNeeded();
+        if (mobileSection !== 'moments') {
+          momentComposerOpen = false;
+          momentGenerationStatus = '';
+          resetMomentComposerKeyboardState();
+        }
+        mobileChatOpen = false;
+        mobileGroupChatOpen = false;
+        desktopGroupChatOpen = false;
+        resetGroupSettingsState();
+        mobileSettingsDetail = false;
+        if (mobileSection !== 'messages') pushMobileHistory('section');
+        saveUiSessionSnapshot();
+        renderWithUiTransition(transitionKind, () => startBottomNavLiftMotion(nextMobileSection));
+      }, BOTTOM_NAV_PRESS_MS);
     });
   });
   document.querySelectorAll<HTMLButtonElement>('[data-open-timeline]').forEach(button => {
@@ -10149,21 +10301,24 @@ function bindUi(): void {
     messageInput.addEventListener('keydown', event => requestTextareaFormSubmit(messageInput, event));
     messageInput.addEventListener('beforeinput', event => requestTextareaFormSubmitFromBeforeInput(messageInput, event));
   }
-  document.querySelector<HTMLSelectElement>('#private-chat-target-select')?.addEventListener('change', event => {
-    captureVisibleDraftsFromDom();
-    const selectedId = (event.currentTarget as HTMLSelectElement).value || 'user';
-    const nextActorId = setCommunicationActor(activeWorld().id, selectedId);
-    closeMessageDetailAfterCommunicationIdentityChange();
-    ensureCommunicationIdentityViewState();
-    ensureGroupChatForSpeaker();
-    saveUiSessionSnapshot({ captureDom: false });
-    const nextCharacter = state.characters.find(character => character.id === nextActorId);
-    setStatusText(nextCharacter ? `已切换为 ${nextCharacter.name} 通讯身份。` : '已切换为 user 通讯身份。');
-    renderWithUiTransition('detail-out');
-    const character = activePrivateChatTarget();
-    if (character && !privateChatIdentityCharacter()) {
-      void generateOpeningMessage(character, render, privateConversationActorId(character));
-    }
+  document.querySelectorAll<HTMLDetailsElement>('.private-chat-identity-select').forEach(details => {
+    details.addEventListener('toggle', () => {
+      if (!details.open) return;
+      document.querySelectorAll<HTMLDetailsElement>('.private-chat-identity-select[open]').forEach(other => {
+        if (other !== details) other.open = false;
+      });
+    });
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-private-chat-identity-option]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.preventDefault();
+      const selectedId = button.dataset.privateChatIdentityOption || 'user';
+      if (selectedId === communicationActorId(activeWorld().id)) {
+        button.closest<HTMLDetailsElement>('.private-chat-identity-select')?.removeAttribute('open');
+        return;
+      }
+      selectPrivateChatIdentity(selectedId);
+    });
   });
   document.querySelector<HTMLFormElement>('#composer')?.addEventListener('submit', event => {
     event.preventDefault();

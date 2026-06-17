@@ -290,14 +290,60 @@ if (
 }
 
 if (
-  !styleSource.includes('grid-template-columns: repeat(5, minmax(0, 1fr))')
+  !appSource.includes('<details class="private-chat-identity-select">')
+  || !appSource.includes('data-private-chat-identity-option')
+  || !appSource.includes('function selectPrivateChatIdentity')
+  || !appSource.includes('function closePrivateIdentityMenus')
+  || appSource.includes('id="private-chat-target-select"')
+  || !styleSource.includes('.private-chat-identity-menu')
+  || !styleSource.includes('.private-chat-identity-option.is-active')
+  || !styleSource.includes('@keyframes privateIdentityMenuIn')
+  || !styleSource.includes('.private-chat-identity-select summary')
+) {
+  throw new Error('Private chat identity selector should use a polished custom dropdown menu instead of the native select popup.');
+}
+
+if (
+  !styleSource.includes('@keyframes characterPanelWholeIn')
+  || !styleSource.includes('@keyframes characterPanelWholeOut')
+  || !styleSource.includes('.ui-fallback-transition[data-ui-transition="detail-in"] .character-panel.character-page')
+  || !styleSource.includes('.ui-fallback-transition[data-ui-transition="detail-in"] .character-panel.character-page > *')
+  || !styleSource.includes('animation: characterPanelWholeIn 180ms')
+  || !styleSource.includes('.character-panel.character-page {\n  animation: none;')
+  || !styleSource.includes('animation: none !important;')
+) {
+  throw new Error('Character settings panel should animate as one shell instead of staggering its inner content after opening.');
+}
+
+if (
+  !appSource.includes('let bottomNavPressedSection')
+  || !appSource.includes('const BOTTOM_NAV_PRESS_MS = 120')
+  || !appSource.includes('function clearBottomNavMotionClasses()')
+  || !appSource.includes('function startBottomNavLiftMotion(section: MobileSection)')
+  || !appSource.includes('bottomNavLiftSection = section')
+  || !appSource.includes('void button.offsetWidth;')
+  || !appSource.includes("button.classList.add('is-pressing')")
+  || !appSource.includes("button.classList.remove('is-pressing', 'is-lifting')")
+  || !appSource.includes("renderWithUiTransition(transitionKind, () => startBottomNavLiftMotion(nextMobileSection))")
+  || appSource.includes("navButton.classList.toggle('is-lifting', isTarget)")
+  || appSource.includes("bottomNavLiftSection === navSection ? 'is-lifting' : ''")
+  || !appSource.includes(`bottomNavLiftSection = '';
+    clearBottomNavMotionClasses();`)
+  || /bottomNavLiftTimer = window\.setTimeout\([\s\S]*?bottomNavLiftSection = '';\s*render\(\);\s*}, BOTTOM_NAV_LIFT_MS\);/.test(appSource)
+  || !styleSource.includes('.bottom-nav button.is-pressing')
+  || !styleSource.includes('.bottom-nav button.is-active.is-lifting')
+  || !styleSource.includes('@keyframes bottomNavPressThenLift')
+  || !styleSource.includes('transform: translateY(-5px) scale(0.995)')
+  || !styleSource.includes('grid-template-columns: repeat(5, minmax(0, 1fr))')
   || !styleSource.includes('gap: 0')
   || !styleSource.includes('.bottom-nav button.is-active')
   || !styleSource.includes('transform: translateY(-10px) scale(1.02)')
-  || !styleSource.includes('cubic-bezier(0.2, 1.45, 0.32, 1)')
+  || !styleSource.includes('transform 520ms cubic-bezier(0.16, 1, 0.3, 1)')
+  || !styleSource.includes('.bottom-nav button.is-active:active')
+  || !styleSource.includes('transform: translateY(-7px) scale(1.005)')
   || !styleSource.includes('.bottom-nav button.is-active .nav-icon')
 ) {
-  throw new Error('Bottom nav should use five attached square tabs with elastic raised active state.');
+  throw new Error('Bottom nav should use five attached square tabs with smooth raised and pressed states.');
 }
 
 console.log(JSON.stringify({
