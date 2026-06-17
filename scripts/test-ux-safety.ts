@@ -334,7 +334,8 @@ if (
 
 if (
   !appSource.includes('let bottomNavPressedSection')
-  || !appSource.includes('const BOTTOM_NAV_PRESS_MS = 120')
+  || !appSource.includes('const BOTTOM_NAV_PRESS_MS = 100')
+  || !appSource.includes('const BOTTOM_NAV_LIFT_MS = 240')
   || !appSource.includes('function clearBottomNavMotionClasses()')
   || !appSource.includes('function startBottomNavLiftMotion(section: MobileSection)')
   || !appSource.includes('bottomNavLiftSection = section')
@@ -355,7 +356,12 @@ if (
   || !styleSource.includes('gap: 0')
   || !styleSource.includes('.bottom-nav button.is-active')
   || !styleSource.includes('transform: translateY(-10px) scale(1.02)')
-  || !styleSource.includes('transform 520ms cubic-bezier(0.16, 1, 0.3, 1)')
+  || !styleSource.includes('transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1)')
+  || !styleSource.includes('transform 100ms cubic-bezier(0.32, 0, 0.67, 0)')
+  || !styleSource.includes('animation: bottomNavPressThenLift 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both !important')
+  || !styleSource.includes('transform: translateY(-11px) scale(1.018)')
+  || styleSource.includes('bottomNavPressThenLift 460ms')
+  || styleSource.includes('transform 520ms cubic-bezier')
   || !styleSource.includes('.bottom-nav button.is-active:active')
   || !styleSource.includes('transform: translateY(-7px) scale(1.005)')
   || !styleSource.includes('.bottom-nav button.is-active .nav-icon')
@@ -373,6 +379,9 @@ if (
   || bottomNavVisualShellBlock.includes('border-right-width: 1px')
   || bottomNavVisualShellBlock.includes('border-top: 1px')
   || bottomNavVisualShellBlock.includes('0 -10px 22px')
+  || bottomNavVisualShellBlock.includes('height 220ms')
+  || bottomNavVisualShellBlock.includes('min-height 220ms')
+  || bottomNavVisualShellBlock.includes('.bottom-nav button::before')
 ) {
   throw new Error('Bottom nav shell should not paint an extra visual wrapper outside the clickable button tabs.');
 }
