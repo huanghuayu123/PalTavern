@@ -290,6 +290,15 @@ if (
 }
 
 if (
+  !appSource.includes('const nextOpen = !(worldGearPanelOpen || worldGearPanelClosing)')
+  || !appSource.includes("appRoot.querySelectorAll<HTMLElement>('[data-open-world-gear]').forEach(trigger => {")
+  || !appSource.includes("target?.closest('.world-gear-panel, [data-open-world-gear]')")
+  || appSource.includes("appRoot.querySelector<HTMLElement>('[data-open-world-gear]')?.addEventListener('pointerdown'")
+) {
+  throw new Error('World settings gear should toggle closed on repeat mobile taps instead of closing and reopening in the same gesture.');
+}
+
+if (
   !appSource.includes('<details class="private-chat-identity-select">')
   || !appSource.includes('data-private-chat-identity-option')
   || !appSource.includes('function selectPrivateChatIdentity')
