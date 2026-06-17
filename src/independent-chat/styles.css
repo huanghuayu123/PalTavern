@@ -17519,3 +17519,120 @@ html[data-ui-transition]:not([data-ui-transition^="main-"]) .moment-compose-fab 
     display: none;
   }
 }
+
+/* Old Android WebView fallback: keep the app readable when newer CSS is ignored. */
+@supports not (color: color-mix(in srgb, #000, #fff)) {
+  body {
+    background: var(--page);
+  }
+
+  .sidebar,
+  .mobile-topbar,
+  .chat-header,
+  .bottom-nav,
+  .group-list-header,
+  .mobile-group-list-page,
+  .messages-layout,
+  .world-page,
+  .moments-page,
+  .settings-page,
+  .character-panel,
+  .world-gear-panel,
+  .group-settings-panel,
+  .event-composer-dialog,
+  .moments-publisher,
+  .message-edit-dialog,
+  .message-choice-dialog,
+  .app-dialog,
+  .card-recognition-dialog,
+  .sticker-import-dialog,
+  .settings-dialog,
+  .first-run-guide {
+    background: var(--surface-solid);
+    border-color: var(--line);
+  }
+
+  .character-card,
+  .conversation-item,
+  .group-list-item,
+  .moment-card,
+  .world-event-card,
+  .timeline-track-entry,
+  .field input,
+  .field textarea,
+  .field select {
+    background: var(--surface-raised);
+    border-color: var(--line);
+  }
+
+  .bottom-nav button,
+  .segmented button,
+  .plain-button,
+  .secondary {
+    background: var(--surface-soft);
+    border-color: var(--line);
+  }
+
+  .bottom-nav button.is-active,
+  .segmented button.is-active,
+  .reply-mode-option.is-active,
+  .time-mode-option.is-active {
+    color: var(--accent-strong);
+    background: var(--accent-soft);
+    border-color: var(--accent);
+  }
+
+  .primary,
+  button.primary,
+  .send-button,
+  .composer-send,
+  .moment-submit,
+  .event-settings-generate,
+  .first-run-guide-action {
+    color: #fff;
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .danger,
+  button.danger {
+    color: #fff;
+    background: var(--danger);
+    border-color: var(--danger);
+  }
+
+  .muted,
+  .list-empty,
+  .page-heading p,
+  .brand span {
+    color: var(--text-soft);
+  }
+}
+
+@supports not (height: 100dvh) {
+  .app-shell,
+  .chat-screen,
+  .mobile-screen,
+  .main-tab-page,
+  .authoring-screen,
+  .world-page,
+  .moments-page,
+  .settings-page,
+  .mobile-group-list-page {
+    height: 100vh;
+    min-height: 100vh;
+  }
+
+  .event-composer-dialog,
+  .card-recognition-dialog,
+  .sticker-import-dialog,
+  .settings-dialog,
+  .moments-publisher,
+  .message-edit-dialog,
+  .message-choice-dialog,
+  .app-dialog,
+  .group-settings-panel,
+  .world-gear-panel {
+    max-height: calc(100vh - 24px);
+  }
+}

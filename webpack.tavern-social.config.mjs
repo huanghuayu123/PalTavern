@@ -7,20 +7,14 @@ import { fileURLToPath } from 'node:url';
 const root = path.dirname(fileURLToPath(import.meta.url));
 
 export default (_env, argv) => ({
-  experiments: {
-    outputModule: true,
-  },
   devtool: argv.mode === 'production' ? 'source-map' : 'eval-source-map',
   entry: path.join(root, 'src', 'independent-chat', 'index.ts'),
-  target: ['web', 'es2019'],
+  target: ['web', 'es2015'],
   output: {
     filename: 'index.js',
     path: path.join(root, 'dist', 'independent-chat'),
     clean: true,
     publicPath: './',
-    library: {
-      type: 'module',
-    },
   },
   module: {
     rules: [
@@ -31,7 +25,7 @@ export default (_env, argv) => ({
           transpileOnly: true,
           onlyCompileBundledFiles: true,
           compilerOptions: {
-            target: 'ES2019',
+            target: 'ES2015',
             noUnusedLocals: false,
             noUnusedParameters: false,
           },
@@ -56,7 +50,7 @@ export default (_env, argv) => ({
     new HtmlWebpackPlugin({
       template: path.join(root, 'src', 'independent-chat', 'index.html'),
       filename: 'index.html',
-      scriptLoading: 'module',
+      scriptLoading: 'defer',
       cache: false,
     }),
     new MiniCssExtractPlugin({ filename: 'index.css' }),
@@ -67,8 +61,8 @@ export default (_env, argv) => ({
       new TerserPlugin({
         extractComments: false,
         terserOptions: argv.mode === 'production'
-          ? { ecma: 2019, compress: { ecma: 2019 }, format: { ecma: 2019, quote_style: 1 } }
-          : { ecma: 2019, format: { ecma: 2019, beautify: true, indent_level: 2 }, compress: false, mangle: false },
+          ? { ecma: 2015, compress: { ecma: 2015 }, format: { ecma: 2015, quote_style: 1 } }
+          : { ecma: 2015, format: { ecma: 2015, beautify: true, indent_level: 2 }, compress: false, mangle: false },
       }),
     ],
   },

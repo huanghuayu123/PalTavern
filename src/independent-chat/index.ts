@@ -2,6 +2,7 @@
  * 大注释：App entry module.
  * Keeps the original boot order: styles, first render, opening message, then background scheduling.
  */
+import './polyfills/old-android';
 import './styles.css';
 import { generateOpeningMessage } from './chat/private-chat';
 import { startAutoMessageScheduler } from './automation/scheduler';
