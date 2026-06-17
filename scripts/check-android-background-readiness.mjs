@@ -6,6 +6,7 @@ const manifestPath = path.join(root, 'android', 'app', 'src', 'main', 'AndroidMa
 const capacitorConfigPath = path.join(root, 'capacitor.config.json');
 const androidStringsPath = path.join(root, 'android', 'app', 'src', 'main', 'res', 'values', 'strings.xml');
 const androidBuildGradlePath = path.join(root, 'android', 'app', 'build.gradle');
+const packageJsonPath = path.join(root, 'package.json');
 const mainActivityPath = path.join(
   root,
   'android',
@@ -24,6 +25,10 @@ const capacitorConfig = existsSync(capacitorConfigPath) ? readFileSync(capacitor
 const androidStrings = existsSync(androidStringsPath) ? readFileSync(androidStringsPath, 'utf8') : '';
 const androidBuildGradle = existsSync(androidBuildGradlePath) ? readFileSync(androidBuildGradlePath, 'utf8') : '';
 const mainActivity = existsSync(mainActivityPath) ? readFileSync(mainActivityPath, 'utf8') : '';
+const packageJson = existsSync(packageJsonPath)
+  ? JSON.parse(readFileSync(packageJsonPath, 'utf8'))
+  : {};
+const packageVersion = typeof packageJson.version === 'string' ? packageJson.version : '';
 
 const checks = [
   {
@@ -48,10 +53,10 @@ const checks = [
     detail: 'android/app/src/main/res/values/strings.xml PalTavern',
   },
   {
-    name: 'Android version v1.0.8',
-    ok: androidBuildGradle.includes('versionCode 9')
-      && androidBuildGradle.includes('versionName "1.0.8"'),
-    detail: 'android/app/build.gradle versionCode 9 versionName 1.0.8',
+    name: `Android version v${packageVersion || 'unknown'}`,
+    ok: Boolean(packageVersion)
+      && new RegExp(`versionName\\s+["']${packageVersion.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["']`).test(androidBuildGradle),
+    detail: `android/app/build.gradle versionName ${packageVersion || 'package.json version missing'}`,
   },
   {
     name: 'Capacitor CLI dependency',
