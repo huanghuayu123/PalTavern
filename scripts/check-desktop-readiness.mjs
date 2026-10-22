@@ -1,8 +1,15 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const root = process.cwd();
 const executable = process.platform === 'win32' ? '.cmd' : '';
+const desktopPackagePath = path.join(root, 'desktop', 'package.json');
+const desktopPackage = existsSync(desktopPackagePath)
+  ? JSON.parse(readFileSync(desktopPackagePath, 'utf8'))
+  : {};
+const desktopVersion = typeof desktopPackage.version === 'string' ? desktopPackage.version : '0.0.0';
+// electron-builder.yml sets productName to "Tavern Social" and executableName to TavernSocial.
+const installerName = `Tavern Social-${desktopVersion}-x64.exe`;
 const checks = [
   ['Independent web build', path.join(root, 'dist', 'independent-chat', 'index.html')],
   ['Electron desktop entry', path.join(root, 'desktop', 'main.cjs')],
@@ -11,7 +18,7 @@ const checks = [
   ['Electron Builder', path.join(root, 'node_modules', '.bin', `electron-builder${executable}`)],
   ['Electron Builder config', path.join(root, 'electron-builder.yml')],
   ['Windows unpacked executable', path.join(root, 'release', 'win-unpacked', 'TavernSocial.exe')],
-  ['Windows installer', path.join(root, 'release', 'Tavern Social-0.1.0-x64.exe')],
+  ['Windows installer', path.join(root, 'release', installerName)],
 ];
 
 console.log('Tavern Social desktop readiness check');
@@ -23,7 +30,7 @@ for (const [name, target] of checks) {
 }
 if (!ready) {
   console.log('');
-  console.log('Desktop runtime logic exists, but a distributable package cannot be produced until missing dependencies are installed.');
+  console.log('Desktop readiness is incomplete. Missing items may be dependencies from pnpm install, the web build from pnpm build, or Windows artifacts from pnpm electron:dist.');
   process.exitCode = 1;
 } else {
   console.log('');

@@ -1,8 +1,9 @@
 {
   "name": "tavern-social-desktop",
-  "version": "0.1.0",
+  "version": "1.1.04",
   "description": "Independent character chat application with background proactive messaging.",
   "author": "Tavern Social",
+  "license": "MIT",
   "private": true,
   "main": "main.cjs"
 }

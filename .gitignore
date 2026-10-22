@@ -24,3 +24,11 @@ pnpm-debug.log*
 
 auto-imports.d.ts
 components.d.ts
+
+.env
+.env.*
+!.env.example
+*.local
+.idea/
+*.tsbuildinfo
+coverage/

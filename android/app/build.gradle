@@ -16,20 +16,27 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    def tavernDebugKeystore = file('tavern-social-debug.keystore')
     signingConfigs {
         tavernSocialDebug {
-            storeFile file('tavern-social-debug.keystore')
-            storePassword 'android'
-            keyAlias 'androiddebugkey'
-            keyPassword 'android'
+            if (tavernDebugKeystore.exists()) {
+                storeFile tavernDebugKeystore
+                storePassword 'android'
+                keyAlias 'androiddebugkey'
+                keyPassword 'android'
+            }
         }
     }
     buildTypes {
         debug {
-            signingConfig signingConfigs.tavernSocialDebug
+            if (tavernDebugKeystore.exists()) {
+                signingConfig signingConfigs.tavernSocialDebug
+            }
         }
         release {
-            signingConfig signingConfigs.tavernSocialDebug
+            if (tavernDebugKeystore.exists()) {
+                signingConfig signingConfigs.tavernSocialDebug
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

@@ -12,7 +12,7 @@ Android 原生工程位于 `android/`，基于 Capacitor 8 和 Android WorkManag
 - `TavernSocialBackgroundPlugin.java`：接收 Web 端排期、申请通知权限、发送本地通知。
 - `TavernSocialBackgroundWorker.java`：由 WorkManager 在系统允许时尝试触发检查。
 
-Web 端入口位于 `src/independent-chat/platform.ts`，通过 Capacitor 插件名
+Web 端入口位于 `src/independent-chat/platform/runtime.ts`，通过 Capacitor 插件名
 `TavernSocialBackground` 调用原生能力。
 
 ## 调度行为
