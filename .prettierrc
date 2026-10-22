@@ -1,13 +1,13 @@
-{
-  "arrowParens": "avoid",
-  "bracketSpacing": true,
-  "jsxBracketSameLine": false,
-  "printWidth": 120,
-  "proseWrap": "always",
-  "quoteProps": "as-needed",
-  "semi": true,
-  "singleQuote": true,
-  "tabWidth": 2,
-  "trailingComma": "all",
-  "useTabs": false
-}
+# PalTavern formatting defaults.
+printWidth: 120
+tabWidth: 2
+useTabs: false
+semi: true
+singleQuote: true
+quoteProps: as-needed
+trailingComma: all
+bracketSpacing: true
+bracketSameLine: false
+arrowParens: avoid
+proseWrap: always
+endOfLine: lf

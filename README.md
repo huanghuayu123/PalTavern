@@ -130,20 +130,9 @@ assets/                   应用图标
 
 ## 许可证
 
-本仓库的 PalTavern 应用代码使用 [MIT License](LICENSE)。版权人：huanghuayu123，年份：2026。
+整个仓库使用 [MIT License](LICENSE)。版权人：huanghuayu123，年份：2026。
 
-仓库最初从本地的酒馆助手模板目录整理出来。和上游 [tavern_helper_template](https://github.com/StageDog/tavern_helper_template) 逐字相同、因此不改用 MIT 的文件只有这些配置和声明：
-
-- `postcss.config.js`
-- `tailwind.css`
-- `global.d.ts`
-- `auto-imports.zod.d.ts`
-- `.prettierrc`
-- `.editorconfig`
-
-这些文件仍适用该模板的 PolyForm Noncommercial License 1.0.0，全文在 [licenses/PolyForm-Noncommercial-1.0.0.txt](licenses/PolyForm-Noncommercial-1.0.0.txt)。这不是 OSI 开源许可证。应用本体没有附带 SillyTavern 的程序源码。SillyTavern 本体是另一份软件，许可证是 AGPL-3.0。
-
-替换之前，根目录 `LICENSE` 是一份 Aladdin Free Public License 文本，正文仍在描述 AFPL Ghostscript，不能代表本项目，GitHub 也不会把它识别成 OSI 许可证。
+应用没有附带 SillyTavern 的程序源码。SillyTavern 本体是另一份软件，许可证是 AGPL-3.0。原先根目录的许可证文本是 Aladdin Free Public License，正文仍在描述 AFPL Ghostscript，不能代表本项目。
 
 ---
 
@@ -279,17 +268,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports and feature requests use the
 
 ## License
 
-PalTavern's application code in this repository is under the [MIT License](LICENSE). Copyright holder: huanghuayu123, year 2026.
+The whole repository is under the [MIT License](LICENSE). Copyright holder: huanghuayu123, year 2026.
 
-The repo was extracted from a local copy of the Tavern Helper template. Only these config and declaration files are byte-for-byte the same as [tavern_helper_template](https://github.com/StageDog/tavern_helper_template), so they are not relicensed under MIT:
-
-- `postcss.config.js`
-- `tailwind.css`
-- `global.d.ts`
-- `auto-imports.zod.d.ts`
-- `.prettierrc`
-- `.editorconfig`
-
-Those files stay under that template's PolyForm Noncommercial License 1.0.0. The text is in [licenses/PolyForm-Noncommercial-1.0.0.txt](licenses/PolyForm-Noncommercial-1.0.0.txt). That license is not an OSI open-source license. The application does not include SillyTavern program source. SillyTavern itself is separate software under AGPL-3.0.
-
-The previous root `LICENSE` was an Aladdin Free Public License text that still described AFPL Ghostscript. It did not describe this project, and GitHub does not detect it as an OSI license.
+The application does not include SillyTavern program source. SillyTavern itself is separate software under AGPL-3.0. The previous root license text was the Aladdin Free Public License and still described AFPL Ghostscript, so it did not describe this project.

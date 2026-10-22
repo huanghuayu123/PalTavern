@@ -13,8 +13,8 @@ Entries below are taken from the repository history. Work before 2026-06-10 happ
 
 ### 变更 / Changed
 
-- 应用代码的许可证改为 MIT。原先根目录文本是 Aladdin Free Public License，正文仍在描述 AFPL Ghostscript。与酒馆助手模板逐字相同的少量配置文件仍保留 PolyForm Noncommercial 1.0.0。
-- Application code is now MIT. The previous root license was the Aladdin Free Public License and still described AFPL Ghostscript. A few config files that match the Tavern Helper template byte for byte stay under PolyForm Noncommercial 1.0.0.
+- 整个仓库使用 MIT。原先根目录文本是 Aladdin Free Public License，正文仍在描述 AFPL Ghostscript。构建和编辑器用的配置文件已按本项目重写，不再保留另一份许可证。
+- The whole repository is MIT. The previous root license was the Aladdin Free Public License and still described AFPL Ghostscript. Build and editor config files were rewritten for this project, so no second license remains.
 - `desktop/package.json` 的版本从 `0.1.0` 对齐到 `1.1.04`。桌面就绪检查改为按这个版本查找安装包文件名。
 - `desktop/package.json` now matches `1.1.04`. The desktop readiness check looks up the installer name from that version.
 - 没有本地 `tavern-social-debug.keystore` 时，Android debug 构建使用 Gradle 默认调试签名。文件还在时，签名方式不变。
