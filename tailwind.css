@@ -1,2 +1,6 @@
-/** 仅激活 tailwindcss 的语法高亮, 禁止实际使用这个文件 */
-@import 'tailwindcss';
+/*
+  Tailwind entry used by the editor and the ESLint Tailwind plugin.
+  PalTavern screens are styled in src/independent-chat/styles.css.
+  Do not import this file from the application bundle.
+*/
+@import "tailwindcss";

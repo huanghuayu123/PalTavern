@@ -2,6 +2,11 @@
   "name": "pal-tavern",
   "version": "1.1.04",
   "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/huanghuayu123/PalTavern.git"
+  },
   "main": "desktop/main.cjs",
   "scripts": {
     "local:build": "pnpm build:dev",

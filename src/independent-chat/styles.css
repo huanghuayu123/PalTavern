@@ -18024,3 +18024,42 @@ html[data-ui-transition]:not([data-ui-transition^="main-"]) .moment-compose-fab 
     display: none;
   }
 }
+
+/* PalTavern wide desktop.
+   Keep the sidebar and a readable chat column once the window is past the phone layout.
+   Thin scrollbars stay visible so long lists can be scanned with a mouse. */
+@media (min-width: 1100px) and (min-height: 640px) {
+  .desktop-shell {
+    grid-template-columns: 320px minmax(0, 1fr);
+  }
+
+  .desktop-shell .contact-list,
+  .desktop-shell .messages,
+  .desktop-shell .group-messages,
+  .desktop-shell .group-sidebar,
+  .desktop-shell .settings-content,
+  .desktop-shell .settings-nav,
+  .desktop-shell .moments-scroll,
+  .desktop-shell .events-scroll,
+  .desktop-shell .timeline-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--text-soft) 55%, transparent) transparent;
+  }
+
+  .desktop-shell .moments-column,
+  .desktop-shell .events-column,
+  .desktop-shell .timeline-column,
+  .desktop-shell .group-list-surface {
+    margin-inline: auto;
+  }
+
+  .desktop-shell > .chat .chat-header,
+  .desktop-shell > .chat .chat-status-shelf,
+  .desktop-shell > .chat .messages,
+  .desktop-shell > .chat .chat-composer-area,
+  .desktop-shell .group-chat .group-messages,
+  .desktop-shell .group-chat .group-composer {
+    width: min(980px, 100%);
+    margin-inline: auto;
+  }
+}

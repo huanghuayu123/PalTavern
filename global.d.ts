@@ -1,36 +1,46 @@
+// Ambient types for PalTavern's bundler imports and editor globals.
+
 declare module '*?raw' {
-  const content: string;
-  export default content;
+  const fileText: string;
+  export default fileText;
 }
+
 declare module '*?url' {
-  const content: string;
-  export default content;
+  const assetUrl: string;
+  export default assetUrl;
 }
+
 declare module '*.css' {
-  const content: unknown;
-  export default content;
+  const stylesheetModule: unknown;
+  export default stylesheetModule;
 }
+
 declare module '*.html' {
-  const content: string;
-  export default content;
+  const markup: string;
+  export default markup;
 }
+
 declare module '*.md' {
-  const content: string;
-  export default content;
+  const renderedMarkdown: string;
+  export default renderedMarkdown;
 }
+
 declare module '*.yaml' {
-  const content: any;
-  export default content;
+  const parsedYaml: any;
+  export default parsedYaml;
 }
+
 declare module '*.vue' {
-  import { DefineComponent } from 'vue';
-  const component: DefineComponent;
-  export default component;
+  import type { DefineComponent } from 'vue';
+
+  const singleFileComponent: DefineComponent;
+  export default singleFileComponent;
 }
 
 declare const YAML: typeof import('yaml');
 
 declare const z: typeof import('zod');
+
 declare namespace z {
   export type infer<T> = import('zod').infer<T>;
   export type input<T> = import('zod').input<T>;

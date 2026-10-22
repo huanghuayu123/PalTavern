@@ -6233,7 +6233,7 @@ function renderSettingsContent(character?: CharacterProfile): string {
       <label class="group-reply-toggle">
         <span>
           <strong>回车直接发送</strong>
-          <small>打开后，私聊和群聊输入框按 Enter 发送；Shift + Enter 仍然换行。</small>
+          <small>打开后，私聊、群聊和世界输入框按 Enter 发送，Shift + Enter 换行。Ctrl + Enter（Mac 上是 ⌘ + Enter）始终发送。</small>
         </span>
         ${renderSwitchControl('id="enter-to-send"', state.enterToSend, '回车直接发送')}
       </label>
@@ -7481,13 +7481,10 @@ function resizeComposerTextarea(textarea = document.querySelector<HTMLTextAreaEl
 }
 
 function shouldSubmitTextareaOnEnter(event: KeyboardEvent): boolean {
-  return state.enterToSend
-    && event.key === 'Enter'
-    && !event.shiftKey
-    && !event.ctrlKey
-    && !event.altKey
-    && !event.metaKey
-    && !event.isComposing;
+  if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.isComposing) return false;
+  // Ctrl/Cmd+Enter always sends. Plain Enter follows the 回车直接发送 setting.
+  if (event.ctrlKey || event.metaKey) return true;
+  return state.enterToSend;
 }
 
 function requestTextareaFormSubmit(textarea: HTMLTextAreaElement, event: KeyboardEvent): void {
