@@ -1,5 +1,5 @@
 appId: com.tavernsocial.desktop
-productName: Tavern Social
+productName: PalTavern
 asar: false
 directories:
   app: desktop
@@ -13,7 +13,7 @@ extraResources:
   - from: dist/independent-chat
     to: dist/independent-chat
 win:
-  executableName: TavernSocial
+  executableName: PalTavern
   target:
     - nsis
   artifactName: "${productName}-${version}-${arch}.${ext}"
@@ -21,3 +21,15 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
+mac:
+  category: public.app-category.social-networking
+  target:
+    - dmg
+    - zip
+  artifactName: "${productName}-${version}-${arch}.${ext}"
+linux:
+  category: Network
+  target:
+    - AppImage
+    - deb
+  artifactName: "${productName}-${version}-${arch}.${ext}"

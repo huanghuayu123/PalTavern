@@ -8,8 +8,8 @@ const desktopPackage = existsSync(desktopPackagePath)
   ? JSON.parse(readFileSync(desktopPackagePath, 'utf8'))
   : {};
 const desktopVersion = typeof desktopPackage.version === 'string' ? desktopPackage.version : '0.0.0';
-// electron-builder.yml sets productName to "Tavern Social" and executableName to TavernSocial.
-const installerName = `Tavern Social-${desktopVersion}-x64.exe`;
+// electron-builder.yml sets productName and executableName to PalTavern.
+const installerName = `PalTavern-${desktopVersion}-x64.exe`;
 const checks = [
   ['Independent web build', path.join(root, 'dist', 'independent-chat', 'index.html')],
   ['Electron desktop entry', path.join(root, 'desktop', 'main.cjs')],
@@ -17,11 +17,11 @@ const checks = [
   ['Electron runtime', path.join(root, 'node_modules', '.bin', `electron${executable}`)],
   ['Electron Builder', path.join(root, 'node_modules', '.bin', `electron-builder${executable}`)],
   ['Electron Builder config', path.join(root, 'electron-builder.yml')],
-  ['Windows unpacked executable', path.join(root, 'release', 'win-unpacked', 'TavernSocial.exe')],
+  ['Windows unpacked executable', path.join(root, 'release', 'win-unpacked', 'PalTavern.exe')],
   ['Windows installer', path.join(root, 'release', installerName)],
 ];
 
-console.log('Tavern Social desktop readiness check');
+console.log('PalTavern desktop readiness check');
 let ready = true;
 for (const [name, target] of checks) {
   const ok = existsSync(target);

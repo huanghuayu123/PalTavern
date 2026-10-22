@@ -22,6 +22,11 @@ Entries below are taken from the repository history. Work before 2026-06-10 happ
 - `.gitignore` 增加 `.env`、编辑器目录和覆盖率输出。
 - `.gitignore` now covers `.env` files, editor directories, and coverage output.
 
+### 桌面 / Desktop
+
+- Electron 窗口标题、托盘和安装包产品名改为 PalTavern。窗口大小和位置会记在本机，下次打开时恢复。屏幕够宽时，最小窗口保持在手机布局断点之上。宽窗口里私聊和群聊内容列不再拉满整屏，桌面滚动条改为细滚动条。Ctrl + Enter（Mac 为 ⌘ + Enter）始终发送。打包配置增加 macOS dmg/zip 和 Linux AppImage/deb。
+- The Electron window title, tray, and installer product name are PalTavern. Window size and position are restored next launch. On a wide screen the minimum size stays above the phone layout breakpoint. Wide windows keep a readable chat column and thin scrollbars. Ctrl+Enter (Command+Enter on Mac) always sends. The packager config now includes macOS dmg/zip and Linux AppImage/deb targets.
+
 ### 修正 / Fixed
 
 - Android 后台说明中的网页入口路径改为 `src/independent-chat/platform/runtime.ts`。

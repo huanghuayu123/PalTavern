@@ -74,7 +74,7 @@ pnpm build                  # 生产构建，输出到 dist/independent-chat
 pnpm typecheck:independent  # 只检查 src/independent-chat
 pnpm test:independent       # 跑独立应用的脚本测试
 pnpm electron:dev           # 先 build:dev，再用 Electron 打开
-pnpm electron:dist          # 生产构建并打 Windows 安装包到 release/
+pnpm electron:dist          # 生产构建。Windows 打 NSIS；配置里还有 macOS dmg/zip 和 Linux AppImage/deb
 pnpm desktop:check          # 检查桌面依赖和已打出的 Windows 安装包
 pnpm android:check          # 检查 Android 工程；没有调试 APK 时会失败
 pnpm android:build          # Windows：生成图标、构建网页、同步 Capacitor、assembleDebug
@@ -117,7 +117,7 @@ assets/                   应用图标
 
 1. 继续把 `ui/app.ts` 拆成按页面划分的渲染和事件模块，先搬代码，不改界面。顺序写在 `docs/ai-handoff/REFACTORING_ORDER.md`。
 2. `styles.css` 是多层历史样式叠在一起的。等页面拆开并对照截图之后，再合并样式。
-3. 应用内品牌是 PalTavern，Electron 窗口标题和安装包产品名仍是 Tavern Social。`electron-builder.yml` 的安装包文件名因此是 `Tavern Social-<版本>-x64.exe`。
+3. Electron 的窗口、托盘和安装包名称已经是 PalTavern。应用 ID 仍是 `com.tavernsocial.desktop`，避免换掉已经安装过的本机数据目录。Windows 安装包会变成 `PalTavern-<版本>-x64.exe`，主程序是 `PalTavern.exe`。macOS 和 Linux 目标已写进配置，但没有在这里打包，也没有做签名。
 4. 根目录 `package.json` 和 `desktop/package.json` 的版本号是两份。这次把桌面版本对齐到 `1.1.04`，之后发版仍要记得一起改，Android 的 `versionName` 也要一起改。
 5. `pnpm android:build` 依赖 Windows 的 PowerShell 和 `gradlew.bat`。Linux 和 macOS 还不能按同一条命令打包。
 6. 没有持续集成。也没有把当前五栏界面的截图放进仓库。
@@ -212,7 +212,7 @@ pnpm build                  # production build in dist/independent-chat
 pnpm typecheck:independent  # typecheck src/independent-chat only
 pnpm test:independent       # run the independent-app script tests
 pnpm electron:dev           # build:dev, then open Electron
-pnpm electron:dist          # production build and Windows installer in release/
+pnpm electron:dist          # production build. Windows NSIS, plus configured macOS dmg/zip and Linux AppImage/deb
 pnpm desktop:check          # check desktop dependencies and a built Windows installer
 pnpm android:check          # check the Android project; fails when the debug APK is absent
 pnpm android:build          # Windows: icons, web build, Capacitor sync, assembleDebug
@@ -255,7 +255,7 @@ These are gaps already visible in the source and docs, not a promise of new feat
 
 1. Keep splitting `ui/app.ts` into page renderers and event bindings without changing the markup. The order is in `docs/ai-handoff/REFACTORING_ORDER.md`.
 2. `styles.css` is several historical layers. Consolidate it only after the page split, and compare screenshots.
-3. The in-app brand is PalTavern. The Electron window title and installer product name are still Tavern Social, so `electron-builder.yml` names the installer `Tavern Social-<version>-x64.exe`.
+3. The Electron window, tray, and installer name are PalTavern. The app id stays `com.tavernsocial.desktop` so an existing install keeps its local data folder. The Windows installer becomes `PalTavern-<version>-x64.exe` and the executable is `PalTavern.exe`. macOS and Linux targets are configured, but they were not packaged or signed here.
 4. The root `package.json` version and `desktop/package.json` version are separate. This change aligns the desktop package to `1.1.04`. Later releases still need to update both, plus the Android `versionName`.
 5. `pnpm android:build` depends on Windows PowerShell and `gradlew.bat`. Linux and macOS cannot use that same command yet.
 6. There is no continuous integration, and no screenshot of the current five-tab UI.
