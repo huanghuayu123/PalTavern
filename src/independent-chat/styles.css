@@ -1269,6 +1269,25 @@ legend {
   border-radius: 13px;
 }
 
+.storage-warning-banner {
+  position: fixed;
+  z-index: 150;
+  top: max(12px, env(safe-area-inset-top));
+  left: 50%;
+  width: min(560px, calc(100vw - 24px));
+  padding: 11px 14px;
+  color: var(--danger, #b4233f);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  background: var(--danger-soft, #fbe9ed);
+  border: 1px solid color-mix(in srgb, var(--danger, #b4233f) 32%, transparent);
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.14);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
 .global-status-toast {
   position: fixed;
   z-index: 140;
@@ -18023,4 +18042,11 @@ html[data-ui-transition]:not([data-ui-transition^="main-"]) .moment-compose-fab 
   .timeline-track-entry::before {
     display: none;
   }
+}
+
+/* 大注释：消息气泡高度交给 CSS 自然撑开，不再由 JS 逐条测量写回。
+   上下内边距对称，正文在气泡里垂直居中；自动消息原因、记忆提示等小字也算进气泡高度，不会再被裁掉。 */
+.message:not(.sticker-message) {
+  padding-top: 8px;
+  padding-bottom: 8px;
 }

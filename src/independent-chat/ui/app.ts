@@ -241,10 +241,12 @@ import {
   ensureConversation,
   groupChatsForActiveWorld,
   groupMessagesFor,
+  isStorageSaveFailing,
   markConversationRead,
   messagesFor,
   normalizeChatBackgroundImage,
   normalizeChatFontScale,
+  onStorageSaveStatusChange,
   privateConversationActorIdFor,
   resetDailyModelUsage,
   saveState,
@@ -304,6 +306,7 @@ import {
   renderChatBackgroundControl,
   renderUserAvatar,
 } from './chat-surface';
+import { displayImageUrl } from './image-urls';
 import {
   apiUrlForProvider,
   modelProviderFor,
@@ -606,6 +609,7 @@ const MODEL_ONBOARDING_KEY = 'tavern-social-model-onboarding-v1';
 const CHAT_REPLY_MODE_ONBOARDING_KEY = 'tavern-social-chat-reply-mode-onboarding-v1';
 const TIME_MODE_ONBOARDING_KEY = 'tavern-social-time-mode-onboarding-v1';
 const MOMENTS_TUTORIAL_KEY = 'tavern-social-moments-tutorial-v1';
+const STORAGE_FULL_IMAGE_MESSAGE = '这张图片存不下了：本地存储空间已满。可以先在设置里导出备份，再删掉一些不用的聊天背景或表情包。';
 let welcomeCoverOpen = shouldShowWelcomeCover();
 let modelOnboardingOpen = localStorage.getItem(MODEL_ONBOARDING_KEY) !== 'done'
   && !state.modelConfig.model.trim();
@@ -1545,6 +1549,28 @@ function shouldShowGlobalStatus(): boolean {
 function renderGlobalStatus(): string {
   if (!shouldShowGlobalStatus()) return '';
   return `<div class="global-status-toast" role="status" aria-live="polite">${escapeHtml(globalStatusText)}</div>`;
+}
+
+const STORAGE_WARNING_TEXT = '本地存储空间已满，最近的改动没有保存。请先在设置里导出备份，再删掉一些聊天背景、表情包或旧聊天，腾出空间后会自动恢复保存。';
+let storageWarningListenerInstalled = false;
+
+// 大注释：存储写满是持续状态，不能只弹一次会自动消失的提示，否则用户会以为内容都存好了。
+function renderStorageWarning(): string {
+  if (!isStorageSaveFailing()) return '';
+  return `<div class="storage-warning-banner" role="alert">${escapeHtml(STORAGE_WARNING_TEXT)}</div>`;
+}
+
+function installStorageWarningListener(): void {
+  if (storageWarningListenerInstalled) return;
+  storageWarningListenerInstalled = true;
+  onStorageSaveStatusChange(failing => {
+    const existing = appRoot.querySelector<HTMLElement>('.storage-warning-banner');
+    if (!failing) {
+      existing?.remove();
+      return;
+    }
+    if (!existing) appRoot.insertAdjacentHTML('beforeend', renderStorageWarning());
+  });
 }
 
 function clearVisibleStatus(): void {
@@ -2888,7 +2914,7 @@ function renderMessages(character?: CharacterProfile): string {
       ${selfAuthoredCharacter ? `<small class="message-speaker-label">${escapeHtml(privateChatSpeakerName(message))} · 手写身份</small>` : ''}
       ${quoted ? `<div class="message-quote">${quoted.impactRevokedAt ? '原消息影响已撤销' : quoted.recalledAt ? '原消息已撤回' : escapeHtml(compactText(quoted.content, 64))}</div>` : ''}
       ${sticker
-        ? `<img src="${escapeHtml(sticker.dataUrl)}" alt="${escapeHtml(sticker.name)}" title="${escapeHtml(sticker.name)}" />`
+        ? `<img src="${escapeHtml(displayImageUrl(sticker.dataUrl))}" alt="${escapeHtml(sticker.name)}" title="${escapeHtml(sticker.name)}" />`
         : `<span class="message-copy">${escapeHtml(message.content)}</span>`}
       ${message.autoReason ? `<small class="message-reason">${escapeHtml(message.autoReason)}</small>` : ''}
       ${memoryHint ? `<small class="message-memory-hint">${escapeHtml(memoryHint)}</small>` : ''}
@@ -2937,7 +2963,7 @@ function renderStickerPicker(character?: CharacterProfile): string {
       ${stickers.length > 0
         ? `<div class="sticker-picker-grid">${stickers.map(sticker => `
             <button type="button" data-send-sticker="${escapeHtml(sticker.id)}" title="${escapeHtml(sticker.name)}">
-              <img src="${escapeHtml(sticker.dataUrl)}" alt="${escapeHtml(sticker.name)}" />
+              <img src="${escapeHtml(displayImageUrl(sticker.dataUrl))}" alt="${escapeHtml(sticker.name)}" />
               </button>
             </div>
           `).join('')}</div>`
@@ -2989,7 +3015,7 @@ function renderStickerLibrary(
       </label>
       ${stickers.length > 0 ? `<div class="sticker-library-grid">${stickers.map(sticker => `
         <figure>
-          <img src="${escapeHtml(sticker.dataUrl)}" alt="${escapeHtml(sticker.name)}" />
+          <img src="${escapeHtml(displayImageUrl(sticker.dataUrl))}" alt="${escapeHtml(sticker.name)}" />
           <figcaption title="${escapeHtml(sticker.name)}">${escapeHtml(sticker.name)}</figcaption>
           ${sticker.note?.trim() ? `<small>${escapeHtml(compactText(sticker.note, 42))}</small>` : ''}
           <button type="button" data-delete-sticker="${escapeHtml(sticker.id)}" data-sticker-scope="${scope}" aria-label="删除 ${escapeHtml(sticker.name)}">×</button>
@@ -6690,7 +6716,7 @@ function renderStickerImportDialog(): string {
         <div class="sticker-import-list">
           ${pendingStickerImport.stickers.map((sticker, index) => `
             <article class="sticker-import-item">
-              <img src="${escapeHtml(sticker.dataUrl)}" alt="" />
+              <img src="${escapeHtml(displayImageUrl(sticker.dataUrl))}" alt="" />
               <div>
                 <label class="field">
                   <span>名称</span>
@@ -7480,6 +7506,10 @@ function resizeComposerTextarea(textarea = document.querySelector<HTMLTextAreaEl
   textarea.style.overflowY = textarea.scrollHeight > 126 ? 'auto' : 'hidden';
 }
 
+function isImeComposing(event: Event): boolean {
+  return 'isComposing' in event && Boolean((event as InputEvent).isComposing);
+}
+
 function shouldSubmitTextareaOnEnter(event: KeyboardEvent): boolean {
   return state.enterToSend
     && event.key === 'Enter'
@@ -7864,8 +7894,9 @@ export function render(): void {
   const momentInputSnapshot = captureMomentInputFocus();
   const wasNearChatBottom = isChatScrollNearBottom();
   const preRenderScroll = captureScrollSnapshot();
+  installStorageWarningListener();
   if (isAuthoringOpen()) {
-    appRoot.innerHTML = `${renderAuthoringScreen()}${renderAppDialog()}`;
+    appRoot.innerHTML = `${renderAuthoringScreen()}${renderAppDialog()}${renderStorageWarning()}`;
     bindAuthoringUi(render);
     bindAppDialog(() => renderWithUiTransition('overlay-out'));
     return;
@@ -7886,7 +7917,7 @@ export function render(): void {
     : layoutMode === 'mobile'
       ? renderMobile(character)
       : renderDesktop(character);
-  appRoot.innerHTML = `${appShell}${renderGlobalStatus()}${onboardingLayer}${renderCardRecognitionDialog()}${renderWorldBundleImportDialog()}${renderStickerImportDialog()}${renderAppDialog()}`;
+  appRoot.innerHTML = `${appShell}${renderGlobalStatus()}${renderStorageWarning()}${onboardingLayer}${renderCardRecognitionDialog()}${renderWorldBundleImportDialog()}${renderStickerImportDialog()}${renderAppDialog()}`;
   applyCharacterAccent(character);
   bindUi();
   bindAppDialog(() => renderWithUiTransition('overlay-out'));
@@ -8089,22 +8120,7 @@ function bindUi(): void {
       closeMessageActionMenuInPlace();
     }, { capture: true, once: true });
   }
-  document.querySelectorAll<HTMLElement>('.message').forEach(message => {
-    const copy = message.querySelector<HTMLElement>('.message-copy');
-    const quote = message.querySelector<HTMLElement>('.message-quote');
-    const sticker = message.querySelector<HTMLImageElement>('img');
-    const applyContentHeight = () => {
-      const copyHeight = copy?.getBoundingClientRect().height ?? 0;
-      const quoteHeight = quote?.getBoundingClientRect().height ?? 0;
-      const stickerHeight = sticker?.getBoundingClientRect().height ?? 0;
-      const contentHeight = stickerHeight || copyHeight;
-      const quoteGap = quoteHeight > 0 && contentHeight > 0 ? 7 : 0;
-      const verticalPadding = message.classList.contains('sticker-message') ? 8 : 16;
-      message.style.height = `${Math.ceil(quoteHeight + quoteGap + contentHeight + verticalPadding)}px`;
-    };
-    applyContentHeight();
-    if (sticker && !sticker.complete) sticker.addEventListener('load', applyContentHeight, { once: true });
-  });
+  // 小注释：气泡高度完全交给 CSS 自然撑开（见 styles.css 末尾）。以前逐条量高度再写回，消息越多越卡，还会裁掉原因、记忆提示等小字。
   bindDraftManager(render);
   document.querySelector<HTMLButtonElement>('#enter-welcome-cover')?.addEventListener('click', () => {
     markWelcomeCoverSeen();
@@ -8643,9 +8659,19 @@ function bindUi(): void {
         return;
       }
       const conversation = ensureConversation(character, privateConversationActorId(character));
+      const previousImage = conversation.backgroundImage;
+      const previousUpdatedAt = conversation.updatedAt;
       conversation.backgroundImage = image;
       conversation.updatedAt = Date.now();
-      saveState();
+      if (!saveState()) {
+        // 小注释：存不下就撤回，避免界面显示已更换、重启后却丢失，也避免大图一直占着内存导致后续保存全部失败。
+        conversation.backgroundImage = previousImage;
+        conversation.updatedAt = previousUpdatedAt;
+        saveState();
+        setStatusText(STORAGE_FULL_IMAGE_MESSAGE);
+        render();
+        return;
+      }
       preserveScrollForNextRender();
       setStatusText(`${character.name} 的私聊背景已更新。`);
       render();
@@ -8963,7 +8989,14 @@ function bindUi(): void {
         render();
         return;
       }
+      const previousImage = chat.backgroundImage ?? '';
       updateGroupChat(chat.id, { backgroundImage: image });
+      if (isStorageSaveFailing()) {
+        updateGroupChat(chat.id, { backgroundImage: previousImage });
+        setStatusText(STORAGE_FULL_IMAGE_MESSAGE);
+        render();
+        return;
+      }
       preserveScrollForNextRender();
       setStatusText(`${chat.title} 的群聊背景已更新。`);
       render();
@@ -9327,8 +9360,7 @@ function bindUi(): void {
       });
   });
   document.querySelectorAll<HTMLInputElement>('#contact-search').forEach(searchInput => {
-    searchInput.addEventListener('input', event => {
-      const target = event.currentTarget as HTMLInputElement;
+    const applyContactSearch = (target: HTMLInputElement) => {
       const preferGroupSearch = Boolean(target.closest('.group-list-page'));
       contactQuery = target.value;
       clearMobileListScrollRestore();
@@ -9338,6 +9370,16 @@ function bindUi(): void {
       const input = inputs.find(item => Boolean(item.closest('.group-list-page')) === preferGroupSearch) ?? inputs[0];
       input?.focus();
       input?.setSelectionRange(contactQuery.length, contactQuery.length);
+    };
+    // 小注释：拼音等输入法组字期间不能重画，否则输入框被整个替换，组字被打断，会残留拼音字母（比如打“叶”变成“yye叶”）。
+    searchInput.addEventListener('input', event => {
+      const target = event.currentTarget as HTMLInputElement;
+      contactQuery = target.value;
+      if (isImeComposing(event)) return;
+      applyContactSearch(target);
+    });
+    searchInput.addEventListener('compositionend', event => {
+      applyContactSearch(event.currentTarget as HTMLInputElement);
     });
   });
   document.querySelector<HTMLButtonElement>('#create-world')?.addEventListener('click', () => {
@@ -10772,13 +10814,23 @@ function bindUi(): void {
       render();
     });
   });
-  document.querySelector<HTMLInputElement>('[data-world-timeline-search]')?.addEventListener('input', event => {
-    worldTimelineSearchQuery = (event.currentTarget as HTMLInputElement).value;
+  const applyWorldTimelineSearch = (target: HTMLInputElement) => {
+    worldTimelineSearchQuery = target.value;
     worldInsightTab = 'timeline';
     activeWorldRpEventId = '';
     preserveScrollForNextRender();
     saveUiSessionSnapshot({ captureDom: false });
     render();
+  };
+  const worldTimelineSearchInput = document.querySelector<HTMLInputElement>('[data-world-timeline-search]');
+  worldTimelineSearchInput?.addEventListener('input', event => {
+    const target = event.currentTarget as HTMLInputElement;
+    worldTimelineSearchQuery = target.value;
+    if (isImeComposing(event)) return;
+    applyWorldTimelineSearch(target);
+  });
+  worldTimelineSearchInput?.addEventListener('compositionend', event => {
+    applyWorldTimelineSearch(event.currentTarget as HTMLInputElement);
   });
   document.querySelector<HTMLSelectElement>('[data-world-timeline-character]')?.addEventListener('change', event => {
     const selectedId = (event.currentTarget as HTMLSelectElement).value;

@@ -1773,8 +1773,36 @@ export function loadState(): AppState {
 
 export let state = loadState();
 
-export function saveState(): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+let storageSaveFailing = false;
+const storageSaveStatusListeners = new Set<(failing: boolean) => void>();
+
+function setStorageSaveFailing(failing: boolean): void {
+  if (storageSaveFailing === failing) return;
+  storageSaveFailing = failing;
+  storageSaveStatusListeners.forEach(listener => listener(failing));
+}
+
+export function isStorageSaveFailing(): boolean {
+  return storageSaveFailing;
+}
+
+export function onStorageSaveStatusChange(listener: (failing: boolean) => void): () => void {
+  storageSaveStatusListeners.add(listener);
+  return () => storageSaveStatusListeners.delete(listener);
+}
+
+// 大注释：存储写满时不能把异常抛给调用方，否则发消息、换背景等流程会中途断掉，界面上的内容直接消失。
+// 这里吞掉异常并返回 false，由界面层显示常驻提醒；需要回滚的调用方（比如换背景）自己检查返回值。
+export function saveState(): boolean {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (error) {
+    console.warn('PalTavern state save failed', error);
+    setStorageSaveFailing(true);
+    return false;
+  }
+  setStorageSaveFailing(false);
+  return true;
 }
 
 export function replaceState(nextState: AppState): void {
