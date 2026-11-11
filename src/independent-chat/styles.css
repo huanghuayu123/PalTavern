@@ -16799,6 +16799,43 @@ html[data-ui-transition]:not([data-ui-transition^="main-"]) .moment-compose-fab 
   }
 }
 
+/* 小注释：逐字显示中的回复。外层只是个分组，气泡间距跟消息列表一致；还没收到文字时不占位置。
+   最后一个气泡末尾带一根轻轻闪的光标，表示还在写。 */
+.reply-stream-preview {
+  display: flex;
+  flex-direction: column;
+  gap: inherit;
+}
+
+.reply-stream-preview:empty {
+  display: none;
+}
+
+.reply-stream-preview .message-row:last-child .message-copy::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: -0.16em;
+  background: currentColor;
+  border-radius: 1px;
+  opacity: 0.45;
+  animation: replyStreamCaret 1s steps(2, start) infinite;
+}
+
+@keyframes replyStreamCaret {
+  to {
+    visibility: hidden;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reply-stream-preview .message-row:last-child .message-copy::after {
+    animation: none;
+  }
+}
+
 
 /* 小注释：聊天背景当壁纸用：固定在聊天区域里，消息在上面滚动。
    原来背景跟着内容一起滚并铺满全部记录，聊得越久图被拉得越大，几十条消息后就只剩模糊色块。 */

@@ -91,3 +91,38 @@ export function parseModelChatOutput(raw: string, character: CharacterProfile): 
     .map(content => ({ content }));
   return fallback.slice(0, 8);
 }
+
+// 小注释：流式预览用的拆分。规则和 parseModelChatOutput 一致，但允许最后一段还没收完：
+// 已经出现 <msg> 标签时，只显示完整的段落和正在写的最后一段；没用标签时按空行分段。
+// 写了一半的标签（比如刚收到 "<stic"）和没闭合的思考内容先藏起来，收完后再交给正式解析。
+export function parseModelChatPreview(raw: string, character: CharacterProfile): ParsedChatPart[] {
+  const cleaned = raw
+    .replace(MODEL_THINKING_PATTERN, '')
+    .replace(/[<＜]thinking[>＞][\s\S]*$/i, '');
+  if (/[<＜]msg[>＞]/i.test(cleaned)) {
+    const parts: ParsedChatPart[] = [];
+    let consumed = 0;
+    for (const match of cleaned.matchAll(MODEL_OUTPUT_TOKEN_PATTERN)) {
+      if (match[1]?.trim()) {
+        parts.push(...splitLongText(match[1]).map(content => ({ content })));
+      } else if (match[2]) {
+        const sticker = stickerPart(character, match[2]);
+        if (sticker) parts.push(sticker);
+      }
+      consumed = (match.index ?? 0) + match[0].length;
+    }
+    const tail = cleaned.slice(consumed);
+    const open = tail.search(/[<＜]msg[>＞]/i);
+    if (open >= 0) {
+      const partial = tail.slice(open).replace(/^[<＜]msg[>＞]/i, '').replace(/[<＜][^>＞]*$/, '');
+      parts.push(...splitLongText(partial).map(content => ({ content })));
+    }
+    return parts.slice(0, 8);
+  }
+  return cleanModelChatFallback(cleaned.replace(/[<＜][^>＞\n]*$/, ''))
+    .split(/\n\s*\n+/)
+    .flatMap(splitLongText)
+    .filter(Boolean)
+    .map(content => ({ content }))
+    .slice(0, 8);
+}

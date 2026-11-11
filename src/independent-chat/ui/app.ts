@@ -75,6 +75,7 @@ import {
 } from '../characters/settings';
 import { createAutoMessagePacingStrategy, DEFAULT_AUTO_MESSAGE_PACING_STRATEGY } from '../chat/auto-message-strategy';
 import {
+  currentReplyStreamPreview,
   deleteMessage,
   editUserMessageAndRegenerate,
   generateReply,
@@ -82,6 +83,7 @@ import {
   isReplying,
   isOpeningMessageGenerating,
   messageVariantInfo,
+  onReplyStreamChange,
   recallMessage,
   regenerateAssistantMessage,
   rebuildPrivateChatAutoMemoryForCharacter,
@@ -94,6 +96,7 @@ import {
   statusText,
   stopReply,
 } from '../chat/private-chat';
+import type { ParsedChatPart } from '../chat/format';
 import {
   appendCharacterDirectMessage,
   characterDirectMessagesFor,
@@ -671,7 +674,13 @@ let modelFormDraft: {
   model: string;
   temperature: number;
   dailyRequestLimit: number;
+  streamReplies?: boolean;
 } | null = null;
+function streamRepliesFieldValue(fallback: boolean | undefined): boolean {
+  const input = document.querySelector<HTMLInputElement>('#stream-replies');
+  return input ? input.checked : fallback !== false;
+}
+
 const MODEL_ONBOARDING_KEY = 'tavern-social-model-onboarding-v1';
 const CHAT_REPLY_MODE_ONBOARDING_KEY = 'tavern-social-chat-reply-mode-onboarding-v1';
 const TIME_MODE_ONBOARDING_KEY = 'tavern-social-time-mode-onboarding-v1';
@@ -1966,6 +1975,8 @@ const MESSAGE_ARRIVAL_MS = 220;
 const messageArrivalStartedAt = new Map<string, number>();
 
 function messageArrivalMarkup(messageId: string, createdAt: number, threshold: number): { className: string; style: string } {
+  // 小注释：逐字显示过的回复已经在屏幕上了，换成正式消息时不再播一次“新消息”动画。
+  if (streamedReplyMessageIds.delete(messageId)) return { className: '', style: '' };
   const now = performance.now();
   if (createdAt > threshold && !messageArrivalStartedAt.has(messageId)) {
     if (messageArrivalStartedAt.size > 200) messageArrivalStartedAt.clear();
@@ -2363,6 +2374,75 @@ function renderCharacterDirectMessages(character: CharacterProfile): string {
   }).join('');
 }
 
+/**
+ * 大注释：逐字显示中的回复气泡。
+ * 整页重画时按当前预览画出来；两次重画之间，新文字只就地改这几个气泡，不重画整页。
+ */
+const streamedReplyMessageIds = new Set<string>();
+let replyStreamFrame = 0;
+
+function renderReplyStreamRow(character: CharacterProfile, part: ParsedChatPart, arriving = false): string {
+  const sticker = part.stickerId ? findStickerById(part.stickerId) : undefined;
+  return `<div class="message-row assistant is-streaming${arriving ? ' is-arriving' : ''}" data-stream-kind="${escapeHtml(sticker ? `sticker:${sticker.id}` : 'text')}">`
+    + `<span class="message-avatar assistant-avatar" aria-hidden="true"${avatarToneAttribute(character)}>${renderAvatar(character)}</span>`
+    + `<div class="message assistant${sticker ? ' sticker-message' : ''}">`
+    + (sticker
+      ? `<img src="${escapeHtml(displayImageUrl(sticker.dataUrl))}" alt="${escapeHtml(sticker.name)}" title="${escapeHtml(sticker.name)}" />`
+      : `<span class="message-copy">${escapeHtml(part.content)}</span>`)
+    + '</div></div>';
+}
+
+function replyStreamPartsFor(character: CharacterProfile): ParsedChatPart[] {
+  const preview = currentReplyStreamPreview();
+  if (!preview || preview.characterId !== character.id || preview.actorId !== privateConversationActorId(character)) return [];
+  return preview.parts;
+}
+
+function renderReplyStreamPreview(character: CharacterProfile): string {
+  const parts = replyStreamPartsFor(character);
+  return `<div class="reply-stream-preview" data-reply-stream-preview aria-live="off">${parts.map(part => renderReplyStreamRow(character, part)).join('')}</div>`;
+}
+
+function syncReplyStreamPreview(): void {
+  const container = document.querySelector<HTMLElement>('[data-reply-stream-preview]');
+  const character = activePrivateChatTarget();
+  if (!container || !character) return;
+  const parts = replyStreamPartsFor(character);
+  if (parts.length === 0) return;
+  const scroller = container.closest<HTMLElement>('.messages');
+  const wasNearBottom = isChatScrollNearBottom(scroller);
+  const rows = Array.from(container.children) as HTMLElement[];
+  rows.slice(parts.length).forEach(row => row.remove());
+  parts.forEach((part, index) => {
+    const kind = part.stickerId ? `sticker:${part.stickerId}` : 'text';
+    const existing = rows[index];
+    if (existing?.isConnected && existing.dataset.streamKind === kind) {
+      const copy = existing.querySelector<HTMLElement>('.message-copy');
+      if (copy && copy.textContent !== part.content) copy.textContent = part.content;
+      return;
+    }
+    const template = document.createElement('template');
+    template.innerHTML = renderReplyStreamRow(character, part, true);
+    const row = template.content.firstElementChild;
+    if (!row) return;
+    if (existing?.isConnected) existing.replaceWith(row);
+    else container.append(row);
+  });
+  const label = document.querySelector<HTMLElement>('[data-replying-label]');
+  if (label) label.textContent = `${character.name} 正在输入…`;
+  if (wasNearBottom) scrollMessagesToBottom();
+}
+
+onReplyStreamChange(finishedMessageIds => {
+  finishedMessageIds.forEach(id => streamedReplyMessageIds.add(id));
+  if (streamedReplyMessageIds.size > 50) streamedReplyMessageIds.clear();
+  if (replyStreamFrame || typeof window === 'undefined') return;
+  replyStreamFrame = window.requestAnimationFrame(() => {
+    replyStreamFrame = 0;
+    syncReplyStreamPreview();
+  });
+});
+
 function renderMessages(character?: CharacterProfile): string {
   if (!character) {
     return `
@@ -2467,9 +2547,10 @@ function renderMessages(character?: CharacterProfile): string {
       <span>${escapeHtml(character.name)} 正在生成新消息…</span>
     </div>
   ` : isReplying() ? `
+    ${renderReplyStreamPreview(character)}
     <div class="replying-row" aria-live="polite">
       <span class="replying-dots"><i></i><i></i><i></i></span>
-      <span>${escapeHtml(character.name)} 正在回复中…</span>
+      <span data-replying-label>${escapeHtml(character.name)} ${replyStreamPartsFor(character).length ? '正在输入…' : '正在回复中…'}</span>
       <button id="stop-reply" class="secondary" type="button">停止回复</button>
     </div>
   ` : ''}`;
@@ -4371,6 +4452,11 @@ function renderSettingsContent(character?: CharacterProfile): string {
         <label class="field"><span>每日自动输出预算</span><input id="daily-request-limit" type="number" min="1" value="${config.dailyRequestLimit}" /></label>
       </div>
       <p class="muted">今日自动已使用：${state.modelUsage.requestCount} / ${state.modelConfig.dailyRequestLimit}</p>
+      <label class="field field-inline">
+        <span>逐字显示回复</span>
+        <input id="stream-replies" type="checkbox" ${config.streamReplies !== false ? 'checked' : ''} />
+      </label>
+      <p class="muted">私聊时边生成边显示，不用等整段回复写完。个别中转服务不支持时可以关掉；安卓版的网络层会一次性收完整段，效果和关闭时一样。</p>
     `;
     return `
     <section class="settings-card">
@@ -6138,6 +6224,7 @@ function bindUi(): void {
       model: document.querySelector<HTMLInputElement>('#model-name')?.value ?? config.model,
       temperature: Number(document.querySelector<HTMLInputElement>('#temperature')?.value || config.temperature || 0.75),
       dailyRequestLimit: Math.max(1, Math.floor(Number(document.querySelector<HTMLInputElement>('#daily-request-limit')?.value || config.dailyRequestLimit || 100))),
+      streamReplies: streamRepliesFieldValue(config.streamReplies),
     };
   });
   bindCompanionTimeControls('settings');
@@ -7628,6 +7715,7 @@ function bindUi(): void {
       model: fieldValue('#model-name'),
       temperature: Number(fieldValue('#temperature') || '0.75'),
       dailyRequestLimit: Math.max(1, Math.floor(Number(fieldValue('#daily-request-limit') || '100'))),
+      streamReplies: streamRepliesFieldValue(state.modelConfig.streamReplies),
     };
     modelFormDraft = null;
     saveState();
@@ -7650,6 +7738,7 @@ function bindUi(): void {
       model: fieldValue('#model-name'),
       temperature: Number(fieldValue('#temperature') || '0.75'),
       dailyRequestLimit: Math.max(1, Math.floor(Number(fieldValue('#daily-request-limit') || '100'))),
+      streamReplies: streamRepliesFieldValue(state.modelConfig.streamReplies),
     };
     modelListLoading = true;
     modelListError = false;
@@ -7692,6 +7781,7 @@ function bindUi(): void {
       model: fieldValue('#model-name'),
       temperature,
       dailyRequestLimit: Math.max(1, Math.floor(Number(fieldValue('#daily-request-limit') || '100'))),
+      streamReplies: streamRepliesFieldValue(state.modelConfig.streamReplies),
     };
     modelConnectionTesting = true;
     modelListError = false;

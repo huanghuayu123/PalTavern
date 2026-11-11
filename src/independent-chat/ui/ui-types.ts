@@ -1,5 +1,5 @@
 // 大注释：界面层共用的类型（原来在 app.ts 顶部）。
-// 这些函数从 app.ts 原样拆出，只依赖传入参数和全局 state，不读写 app.ts 里的界面状态变量。
+// 这里只放类型，编译后不产生任何代码。
 import type { CharacterProfile, TimelineEntry, WorldEvent, WorldEventLeadActor } from '../core/types';
 
 export type LayoutMode = 'mobile' | 'tabletLandscape' | 'desktop';

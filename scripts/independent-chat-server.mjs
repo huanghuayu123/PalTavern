@@ -76,17 +76,36 @@ async function handleChatCompletionsProxy(request, response) {
         model: payload.model,
         messages: payload.messages,
         temperature: typeof payload.temperature === 'number' ? payload.temperature : 0.75,
-        stream: false,
+        stream: payload.stream === true,
       }),
     });
+    const contentType = upstream.headers.get('content-type') || 'application/json; charset=utf-8';
+    // 小注释：流式回复边收边转发，不等整段结束；其它响应照旧整段返回。
+    if (upstream.ok && upstream.body && /text\/event-stream/i.test(contentType)) {
+      response.writeHead(upstream.status, {
+        'Content-Type': contentType,
+        'Cache-Control': 'no-cache',
+        'X-Accel-Buffering': 'no',
+      });
+      for await (const chunk of upstream.body) {
+        if (upstreamController.signal.aborted || response.writableEnded) return;
+        response.write(chunk);
+      }
+      response.end();
+      return;
+    }
     const text = await upstream.text();
     if (upstreamController.signal.aborted || response.writableEnded) return;
     response.writeHead(upstream.status, {
-      'Content-Type': upstream.headers.get('content-type') || 'application/json; charset=utf-8',
+      'Content-Type': contentType,
     });
     response.end(text);
   } catch (error) {
     if (upstreamController.signal.aborted || response.writableEnded) return;
+    if (response.headersSent) {
+      response.end();
+      return;
+    }
     response.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' });
     response.end(error instanceof Error ? error.message : String(error));
   } finally {

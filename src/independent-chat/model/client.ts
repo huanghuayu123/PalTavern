@@ -15,11 +15,14 @@ import { companionTimeContext } from '../core/time';
 import { timelineContextFor } from '../memory/timeline';
 import { compactText, firstString, isRecord } from '../core/utils';
 import { refreshWorldWeather, shouldRefreshWorldWeather, worldWeatherPromptContext } from '../world/weather';
+import { readChatCompletion } from './stream';
 
 export interface ModelRequestOptions {
   countBudget?: boolean;
   contextMessages?: ChatMessage[];
   useChatPreset?: boolean;
+  /** 传了就用流式请求：每收到一段正文，回调一次“到目前为止的预览文本”（已去掉思考内容、套过正则脚本）。 */
+  onStream?: (previewText: string) => void;
 }
 
 // 小注释：模型请求选项决定是否计入预算，以及是否带入聊天上下文。
@@ -101,6 +104,8 @@ export function parseModelIds(payload: unknown): string[] {
 async function isHtmlResponse(response: Response): Promise<boolean> {
   const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
   if (contentType.includes('text/html')) return true;
+  // 小注释：流式和 JSON 响应不用再偷看正文；对流式响应 clone().text() 会一直等到整段回复结束。
+  if (contentType.includes('text/event-stream') || contentType.includes('application/json')) return false;
   const preview = await response.clone().text().catch(() => '');
   return /^\s*(?:<!doctype\s+html|<html|<head|<body)/i.test(preview);
 }
@@ -583,6 +588,7 @@ export async function callModel(
   }
   await refreshCharacterWorldWeather(character);
 
+  const streaming = typeof options.onStream === 'function';
   const payload = {
     model: config.model.trim(),
     messages: buildModelMessages(
@@ -594,42 +600,70 @@ export async function callModel(
       options.useChatPreset === true,
     ),
     temperature: config.temperature,
-    stream: false,
+    stream: streaming,
   };
-  let proxy: Response | null = null;
-  try {
-    proxy = await fetch('/api/chat-completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ apiUrl: url, apiKey: config.apiKey.trim(), ...payload }),
-      signal,
-    });
-  } catch (error) {
-    if (signal?.aborted) throw error;
-  }
-  let response: Response;
-  if (!proxy || proxy.status === 404 || await isHtmlResponse(proxy)) {
-    response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(config.apiKey.trim() ? { Authorization: `Bearer ${config.apiKey.trim()}` } : {}),
-      },
-      body: JSON.stringify(payload),
-      signal,
-    });
-  } else {
-    response = proxy;
+  let response = await sendChatCompletion(url, config.apiKey.trim(), payload, signal);
+  if (streaming && !response.ok && [400, 415, 422].includes(response.status)) {
+    // 小注释：少数接口不接受 stream 参数，退回普通请求再试一次。
+    response = await sendChatCompletion(url, config.apiKey.trim(), { ...payload, stream: false }, signal);
   }
   if (!response.ok) {
     const text = await response.text().catch(() => '');
     throw new Error(`模型请求失败：${response.status} ${text.slice(0, 180)}`);
   }
   if (options.countBudget) recordModelRequest();
-  const json = await responseJson(response, '模型接口');
+  const regexPreset = options.useChatPreset === true ? activeChatPromptPreset() : undefined;
+  let content: string | undefined;
+  if (streaming) {
+    const result = await readChatCompletion(response, partial => options.onStream?.(previewModelText(partial, regexPreset)));
+    content = result.kind === 'text' ? cleanFinalModelText(result.text) : completionTextFromJson(result.json);
+  } else {
+    content = completionTextFromJson(await responseJson(response, '模型接口'));
+  }
+  if (!content) {
+    throw new Error('模型响应中没有可用文本。');
+  }
+  const scripted = cleanFinalModelText(applyPromptPresetRegexScripts(content, regexPreset));
+  if (!scripted) {
+    throw new Error('模型响应中没有可用文本。');
+  }
+  return scripted;
+}
+
+// 小注释：先走本地代理（桌面版和开发服务器有），代理不存在时直接请求模型接口。
+async function sendChatCompletion(
+  url: string,
+  apiKey: string,
+  payload: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<Response> {
+  let proxy: Response | null = null;
+  try {
+    proxy = await fetch('/api/chat-completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiUrl: url, apiKey, ...payload }),
+      signal,
+    });
+  } catch (error) {
+    if (signal?.aborted) throw error;
+  }
+  if (proxy && proxy.status !== 404 && !await isHtmlResponse(proxy)) return proxy;
+  return fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+    },
+    body: JSON.stringify(payload),
+    signal,
+  });
+}
+
+function completionTextFromJson(json: Record<string, unknown>): string | undefined {
   const first = Array.isArray(json.choices) ? json.choices[0] : undefined;
   const message = isRecord(first) && isRecord(first.message) ? first.message : {};
-  const content = cleanFinalModelText(firstString(
+  return cleanFinalModelText(firstString(
     isRecord(message) ? modelText(message.content) : undefined,
     isRecord(first) ? first.text : undefined,
     isRecord(first) ? modelText(first.content) : undefined,
@@ -640,15 +674,18 @@ export async function callModel(
     modelText(json.data),
     json.response,
   ));
-  if (!content) {
-    throw new Error('模型响应中没有可用文本。');
+}
+
+// 小注释：流式预览用。思考标签可能只收到一半，没闭合的部分也先藏起来；正则脚本照常套用。
+export function previewModelText(raw: string, regexPreset?: PromptPreset): string {
+  const visible = raw
+    .replace(/[<＜]thinking[>＞][\s\S]*?[<＜]\/thinking[>＞]/gi, '')
+    .replace(/[<＜]thinking[>＞][\s\S]*$/i, '');
+  try {
+    return applyPromptPresetRegexScripts(visible, regexPreset);
+  } catch {
+    return visible;
   }
-  const regexPreset = options.useChatPreset === true ? activeChatPromptPreset() : undefined;
-  const scripted = cleanFinalModelText(applyPromptPresetRegexScripts(content, regexPreset));
-  if (!scripted) {
-    throw new Error('模型响应中没有可用文本。');
-  }
-  return scripted;
 }
 
 export async function callAuthoringModel(

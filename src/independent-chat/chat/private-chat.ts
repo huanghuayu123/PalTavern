@@ -3,7 +3,7 @@
  * Owns one-on-one messages, reply generation, retry, recall, delete, and input-protection state.
  */
 import type { CharacterProfile, ChatMessage, ConversationProfile } from '../core/types';
-import { cleanModelChatFallback, parseModelChatOutput } from './format';
+import { cleanModelChatFallback, parseModelChatOutput, parseModelChatPreview, type ParsedChatPart } from './format';
 import {
   ensureCharacterRelationship,
   relationshipSideFor,
@@ -67,6 +67,59 @@ function clearReplyController(controller: AbortController): void {
   if (replyController !== controller) return;
   replyController = null;
   replyStartedAt = 0;
+}
+
+/**
+ * 大注释：逐字显示回复。
+ * 模型边生成，这里边记下目前收到的文字；界面按需把它拆成和正式消息一样的气泡显示出来。
+ * 回复收完后预览清空，正式消息照旧走原来的整理流程写进聊天记录。
+ */
+export interface ReplyStreamPreview {
+  characterId: string;
+  actorId: string;
+  parts: ParsedChatPart[];
+}
+
+type ReplyStreamListener = (finishedMessageIds: string[]) => void;
+
+let replyStreamSource: { character: CharacterProfile; actorId: string; text: string } | null = null;
+let replyStreamParsed: { text: string; preview: ReplyStreamPreview } | null = null;
+const replyStreamListeners = new Set<ReplyStreamListener>();
+
+// 小注释：每来一小段文字都会触发，所以这里只记文字，真正拆气泡留到界面要画的时候，一帧最多拆一次。
+export function currentReplyStreamPreview(): ReplyStreamPreview | null {
+  const source = replyStreamSource;
+  if (!source) return null;
+  if (replyStreamParsed?.text !== source.text) {
+    replyStreamParsed = {
+      text: source.text,
+      preview: {
+        characterId: source.character.id,
+        actorId: source.actorId,
+        parts: parseModelChatPreview(source.text, source.character),
+      },
+    };
+  }
+  return replyStreamParsed.preview;
+}
+
+export function onReplyStreamChange(listener: ReplyStreamListener): () => void {
+  replyStreamListeners.add(listener);
+  return () => replyStreamListeners.delete(listener);
+}
+
+function setReplyStreamText(next: { character: CharacterProfile; actorId: string; text: string } | null, finishedMessageIds: string[] = []): void {
+  if (!next && !replyStreamSource && finishedMessageIds.length === 0) return;
+  replyStreamSource = next;
+  if (!next) replyStreamParsed = null;
+  replyStreamListeners.forEach(listener => listener(finishedMessageIds));
+}
+
+// 小注释：安卓原生网络层会把整段响应一次收完，流式没有意义，还是走原来的“正在输入”节奏。
+export function canStreamReplies(): boolean {
+  if (typeof document === 'undefined' || state.modelConfig.streamReplies === false) return false;
+  const capacitor = (globalThis as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
+  return !capacitor?.isNativePlatform?.();
 }
 
 function actorIdFromSpeaker(character: CharacterProfile, speaker: PrivateChatSpeaker = { speakerType: 'user' }): string {
@@ -559,30 +612,51 @@ async function generateModelReply(
   markReplyStarted(controller);
   onChange();
 
+  const actorId = conversationActorId(conversation);
+  let streamedVisibly = false;
+  const onStream = canStreamReplies()
+    ? (previewText: string) => {
+      if (controller.signal.aborted || replyController !== controller) return;
+      setReplyStreamText({ character, actorId, text: previewText });
+      if (!streamedVisibly && previewText.trim()) {
+        streamedVisibly = true;
+        statusText = `${character.name} 正在输入…`;
+      }
+    }
+    : undefined;
   try {
     const reply = await callModel(character, '', false, true, controller.signal, {
-      contextMessages: messagesFor(character.id, conversationActorId(conversation)),
+      contextMessages: messagesFor(character.id, actorId),
       useChatPreset: true,
+      onStream,
     });
     if (controller.signal.aborted) {
       statusText = '已停止回复。';
       return;
     }
-    statusText = `${character.name} 正在输入…`;
-    onChange();
-    await waitForModelTyping(reply, controller.signal);
+    // 小注释：文字已经一点点显示出来了，就不再额外模拟打字等待。
+    if (!streamedVisibly) {
+      statusText = `${character.name} 正在输入…`;
+      onChange();
+      await waitForModelTyping(reply, controller.signal);
+    }
     if (controller.signal.aborted) {
       statusText = '已停止回复。';
       return;
     }
     const messages = appendAssistantReply(character, conversation, reply, 'model_reply');
+    setReplyStreamText(null, messages.map(message => message.id));
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      markConversationRead(character.id, Date.now(), actorId);
+    }
+    statusText = '回复完成。';
+    // 小注释：事件检测还要再问一次模型，先把回复显示出来，不让用户干等。
+    clearReplyController(controller);
+    saveState();
+    onChange();
     for (const message of messages) {
       await detectPrivateChatEventForMessage(character, conversation, message);
     }
-    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-      markConversationRead(character.id, Date.now(), conversationActorId(conversation));
-    }
-    statusText = '回复完成。';
   } catch (error) {
     const abortStatus = replyAbortFinalStatus || '已停止回复。';
     statusText = error instanceof Error && error.name === 'AbortError'
@@ -591,6 +665,7 @@ async function generateModelReply(
     if (error instanceof Error && error.name === 'AbortError') replyAbortFinalStatus = '';
   } finally {
     clearReplyController(controller);
+    setReplyStreamText(null);
   }
   saveState();
   onChange();

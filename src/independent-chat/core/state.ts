@@ -391,6 +391,7 @@ export function defaultState(): AppState {
       model: '',
       temperature: 0.75,
       dailyRequestLimit: 100,
+      streamReplies: true,
     },
     modelUsage: {
       date: localDateKey(now),
@@ -1754,6 +1755,7 @@ export function normalizeState(input: unknown): AppState {
       dailyRequestLimit: typeof modelConfig.dailyRequestLimit === 'number'
         ? Math.max(1, Math.floor(modelConfig.dailyRequestLimit))
         : 100,
+      streamReplies: modelConfig.streamReplies !== false,
     },
     modelUsage: {
       date: typeof modelUsage.date === 'string' ? modelUsage.date : localDateKey(),

@@ -596,6 +596,8 @@ export interface ModelConfig {
   model: string;
   temperature: number;
   dailyRequestLimit: number;
+  /** 私聊回复是否边生成边显示（流式）。旧存档没有这一项时按开启处理。 */
+  streamReplies?: boolean;
 }
 
 export interface ModelUsage {
