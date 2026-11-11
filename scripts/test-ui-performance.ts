@@ -3,6 +3,8 @@ declare const require: (id: string) => any;
 declare const process: { cwd(): string };
 
 const fs = require('fs');
+
+const { readAppUiSource } = require('./read-ui-source');
 const path = require('path');
 
 // 大注释：界面性能与存储安全回归测试。
@@ -74,7 +76,7 @@ if (imageUrls.displayImageUrl('https://example.com/a.png') !== 'https://example.
 }
 
 const root = process.cwd();
-const appSource = fs.readFileSync(path.join(root, 'src/independent-chat/ui/app.ts'), 'utf8');
+const appSource = readAppUiSource();
 const chatSurfaceSource = fs.readFileSync(path.join(root, 'src/independent-chat/ui/chat-surface.ts'), 'utf8');
 const styleSource = fs.readFileSync(path.join(root, 'src/independent-chat/styles.css'), 'utf8');
 

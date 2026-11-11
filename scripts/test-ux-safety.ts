@@ -2,6 +2,7 @@ export {};
 declare const require: (id: string) => any;
 
 const fs = require('node:fs');
+const { readAppUiSource } = require('./read-ui-source');
 const path = require('node:path');
 
 const values = new Map<string, string>();
@@ -27,7 +28,7 @@ const timeline = require('../src/independent-chat/memory/timeline');
 const cardDiagnostics = require('../src/independent-chat/ui/card-import-diagnostics');
 const displayLabels = require('../src/independent-chat/ui/display-labels');
 
-const appSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/ui/app.ts'), 'utf8');
+const appSource = readAppUiSource();
 const styleSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/styles.css'), 'utf8');
 
 const backupText = JSON.stringify({

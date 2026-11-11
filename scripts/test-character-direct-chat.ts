@@ -27,6 +27,7 @@ Object.defineProperty(globalThis, 'window', {
 });
 
 const fs = require('node:fs');
+const { readAppUiSource } = require('./read-ui-source');
 const path = require('node:path');
 const stateModule = require('../src/independent-chat/core/state');
 const cards = require('../src/independent-chat/characters/cards');
@@ -358,7 +359,7 @@ async function main(): Promise<void> {
     throw new Error('Deleting a world should remove its direct chat threads and messages.');
   }
 
-  const appSource = fs.readFileSync(path.join(__dirname, '../src/independent-chat/ui/app.ts'), 'utf8');
+  const appSource = readAppUiSource();
   if (
     !appSource.includes('renderCharacterDirectMessages')
     || !appSource.includes('generateCharacterDirectReply')

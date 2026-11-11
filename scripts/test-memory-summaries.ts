@@ -27,6 +27,7 @@ const privateChat = require('../src/independent-chat/chat/private-chat');
 const summaries = require('../src/independent-chat/memory/summaries');
 const timeline = require('../src/independent-chat/memory/timeline');
 const fs = require('fs');
+const { readAppUiSource } = require('./read-ui-source');
 const path = require('path');
 
 stateModule.replaceState(stateModule.defaultState());
@@ -434,7 +435,7 @@ if (
   throw new Error('Deleting a private chat turn should remove its auto summary from world memory context.');
 }
 
-const appSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/ui/app.ts'), 'utf8');
+const appSource = readAppUiSource();
 if (
   !appSource.includes('renderMemorySummaryDrawer')
   || !appSource.includes('记忆抽屉')

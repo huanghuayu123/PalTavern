@@ -2,6 +2,7 @@ export {};
 declare const require: (id: string) => any;
 
 const fs = require('node:fs');
+const { readAppUiSource } = require('./read-ui-source');
 const path = require('node:path');
 
 const values = new Map<string, string>();
@@ -285,7 +286,7 @@ if (
   throw new Error('RP rendering parser should split narration, dialogue, and inner thoughts.');
 }
 
-const appSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/ui/app.ts'), 'utf8');
+const appSource = readAppUiSource();
 const stylesSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/styles.css'), 'utf8');
 const stateSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/core/state.ts'), 'utf8');
 const privateChatSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/chat/private-chat.ts'), 'utf8');
@@ -1577,7 +1578,7 @@ if (
   throw new Error('Character authoring should persist age, background story, and notes.');
 }
 
-const uiSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/ui/app.ts'), 'utf8');
+const uiSource = readAppUiSource();
 const coreTypesSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/core/types.ts'), 'utf8');
 const authoringUiSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/ui/authoring-ui.ts'), 'utf8');
 const transitionsPath = path.join(process.cwd(), 'src/independent-chat/ui/transitions.ts');
@@ -1680,9 +1681,7 @@ const restoreAutoPacingBlock = uiSource
 const keepAutoPacingBlock = uiSource
   .split("document.querySelector<HTMLButtonElement>('#keep-auto-pacing')?.addEventListener('click'")[1]
   ?.split("document.querySelector<HTMLButtonElement>('#request-notification')")[0] ?? '';
-const forceRestartServicesBlock = uiSource
-  .split('function forceRestartAllServices')[1]
-  ?.split('function fieldValue')[0] ?? '';
+const forceRestartServicesBlock = functionBody(uiSource, 'forceRestartAllServices');
 const forceRestartServicesHandlerBlock = uiSource
   .split("document.querySelector<HTMLButtonElement>('#force-restart-services')?.addEventListener('click'")[1]
   ?.split("document.querySelector<HTMLButtonElement>('#export-backup')")[0] ?? '';
@@ -1710,12 +1709,8 @@ const groupMessageActionOpenBlock = uiSource
 const closeMessageActionMenuBlock = uiSource
   .split('function closeMessageActionMenuInPlace')[1]
   ?.split('function closeGroupMessageActionMenuInPlace')[0] ?? '';
-const closeGroupMessageActionMenuBlock = uiSource
-  .split('function closeGroupMessageActionMenuInPlace')[1]
-  ?.split('function resizeComposerTextarea')[0] ?? '';
-const requestBeforeInputSubmitBlock = uiSource
-  .split('function requestTextareaFormSubmitFromBeforeInput')[1]
-  ?.split('function focusPendingMessageComposer')[0] ?? '';
+const closeGroupMessageActionMenuBlock = functionBody(uiSource, 'closeGroupMessageActionMenuInPlace');
+const requestBeforeInputSubmitBlock = functionBody(uiSource, 'requestTextareaFormSubmitFromBeforeInput');
 const idleRenderBlock = uiSource
   .split('export function renderWhenChatInputIdle')[1]
   ?.split('function bindUi')[0] ?? '';
@@ -1818,9 +1813,7 @@ const mobileMomentComposerOpenBlock = (styleSource.split('.moment-compose-fab {'
   .split('.keyboard-open .moments-publisher.is-open')[0]
   .split('.moments-publisher.is-open {')[1]
   ?.split('}')[0] ?? '';
-const keepMomentComposerVisibleBlock = uiSource
-  .split('function keepMomentComposerVisible')[1]
-  ?.split('function updateKeyboardOffset')[0] ?? '';
+const keepMomentComposerVisibleBlock = functionBody(uiSource, 'keepMomentComposerVisible');
 const desktopRailBlock = functionBody(uiSource, 'renderDesktopRail');
 const renderWithUiTransitionBlock = transitionsSource
   .split('function renderWithUiTransition')[1]
@@ -1857,9 +1850,7 @@ if (
 ) {
   throw new Error('World event detail should not render the memory drawer in the main stream.');
 }
-const worldEventLobbyBlock = uiSource
-  .split('function renderWorldEventLobby')[1]
-  ?.split('function renderWorldDialogueStream')[0] ?? '';
+const worldEventLobbyBlock = functionBody(uiSource, 'renderWorldEventLobby');
 const onboardingLayerBlock = uiSource
   .split('function renderOnboardingLayer')[1]
   ?.split('function renderGlobalStatus')[0] ?? '';
@@ -1882,15 +1873,9 @@ const eventDeleteHandlerBlock = uiSource
   .split("document.querySelectorAll<HTMLButtonElement>('[data-delete-event]').forEach")[1]
   ?.split('function bindUi')[0] ?? '';
 const worldStageComposerBlock = functionBody(uiSource, 'renderWorldStageComposer');
-const worldSettingsPanelBlock = uiSource
-  .split('function renderWorldSettingsPanel')[1]
-  ?.split('function renderWorldStageHeader')[0] ?? '';
-const characterSettingsPageBlock = uiSource
-  .split('function renderCharacterSettingsPage')[1]
-  ?.split('function renderCharacterWorldBookPage')[0] ?? '';
-const characterWorldBookPageBlock = uiSource
-  .split('function renderCharacterWorldBookPage')[1]
-  ?.split('function renderCharacterPanel')[0] ?? '';
+const worldSettingsPanelBlock = `${functionBody(uiSource, 'renderWorldSettingsPanel')}\n${functionBody(uiSource, 'renderWorldRenderModeSetting')}`;
+const characterSettingsPageBlock = functionBody(uiSource, 'renderCharacterSettingsPage');
+const characterWorldBookPageBlock = functionBody(uiSource, 'renderCharacterWorldBookPage');
 const characterWorldBookEditorBlock = uiSource
   .split('function renderCharacterWorldBookEntryEditor')[1]
   ?.split('function readCharacterWorldBookEntryDraftsFromPanel')[0] ?? '';
@@ -1923,9 +1908,7 @@ const renderTabletLandscapeBlock = sourceSlice(
   'function renderMobile(character?: CharacterProfile)',
 );
 const renderTabletLandscapeContentBlock = functionBody(uiSource, 'renderTabletLandscapeContent');
-const renderMobileBlock = uiSource
-  .split('function renderMobile(character?: CharacterProfile)')[1]
-  ?.split('function modelIsReady')[0] ?? '';
+const renderMobileBlock = functionBody(uiSource, 'renderMobile(character?: CharacterProfile)');
 const renderGroupChatPageBlock = functionBody(uiSource, 'renderGroupChatPage');
 const renderCharacterSettingsPageBlock = functionBody(uiSource, 'renderCharacterSettingsPage');
 const renderGroupSettingsPanelBlock = functionBody(uiSource, 'renderGroupSettingsPanel');
@@ -2532,7 +2515,7 @@ if (
 if (
   !uiSource.includes('id="test-model-connection"')
   || !uiSource.includes('测试连接')
-  || !uiSource.includes("import { callAuthoringModel, callModel, fetchModelList, testModelConnection } from '../model/client';")
+  || !/import \{[^}]*\btestModelConnection\b[^}]*\} from '\.\.\/model\/client';/.test(uiSource)
   || !modelConnectionTestBlock.includes('testModelConnection({')
   || !modelConnectionTestBlock.includes("apiUrl: apiUrlForProvider(provider, fieldValue('#api-url'))")
   || !modelConnectionTestBlock.includes("model: fieldValue('#model-name')")

@@ -2,9 +2,11 @@ export {};
 declare const require: (id: string) => any;
 
 const fs = require('fs');
+
+const { readAppUiSource } = require('./read-ui-source');
 const path = require('path');
 
-const appSource = fs.readFileSync(path.join(__dirname, '../src/independent-chat/ui/app.ts'), 'utf8');
+const appSource = readAppUiSource();
 const styleSource = fs.readFileSync(path.join(__dirname, '../src/independent-chat/styles.css'), 'utf8');
 if (
   !appSource.includes("let worldRpMessageActionId = ''")

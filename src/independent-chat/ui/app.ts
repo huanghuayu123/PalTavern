@@ -4,18 +4,9 @@
  */
 import type {
   ChatReplyMode,
-  ChatMessage,
-  CharacterDirectMessage,
-  CharacterDirectThread,
-  CharacterRelationshipRecord,
   CharacterProfile,
-  CompanionTimeMode,
-  GroupChatMessage,
   GroupChatProfile,
-  GroupReplyLiveliness,
-  ModelMessage,
   ModelProvider,
-  MemorySummary,
   MomentEntry,
   MomentVisibilityMode,
   NotificationPrivacy,
@@ -50,7 +41,6 @@ import {
   previewWorldBundleText,
   type WorldBundleImportSelection,
   type WorldBundlePreview,
-  type WorldBundleSection,
 } from '../data/world-bundle';
 import {
   backgroundInteractionStats,
@@ -59,7 +49,6 @@ import {
 } from '../social/background-interactions';
 import {
   characterFromCardCandidate,
-  type CharacterCardCandidate,
   deleteCharacter,
   deleteCharacterSticker,
   importStickerFiles,
@@ -73,9 +62,7 @@ import {
   applyCharacterRelationshipSuggestion,
   characterRelationshipSnapshot,
   ensureCharacterRelationship,
-  findCharacterRelationship,
   ignoreCharacterRelationshipSuggestion,
-  pendingRelationshipSuggestionsForPair,
   relationshipSideFor,
   updateCharacterRelationshipSide,
 } from '../characters/relationships';
@@ -85,13 +72,8 @@ import {
   characterWorldBookEntryDrafts,
   deleteCharacterWorldBookEntry,
   setCharacterWorldBookEntryDrafts,
-  type CharacterWorldBookEntryDraft,
 } from '../characters/settings';
 import { createAutoMessagePacingStrategy, DEFAULT_AUTO_MESSAGE_PACING_STRATEGY } from '../chat/auto-message-strategy';
-import {
-  buildCharacterReplyStrategyMessages,
-  cleanGeneratedCharacterReplyStrategy,
-} from '../model/reply-strategy';
 import {
   deleteMessage,
   editUserMessageAndRegenerate,
@@ -111,12 +93,10 @@ import {
   setStatusText as setChatStatusText,
   statusText,
   stopReply,
-  type PrivateChatSpeaker,
 } from '../chat/private-chat';
 import {
   appendCharacterDirectMessage,
   characterDirectMessagesFor,
-  characterDirectThreadIdFor,
   characterDirectThreadsForActor,
   detectCharacterDirectMessageEventSuggestion,
   ensureCharacterDirectThread,
@@ -138,12 +118,10 @@ import {
   editWorldEventRpMessage,
   ensureWorldRpEvent,
   markPrivateChatEventSuggestionAccepted,
-  pendingPrivateChatEventSuggestionsForThread,
   regenerateWorldEventRpMessage,
   resolveWorldEvent,
   resolveWorldEventChoice,
   selectWorldEventRpMessageVariant,
-  worldEventRpMessageVariantInfo,
   worldEventRpMessages,
 } from '../social/events';
 import {
@@ -165,7 +143,6 @@ import {
   recordImpact,
   recordTimelineEntryImpact,
   relationshipSnapshot,
-  rollbackStateForTimelineEntry,
   rollbackTimelineEntryImpact,
 } from '../memory/impacts';
 import {
@@ -187,14 +164,9 @@ import {
   visibleCharactersForMoment,
 } from '../social/moment-visibility';
 import {
-  characterStatusFor,
   characterStatusLine,
   refreshCharacterStatusSummary,
 } from '../memory/character-status';
-import {
-  quietBriefText,
-  todayBriefForActiveWorld,
-} from '../memory/daily-brief';
 import {
   confirmMemorySummary,
   contextMemorySummariesFor,
@@ -239,7 +211,6 @@ import {
   deleteWorld,
   conversationFor,
   ensureConversation,
-  groupChatsForActiveWorld,
   groupMessagesFor,
   isStorageSaveFailing,
   markConversationRead,
@@ -247,7 +218,6 @@ import {
   normalizeChatBackgroundImage,
   normalizeChatFontScale,
   onStorageSaveStatusChange,
-  privateConversationActorIdFor,
   resetDailyModelUsage,
   saveState,
   setCommunicationActor,
@@ -257,7 +227,7 @@ import {
   unreadCountFor,
 } from '../core/state';
 import { downloadSillyTavernCard } from '../characters/tavern-export';
-import { callAuthoringModel, callModel, fetchModelList, testModelConnection } from '../model/client';
+import { callAuthoringModel, fetchModelList, testModelConnection } from '../model/client';
 import {
   createTavernSocialDefaultGroupPromptPreset,
   createTavernSocialDefaultPromptPreset,
@@ -269,7 +239,7 @@ import {
   TAVERN_SOCIAL_DEFAULT_WORLD_PROMPT_PRESET_ID,
 } from '../model/prompt-presets';
 import { findStickerById } from '../media/stickers';
-import { clampVirtualTimeMinutes, companionTimeModeLabel, formatClockMinutes, formatCompanionDateTime } from '../core/time';
+import { companionTimeModeLabel, formatClockMinutes, formatCompanionDateTime } from '../core/time';
 import { compactText, escapeHtml, nowId } from '../core/utils';
 import { markWelcomeCoverSeen, renderWelcomeCover, shouldShowWelcomeCover } from './welcome-cover';
 import { renderCardImportDiagnostics } from './card-import-diagnostics';
@@ -287,7 +257,6 @@ import {
 } from '../world/weather';
 import {
   parseRpRenderSegments,
-  type RpRenderSegment,
 } from './rp-rendering';
 import {
   desktopViewTransition,
@@ -315,7 +284,6 @@ import {
 } from './model-settings';
 import {
   renderParameterSummary,
-  renderPromptRoleOptions,
   renderSettingsFold,
   renderSwitchControl,
 } from './settings-ui';
@@ -324,10 +292,6 @@ import {
   countdownText,
   formatConversationTime,
   messageTimelineHint,
-  pacingStateLabel,
-  relationshipStageLabel,
-  timelineSourceLabel,
-  timelineTypeLabel,
 } from './display-labels';
 import {
   bindAppDialog,
@@ -340,6 +304,163 @@ import {
   renderWorldDrawerTimeline,
   type WorldWorkbenchPanelContext,
 } from './world-workbench-panels';
+import {
+  cardRecognitionMessages,
+  generateCharacterReplyStrategy,
+  generateImportAutoMessagePacingStrategy,
+  generateImportProfileNote,
+  modelIsReady,
+  parseAiCardRecognition,
+} from './card-ai-import';
+import {
+  characterRelationshipChangeSummary,
+  characterRelationshipSideChanged,
+  chatStatusShelfOpenCharacterIds,
+  readCharacterWorldBookEntryDraftsFromPanel,
+  relationshipChangeSummary,
+  relationshipChanged,
+  relationshipLabel,
+  renderCharacterHeader,
+  renderCharacterIntroCard,
+  renderCharacterStatusPage,
+  renderCharacterWorldBookPage,
+  renderChatStatusShelf,
+} from './character-pages';
+import {
+  canRefocusComposerInput,
+  captureGroupMessageInputFocus,
+  focusComposerInputForKeyboard,
+  groupMessageDraftFor,
+  groupMessageDrafts,
+  isChatScrollNearBottom,
+  isImeComposing,
+  keepMomentComposerVisible,
+  messageDraftFor,
+  messageDrafts,
+  requestTextareaFormSubmit,
+  requestTextareaFormSubmitFromBeforeInput,
+  resizeComposerTextarea,
+  restoreMomentInputFocus,
+  scrollMessagesToBottom,
+  setGroupMessageDraft,
+  setMessageDraft,
+  setMomentComposerKeyboardFocus,
+  updateKeyboardOffset,
+} from './composer-input';
+import {
+  ensureGroupChatForSpeaker,
+  groupChatBackgroundImage,
+  groupChatSortTime,
+  groupChatsForPrivateIdentity,
+  groupReplyLivelinessDescription,
+  groupReplyLivelinessValue,
+  groupSpeakerName,
+  lastGroupMessageFor,
+  renderGroupAvatarStack,
+  renderGroupHeader,
+  renderGroupManagementSection,
+  renderGroupMemberActions,
+  renderGroupMessageAvatar,
+  renderGroupParticipantsEditor,
+  renderGroupReplyLivelinessOptions,
+  renderGroupSpeakerPicker,
+  userSelfLabel,
+} from './group-chat-view';
+import {
+  activePrivateChatEventSuggestion,
+  activePrivateChatTarget,
+  characterDirectPeerThread,
+  characterDirectSourceLabel,
+  characterDirectSpeakerName,
+  characterDirectThreadForTarget,
+  characterDirectUnreadCount,
+  closePrivateIdentityMenus,
+  contactActivityTimeFor,
+  isCharacterDirectChat,
+  lastMessageFor,
+  privateChatBackgroundImage,
+  privateChatIdentityCharacter,
+  privateChatSpeaker,
+  privateChatSpeakerAvatar,
+  privateChatSpeakerName,
+  privateConversationActorId,
+  renderPrivateChatTargetSelector,
+} from './private-chat-identity';
+import {
+  bindCompanionTimeControls,
+  cardCandidateSourceLabel,
+  cardImportFollowupLabel,
+  checked,
+  companionTimeMinutesFromFields,
+  fieldValue,
+  finiteNumber,
+  fontScaleLabel,
+  isCardImportFollowupAction,
+  promptPresetById,
+  renderAutoMessage,
+  renderCharacterRelationshipEditor,
+  renderCompanionTimeFields,
+  renderPromptPresetOptions,
+  renderPromptPresetRows,
+  renderPromptRegexRows,
+  renderRelationship,
+  renderStickerLibrary,
+  selectedCompanionTimeMode,
+  stickerScopeLabel,
+  worldBundleExportedAtLabel,
+  worldBundleImportRows,
+} from './settings-panels';
+import type {
+  CardImportFollowupAction,
+  EventComposerDraft,
+  GroupMessageInputFocusSnapshot,
+  MomentInputFocusSnapshot,
+  StickerLibraryScope,
+  WorldEventSettingsPanelContext,
+  WorldInsightTab,
+  WorldTimelineTypeFilter,
+} from './ui-types';
+import {
+  compactMedia,
+  getViewportLayoutMode,
+  isCompactViewport,
+  tabletLandscapeMedia,
+} from './viewport-layout';
+import {
+  WORLD_INSIGHT_TABS,
+  WORLD_TIMELINE_FILTERS,
+  buildWorldEventAutoCloseSummary,
+  isWorldEventLeadActor,
+  isWorldInsightTab,
+  isWorldTimelineTypeFilter,
+  nonEmptyStringMap,
+  normalizeEventDraft,
+  relationshipInsightStrokeWidth,
+  relationshipInsightTone,
+  relationshipInsightVisibleCharacterIds,
+  relationshipInsightVisibleRelationships,
+  relationshipNetworkPosition,
+  relationshipPairIsSelected,
+  renderDailyBriefBanner,
+  renderDailyBriefCard,
+  renderEventParticipantNames,
+  renderEventSettingsSurfaceName,
+  renderMemorySummaryGroup,
+  renderRelationshipOverviewList,
+  renderRpSegment,
+  renderTimeline,
+  renderTimelineTrackEntry,
+  renderWorldEventLobby,
+  renderWorldEventNarration,
+  renderWorldEventSettingsPreview,
+  renderWorldRpVariantBar,
+  renderWorldStageHeader,
+  timelineInsightDateKey,
+  timelineInsightDateLabel,
+  worldInsightCharacters,
+  worldInsightRelationships,
+  worldInsightTransition,
+} from './world-view';
 
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) {
@@ -349,28 +470,13 @@ const appRoot = app;
 // 小注释：UI 层只负责读状态、渲染和派发动作，不在这里改业务存储结构。
 type SettingsSection = 'world' | 'drafts' | 'stickers' | 'model' | 'prompts' | 'relationship' | 'interactions' | 'proactive' | 'chat' | 'notifications' | 'data';
 type MobileSection = 'messages' | 'contacts' | 'groups' | 'world' | 'moments' | 'settings';
-type LayoutMode = 'mobile' | 'tabletLandscape' | 'desktop';
 type MobileHistoryLayer = 'section' | 'chat' | 'settings-detail' | 'modal';
-type StickerLibraryScope = 'character' | 'common' | 'user';
 type CharacterPanelPage = 'worldbook' | 'worldbook-editor' | 'status';
-type CardImportFollowupAction = 'profile' | 'opening' | 'worldbook';
 type GroupSettingsMode = 'create' | 'edit';
-type WorldInsightTab = 'events' | 'relationships' | 'timeline';
-type WorldTimelineTypeFilter = TimelineEntry['type'] | 'all';
 type PendingStickerImport = {
   scope: StickerLibraryScope;
   characterId?: string;
   stickers: StickerAsset[];
-};
-type EventComposerDraft = {
-  mode: 'auto' | 'manual';
-  title: string;
-  description: string;
-  eventType?: WorldEvent['type'];
-  participantIds: string[];
-  leadActor?: WorldEventLeadActor;
-  affinityDelta: string;
-  privateEventSuggestionId?: string;
 };
 type UiScrollSnapshot = {
   key: string;
@@ -436,42 +542,6 @@ type UiSessionSnapshot = {
 const CARD_IMPORT_ACCEPT = '.json,.png,application/json,image/png,application/octet-stream,*/*';
 const UI_SESSION_KEY = 'tavern-social-ui-session-v1';
 const UI_SESSION_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
-const WORLD_INSIGHT_TABS: Array<{ value: WorldInsightTab; label: string }> = [
-  { value: 'events', label: '小事件' },
-  { value: 'relationships', label: '关系' },
-  { value: 'timeline', label: '时间线' },
-];
-const WORLD_TIMELINE_FILTERS: Array<{ value: WorldTimelineTypeFilter; label: string }> = [
-  { value: 'all', label: '全部' },
-  { value: 'event', label: timelineTypeLabel('event') },
-  { value: 'relationship', label: timelineTypeLabel('relationship') },
-  { value: 'chat', label: timelineTypeLabel('chat') },
-  { value: 'group_chat', label: timelineTypeLabel('group_chat') },
-  { value: 'moment', label: timelineTypeLabel('moment') },
-  { value: 'comment', label: timelineTypeLabel('comment') },
-  { value: 'auto_message', label: timelineTypeLabel('auto_message') },
-  { value: 'daily_brief', label: timelineTypeLabel('daily_brief') },
-  { value: 'character_status', label: timelineTypeLabel('character_status') },
-  { value: 'character_interaction', label: timelineTypeLabel('character_interaction') },
-  { value: 'manual_note', label: timelineTypeLabel('manual_note') },
-  { value: 'system', label: timelineTypeLabel('system') },
-];
-
-function isWorldInsightTab(value: unknown): value is WorldInsightTab {
-  return value === 'events' || value === 'relationships' || value === 'timeline';
-}
-
-function worldInsightTransition(from: WorldInsightTab, to: WorldInsightTab): UiTransitionKind {
-  if (from === to) return 'quiet';
-  const fromIndex = WORLD_INSIGHT_TABS.findIndex(tab => tab.value === from);
-  const toIndex = WORLD_INSIGHT_TABS.findIndex(tab => tab.value === to);
-  if (fromIndex < 0 || toIndex < 0) return 'world-forward';
-  return toIndex > fromIndex ? 'world-forward' : 'world-back';
-}
-
-function isWorldTimelineTypeFilter(value: unknown): value is WorldTimelineTypeFilter {
-  return typeof value === 'string' && WORLD_TIMELINE_FILTERS.some(filter => filter.value === value);
-}
 
 let globalStatusText = '';
 let globalStatusHideTimer: number | undefined;
@@ -553,9 +623,6 @@ let momentCommentSuppressTapUntil = 0;
 let lastDeletedMomentSnapshot: DeletedMomentSnapshot | null = null;
 let lastDeletedMomentUndoTimer: number | undefined;
 let activeMomentDetailId = '';
-const messageDrafts = new Map<string, string>();
-const groupMessageDrafts = new Map<string, string>();
-const chatStatusShelfOpenCharacterIds = new Set<string>();
 let contextPreviewCharacterId = '';
 let lastComposerSubmission: { characterId: string; content: string } | null = null;
 const COMPOSER_FOCUS_KEEPALIVE_MS = 6000;
@@ -622,8 +689,6 @@ let modelOnboardingDraft = {
   apiKey: state.modelConfig.apiKey,
   model: state.modelConfig.model,
 };
-const tabletLandscapeMedia = window.matchMedia('(orientation: landscape) and (min-width: 900px) and (min-height: 600px) and (max-width: 1368px)');
-const compactMedia = window.matchMedia('(max-width: 980px), (max-height: 560px) and (orientation: landscape)');
 let mediaListenerInstalled = false;
 let mobileHistoryInstalled = false;
 let mobileNativeBackInstalled = false;
@@ -649,29 +714,6 @@ const MAIN_NAV_ITEMS: Array<{ id: MobileSection; label: string; iconName: IconNa
 ];
 const BOTTOM_NAV_PRESS_MS = 100;
 const BOTTOM_NAV_LIFT_MS = 240;
-
-function hasTabletTouchInput(): boolean {
-  const navigatorInfo = window.navigator;
-  const touchPoints = typeof navigatorInfo?.maxTouchPoints === 'number' ? navigatorInfo.maxTouchPoints : 0;
-  const userAgent = navigatorInfo?.userAgent ?? '';
-  return touchPoints > 0 && (
-    /Android|iPad|Tablet/i.test(userAgent)
-    || (/Macintosh/i.test(userAgent) && touchPoints > 1)
-  );
-}
-
-function isTabletLandscapeViewport(): boolean {
-  return tabletLandscapeMedia.matches && hasTabletTouchInput();
-}
-
-function isCompactViewport(): boolean {
-  return compactMedia.matches || isTabletLandscapeViewport();
-}
-
-function getViewportLayoutMode(): LayoutMode {
-  if (isTabletLandscapeViewport()) return 'tabletLandscape';
-  return isCompactViewport() ? 'mobile' : 'desktop';
-}
 
 function isSettingsSection(value: unknown): value is SettingsSection {
   return typeof value === 'string' && SETTINGS_SECTIONS.includes(value as SettingsSection);
@@ -730,42 +772,6 @@ function startBottomNavLiftMotion(section: MobileSection): void {
     bottomNavLiftSection = '';
     clearBottomNavMotionClasses();
   }, BOTTOM_NAV_LIFT_MS);
-}
-
-function nonEmptyStringMap(value: unknown): Record<string, string> {
-  if (!value || typeof value !== 'object') return {};
-  const entries = Object.entries(value as Record<string, unknown>)
-    .filter(([key, item]) => key && typeof item === 'string' && item.length > 0);
-  return Object.fromEntries(entries) as Record<string, string>;
-}
-
-function isWorldEventLeadActor(value: unknown): value is WorldEventLeadActor {
-  if (!value || typeof value !== 'object') return false;
-  const actor = value as Record<string, unknown>;
-  return (actor.type === 'user' || actor.type === 'character')
-    && typeof actor.id === 'string'
-    && typeof actor.name === 'string';
-}
-
-function normalizeEventDraft(value: unknown): EventComposerDraft {
-  const draft = value && typeof value === 'object' ? value as Record<string, unknown> : {};
-  const participantIds = Array.isArray(draft.participantIds)
-    ? draft.participantIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
-    : typeof draft.participantId === 'string' && draft.participantId
-      ? [draft.participantId]
-      : [];
-  return {
-    mode: draft.mode === 'manual' ? 'manual' : 'auto',
-    title: typeof draft.title === 'string' ? draft.title : '',
-    description: typeof draft.description === 'string' ? draft.description : '',
-    eventType: draft.eventType === 'relationship' || draft.eventType === 'problem' || draft.eventType === 'news'
-      ? draft.eventType
-      : draft.eventType === 'daily' ? 'daily' : undefined,
-    participantIds,
-    leadActor: isWorldEventLeadActor(draft.leadActor) ? draft.leadActor : undefined,
-    affinityDelta: typeof draft.affinityDelta === 'string' ? draft.affinityDelta : '0',
-    privateEventSuggestionId: typeof draft.privateEventSuggestionId === 'string' ? draft.privateEventSuggestionId : undefined,
-  };
 }
 
 function currentScrollContainer(): HTMLElement | null {
@@ -1253,23 +1259,6 @@ type MessageInputFocusSnapshot = {
   selectionEnd: number | null;
 };
 
-type GroupMessageInputFocusSnapshot = {
-  focused: boolean;
-  chatId: string;
-  value: string;
-  selectionStart: number | null;
-  selectionEnd: number | null;
-};
-
-type MomentInputFocusSnapshot = {
-  focused: boolean;
-  kind: 'composer' | 'comment' | '';
-  momentId: string;
-  value: string;
-  selectionStart: number | null;
-  selectionEnd: number | null;
-};
-
 type ChatScrollSettleResult = 'none' | 'restored' | 'bottom' | 'snapshot';
 
 function hasMobileBackTarget(): boolean {
@@ -1531,10 +1520,6 @@ function forceRestartAllServices(): void {
   }, 120);
 }
 
-function fieldValue<T extends HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(selector: string): string {
-  return document.querySelector<T>(selector)?.value.trim() ?? '';
-}
-
 function renderOnboardingLayer(): string {
   if (modelOnboardingOpen) return renderModelOnboarding();
   if (timeModeOnboardingOpen) return renderTimeModeOnboarding();
@@ -1614,10 +1599,6 @@ function clearMomentDeleteUndo(): void {
   }
 }
 
-function checked(selector: string): boolean {
-  return Boolean(document.querySelector<HTMLInputElement>(selector)?.checked);
-}
-
 async function handleCharacterAvatarInput(input: HTMLInputElement): Promise<void> {
   const file = input.files?.[0];
   const character = activeCharacter();
@@ -1631,132 +1612,6 @@ async function handleCharacterAvatarInput(input: HTMLInputElement): Promise<void
     input.value = '';
     render();
   }
-}
-
-function finiteNumber(value: string, fallback = 0): number {
-  const next = Number(value);
-  return Number.isFinite(next) ? next : fallback;
-}
-
-function companionTimeModeValue(value: string | undefined): CompanionTimeMode {
-  return value === 'virtual' ? 'virtual' : 'system';
-}
-
-function selectedCompanionTimeMode(prefix: 'settings' | 'onboarding'): CompanionTimeMode {
-  return companionTimeModeValue(
-    document.querySelector<HTMLInputElement>(`input[name="${prefix}-companion-time-mode"]:checked`)?.value,
-  );
-}
-
-function companionTimeMinutesFromFields(prefix: 'settings' | 'onboarding'): number {
-  const hour = Math.max(0, Math.min(23, Math.round(finiteNumber(fieldValue(`#${prefix}-virtual-time-hour`), 0))));
-  const minute = Math.max(0, Math.min(59, Math.round(finiteNumber(fieldValue(`#${prefix}-virtual-time-minute`), 0))));
-  return clampVirtualTimeMinutes(hour * 60 + minute);
-}
-
-function syncVirtualClockFields(prefix: 'settings' | 'onboarding', source?: 'range' | 'parts'): void {
-  const range = document.querySelector<HTMLInputElement>(`#${prefix}-virtual-time-range`);
-  const hourInput = document.querySelector<HTMLInputElement>(`#${prefix}-virtual-time-hour`);
-  const minuteInput = document.querySelector<HTMLInputElement>(`#${prefix}-virtual-time-minute`);
-  const readout = document.querySelector<HTMLElement>(`#${prefix}-virtual-clock-readout`);
-  const clock = document.querySelector<HTMLElement>(`[data-virtual-clock="${prefix}"]`);
-  const mode = selectedCompanionTimeMode(prefix);
-  const enabled = mode === 'virtual';
-  document.querySelectorAll<HTMLInputElement>(`input[name="${prefix}-companion-time-mode"]`).forEach(input => {
-    input.closest('.time-mode-option')?.classList.toggle('is-active', input.checked);
-  });
-  const nextMinutes = source === 'range'
-    ? clampVirtualTimeMinutes(Number(range?.value ?? state.virtualTimeMinutes))
-    : companionTimeMinutesFromFields(prefix);
-  const hour = Math.floor(nextMinutes / 60);
-  const minute = nextMinutes % 60;
-  if (hourInput) {
-    hourInput.disabled = !enabled;
-    hourInput.value = String(hour);
-  }
-  if (minuteInput) {
-    minuteInput.disabled = !enabled;
-    minuteInput.value = String(minute);
-  }
-  if (range) {
-    range.disabled = !enabled;
-    range.value = String(nextMinutes);
-  }
-  if (readout) readout.textContent = formatClockMinutes(nextMinutes);
-  clock?.classList.toggle('is-disabled', !enabled);
-}
-
-function bindCompanionTimeControls(prefix: 'settings' | 'onboarding'): void {
-  document.querySelectorAll<HTMLInputElement>(`input[name="${prefix}-companion-time-mode"]`).forEach(radio => {
-    radio.addEventListener('change', () => syncVirtualClockFields(prefix));
-  });
-  document.querySelector<HTMLInputElement>(`#${prefix}-virtual-time-range`)?.addEventListener('input', () => {
-    syncVirtualClockFields(prefix, 'range');
-  });
-  document.querySelector<HTMLInputElement>(`#${prefix}-virtual-time-hour`)?.addEventListener('input', () => {
-    syncVirtualClockFields(prefix, 'parts');
-  });
-  document.querySelector<HTMLInputElement>(`#${prefix}-virtual-time-minute`)?.addEventListener('input', () => {
-    syncVirtualClockFields(prefix, 'parts');
-  });
-}
-
-function affinityProgress(value: number): number {
-  return Math.max(0, Math.min(100, Math.round(value)));
-}
-
-function characterDraftKey(character?: CharacterProfile): string {
-  return character ? `${privateConversationActorId(character)}:${character.id}` : '__no_character__';
-}
-
-function messageDraftFor(character?: CharacterProfile): string {
-  return messageDrafts.get(characterDraftKey(character))
-    ?? (character ? messageDrafts.get(character.id) : undefined)
-    ?? '';
-}
-
-function setMessageDraft(character: CharacterProfile | undefined, value: string): void {
-  const key = characterDraftKey(character);
-  if (value) {
-    messageDrafts.set(key, value);
-    if (character) messageDrafts.delete(character.id);
-  } else {
-    messageDrafts.delete(key);
-    if (character) messageDrafts.delete(character.id);
-  }
-}
-
-function groupDraftKey(chat?: GroupChatProfile): string {
-  return chat?.id ?? '__no_group__';
-}
-
-function groupMessageDraftFor(chat?: GroupChatProfile): string {
-  return groupMessageDrafts.get(groupDraftKey(chat)) ?? '';
-}
-
-function setGroupMessageDraft(chat: GroupChatProfile | undefined, value: string): void {
-  const key = groupDraftKey(chat);
-  if (value) {
-    groupMessageDrafts.set(key, value);
-  } else {
-    groupMessageDrafts.delete(key);
-  }
-}
-
-function fontScaleLabel(scale: number): string {
-  const normalized = normalizeChatFontScale(scale);
-  if (normalized < 0.96) return '小';
-  if (normalized > 1.14) return '大';
-  if (normalized > 1.04) return '稍大';
-  return '标准';
-}
-
-function privateChatBackgroundImage(character?: CharacterProfile): string | undefined {
-  return character ? conversationFor(character.id, privateConversationActorId(character))?.backgroundImage : undefined;
-}
-
-function groupChatBackgroundImage(chat?: GroupChatProfile): string | undefined {
-  return chat?.backgroundImage;
 }
 
 function isSubmittedComposerEcho(character: CharacterProfile | undefined, value: string): boolean {
@@ -1854,22 +1709,6 @@ function restoreMessageInputFocus(snapshot: MessageInputFocusSnapshot): boolean 
   return true;
 }
 
-function captureGroupMessageInputFocus(): GroupMessageInputFocusSnapshot {
-  const input = document.querySelector<HTMLTextAreaElement>('#group-message-input');
-  const chat = activeGroupChat();
-  const focused = document.activeElement === input;
-  if (input && focused) {
-    setGroupMessageDraft(chat, input.value);
-  }
-  return {
-    focused,
-    chatId: chat?.id ?? '',
-    value: input?.value ?? '',
-    selectionStart: input?.selectionStart ?? null,
-    selectionEnd: input?.selectionEnd ?? null,
-  };
-}
-
 function restoreGroupMessageInputFocus(snapshot: GroupMessageInputFocusSnapshot): boolean {
   if (!snapshot.focused) return false;
   const chat = activeGroupChat();
@@ -1920,25 +1759,6 @@ function captureMomentInputFocus(): MomentInputFocusSnapshot {
   return { focused: false, kind: '', momentId: '', value: '', selectionStart: null, selectionEnd: null };
 }
 
-function restoreMomentInputFocus(snapshot: MomentInputFocusSnapshot): boolean {
-  if (!snapshot.focused) return false;
-  const input = snapshot.kind === 'composer'
-    ? document.querySelector<HTMLTextAreaElement>('#moment-input')
-    : Array.from(document.querySelectorAll<HTMLInputElement>('[data-comment-input]'))
-      .find(item => item.dataset.commentInput === snapshot.momentId);
-  if (!input) return false;
-  if (input.value !== snapshot.value) input.value = snapshot.value;
-  input.focus({ preventScroll: true });
-  if (snapshot.selectionStart !== null && snapshot.selectionEnd !== null) {
-    try {
-      input.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd);
-    } catch {
-      // Mobile browsers may reject selection updates while the keyboard is settling.
-    }
-  }
-  return true;
-}
-
 function clearPendingIdleRender(): void {
   if (pendingIdleInput && pendingIdleRenderFlush) {
     pendingIdleInput.removeEventListener('blur', pendingIdleRenderFlush);
@@ -1962,67 +1782,6 @@ function currentWorldCharacters(): CharacterProfile[] {
     character.worldId === activeWorld().id
     && (!query || `${character.name} ${characterSettingsText(character)}`.toLocaleLowerCase().includes(query)),
   );
-}
-
-function privateChatIdentityCharacter(): CharacterProfile | undefined {
-  const actor = communicationActor(activeWorld().id);
-  return actor.type === 'character' ? actor.character : undefined;
-}
-
-function privateConversationActorId(character?: CharacterProfile): string {
-  if (!character) return 'user';
-  return privateConversationActorIdFor(character, communicationActorId(character.worldId));
-}
-
-function activePrivateChatTarget(): CharacterProfile | undefined {
-  const character = activeCharacter();
-  return character && privateChatIdentityCharacter()?.id !== character.id ? character : undefined;
-}
-
-function characterDirectThreadForTarget(
-  character?: CharacterProfile,
-  create = false,
-): CharacterDirectThread | undefined {
-  const speaker = privateChatIdentityCharacter();
-  if (!speaker || !character || speaker.id === character.id || speaker.worldId !== character.worldId) return undefined;
-  if (create) return ensureCharacterDirectThread(character.worldId, speaker.id, character.id);
-  const threadId = characterDirectThreadIdFor(character.worldId, speaker.id, character.id);
-  return state.characterDirectThreads.find(thread => thread.id === threadId);
-}
-
-function isCharacterDirectChat(character?: CharacterProfile): boolean {
-  const speaker = privateChatIdentityCharacter();
-  return Boolean(speaker && character && speaker.id !== character.id && speaker.worldId === character.worldId);
-}
-
-function characterDirectPeerThread(
-  actor: CharacterProfile,
-  peer: CharacterProfile,
-  threads: CharacterDirectThread[] = characterDirectThreadsForActor(actor.id, actor.worldId),
-): CharacterDirectThread | undefined {
-  return threads.find(thread => thread.participantCharacterIds.includes(peer.id));
-}
-
-function characterDirectLatestMessageFor(character: CharacterProfile): CharacterDirectMessage | undefined {
-  const thread = characterDirectThreadForTarget(character);
-  if (!thread) return undefined;
-  const messages = characterDirectMessagesFor(thread.id);
-  return messages[messages.length - 1];
-}
-
-function characterDirectUnreadCount(thread: CharacterDirectThread | undefined, actorCharacterId: string): number {
-  if (!thread) return 0;
-  const lastReadAt = thread.lastReadByCharacterId[actorCharacterId] ?? 0;
-  return state.characterDirectMessages.filter(message =>
-    message.threadId === thread.id
-    && !message.recalledAt
-    && message.speakerCharacterId !== actorCharacterId
-    && message.createdAt > lastReadAt,
-  ).length;
-}
-
-function characterDirectSpeakerName(message: CharacterDirectMessage): string {
-  return state.characters.find(character => character.id === message.speakerCharacterId)?.name ?? '已删除角色';
 }
 
 function privateChatContactCharacters(mode: 'contacts' | 'recent' = 'contacts'): CharacterProfile[] {
@@ -2122,18 +1881,6 @@ function replyStrategyManagerCharacter(): CharacterProfile | undefined {
   return fallback;
 }
 
-async function generateCharacterReplyStrategy(character: CharacterProfile): Promise<string> {
-  if (!modelIsReady()) {
-    throw new Error('请先到“设置 -> 模型连接”配置模型，再按人设生成回复策略。');
-  }
-  const content = await callAuthoringModel(buildCharacterReplyStrategyMessages(character), { countBudget: true });
-  const strategy = cleanGeneratedCharacterReplyStrategy(content);
-  if (!strategy) {
-    throw new Error('模型没有返回可用的回复策略。');
-  }
-  return strategy;
-}
-
 async function regenerateReplyStrategyForCharacter(character: CharacterProfile, inputSelector: string): Promise<void> {
   replyStrategyGeneratingCharacterId = character.id;
   setStatusText(`正在让 AI 按 ${character.name} 的人设生成回复策略…`);
@@ -2155,78 +1902,10 @@ async function regenerateReplyStrategyForCharacter(character: CharacterProfile, 
   }
 }
 
-function lastMessageFor(character: CharacterProfile) {
-  return messagesFor(character.id, privateConversationActorId(character)).reduce(
-    (latest, message) => !latest || message.createdAt > latest.createdAt ? message : latest,
-    undefined as ReturnType<typeof messagesFor>[number] | undefined,
-  );
-}
-
-function contactActivityTimeFor(character: CharacterProfile): number {
-  if (isCharacterDirectChat(character)) {
-    const latest = characterDirectLatestMessageFor(character);
-    return latest?.createdAt ?? characterDirectThreadForTarget(character)?.updatedAt ?? character.importedAt;
-  }
-  return lastMessageFor(character)?.createdAt
-    ?? conversationFor(character.id, privateConversationActorId(character))?.updatedAt
-    ?? character.importedAt;
-}
-
 function recentCharacters(): CharacterProfile[] {
   return currentWorldCharacters().sort((left, right) => {
     return contactActivityTimeFor(right) - contactActivityTimeFor(left);
   });
-}
-
-function relationshipLabel(character: CharacterProfile): string {
-  return character.relationship.summary || relationshipStageLabel(character.relationship.stage);
-}
-
-function relationshipChanged(before: RelationshipState, after: RelationshipState): boolean {
-  return before.stage !== after.stage
-    || Math.round(before.affinity) !== Math.round(after.affinity)
-    || before.summary.trim() !== after.summary.trim();
-}
-
-function characterRelationshipSideChanged(before: CharacterRelationshipSide, after: CharacterRelationshipSide): boolean {
-  return before.stage !== after.stage || before.summary.trim() !== after.summary.trim();
-}
-
-function characterRelationshipChangeSummary(
-  from: CharacterProfile,
-  to: CharacterProfile,
-  before: CharacterRelationshipSide,
-  after: CharacterRelationshipSide,
-): string {
-  const lines: string[] = [];
-  if (before.stage !== after.stage) {
-    lines.push(`${from.name} → ${to.name}：${relationshipStageLabel(before.stage)} → ${relationshipStageLabel(after.stage)}`);
-  }
-  if (before.summary.trim() !== after.summary.trim()) {
-    lines.push(after.summary.trim()
-      ? `${from.name} 对 ${to.name} 的摘要：${compactText(after.summary.trim(), 120)}`
-      : `${from.name} 对 ${to.name} 的摘要已清空`);
-  }
-  return lines.length > 0 ? lines.join('；') : '角色之间的关系已重新保存。';
-}
-
-function relationshipChangeSummary(before: RelationshipState, after: RelationshipState): string {
-  const lines: string[] = [];
-  if (before.stage !== after.stage) {
-    lines.push(`关系阶段：${relationshipStageLabel(before.stage)} → ${relationshipStageLabel(after.stage)}`);
-  }
-  const beforeAffinity = Math.round(before.affinity);
-  const afterAffinity = Math.round(after.affinity);
-  if (beforeAffinity !== afterAffinity) {
-    const delta = afterAffinity - beforeAffinity;
-    lines.push(`好感度：${beforeAffinity} → ${afterAffinity}（${delta > 0 ? '+' : ''}${delta}）`);
-  }
-  if (before.summary.trim() !== after.summary.trim()) {
-    lines.push(after.summary.trim()
-      ? `关系摘要更新为：${compactText(after.summary.trim(), 120)}`
-      : '关系摘要已清空');
-  }
-  return lines.length > 0 ? lines.join('；') : '关系状态已重新保存。';
 }
 
 // 大注释：聊天记录分段渲染。界面每次刷新都会整页重画，聊得越久消息越多，打开聊天和每次刷新都越慢。
@@ -2303,66 +1982,6 @@ function messageArrivalMarkup(messageId: string, createdAt: number, threshold: n
     className: 'is-arriving',
     style: elapsed >= 1 ? ` style="--message-arrival-delay: -${Math.round(elapsed)}ms"` : '',
   };
-}
-
-function visibleMessagesForCharacter(character: CharacterProfile): ChatMessage[] {
-  return messagesFor(character.id, privateConversationActorId(character))
-    .filter(message => !message.recalledAt && !message.impactRevokedAt);
-}
-
-function latestVisibleMessageFor(character: CharacterProfile): ChatMessage | undefined {
-  const messages = visibleMessagesForCharacter(character);
-  return messages[messages.length - 1];
-}
-
-function hasRecentMomentForCharacter(character: CharacterProfile): boolean {
-  const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
-  return state.moments.some(moment =>
-    moment.worldId === character.worldId
-    && moment.characterId === character.id
-    && moment.createdAt >= dayAgo,
-  );
-}
-
-function chatStatusShelfLine(character: CharacterProfile): string {
-  const status = characterStatusFor(character);
-  const latest = latestVisibleMessageFor(character);
-  if (latest?.role === 'assistant') return '还在等你回那句话';
-  if (status.unresolvedItems.length === 1) return '有一件事没处理';
-  if (status.unresolvedItems.length > 1) return `有 ${status.unresolvedItems.length} 件事没处理`;
-  if (hasRecentMomentForCharacter(character)) return '刚发了动态';
-  const line = characterStatusLine(character).trim();
-  return line && line !== '近况安静' ? line : '近况安静';
-}
-
-function renderAffinityMeter(character: CharacterProfile): string {
-  const value = Math.max(0, Math.round(character.relationship.affinity));
-  const progress = affinityProgress(value);
-  return `
-    <div class="affinity-meter" style="--affinity-progress: ${progress}%">
-      <div class="affinity-meter-label">
-        <span>好感度</span>
-        <strong>${value}</strong>
-      </div>
-      <div class="affinity-track" role="meter" aria-label="好感度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}">
-        <span></span>
-      </div>
-      ${value > 100 ? `<small>已超过 100，进度条按 100 显示</small>` : ''}
-    </div>
-  `;
-}
-
-function renderCharacterIntroCard(character: CharacterProfile, compact = false): string {
-  const note = character.profileNote?.trim();
-  return `
-    <section class="character-intro-card ${compact ? 'compact' : ''}">
-      <div class="character-intro-copy">
-        <strong>${escapeHtml(character.name)} 的背景故事备注</strong>
-        <p>${escapeHtml(note || '还没有背景故事备注。点头像或右上角齿轮，可以补一段来历、过去经历，或这个角色和 user 之间已经发生过什么。')}</p>
-      </div>
-      ${renderAffinityMeter(character)}
-    </section>
-  `;
 }
 
 function renderMessageProfilePopover(character?: CharacterProfile): string {
@@ -2475,65 +2094,6 @@ function renderContacts(mode: 'contacts' | 'recent' = 'contacts'): string {
     </button>
   `;
   }).join('');
-}
-
-function lastGroupMessageFor(chat: GroupChatProfile): GroupChatMessage | undefined {
-  return groupMessagesFor(chat.id).reduce(
-    (latest, message) => !latest || message.createdAt > latest.createdAt ? message : latest,
-    undefined as GroupChatMessage | undefined,
-  );
-}
-
-function groupChatSortTime(chat: GroupChatProfile): number {
-  return lastGroupMessageFor(chat)?.createdAt ?? chat.updatedAt ?? chat.createdAt;
-}
-
-function groupChatVisibleForPrivateIdentity(_chat: GroupChatProfile): boolean {
-  // 大注释：群聊记录是世界内共享的，不按通讯身份拆分；当前身份只影响发言人和视角。
-  return true;
-}
-
-function groupChatsForPrivateIdentity(): GroupChatProfile[] {
-  return groupChatsForActiveWorld().filter(groupChatVisibleForPrivateIdentity);
-}
-
-function groupSpeakerFromCommunicationIdentity(chat: GroupChatProfile): string {
-  const actor = communicationActor(chat.worldId);
-  if (actor.type === 'character' && chat.participantCharacterIds.includes(actor.character.id)) return actor.character.id;
-  return 'user';
-}
-
-function preferredGroupSpeakerIdForPrivateIdentity(chat: GroupChatProfile): string {
-  return groupSpeakerFromCommunicationIdentity(chat);
-}
-
-function ensureGroupChatForSpeaker(): void {
-  const chats = groupChatsForPrivateIdentity();
-  if (chats.length === 0) {
-    state.activeGroupChatId = '';
-    return;
-  }
-  const active = chats.find(chat => chat.id === state.activeGroupChatId) ?? chats[0];
-  state.activeGroupChatId = active.id;
-  const preferredSpeakerId = preferredGroupSpeakerIdForPrivateIdentity(active);
-  if (active.selectedSpeakerId !== preferredSpeakerId) {
-    active.selectedSpeakerId = preferredSpeakerId;
-  }
-}
-
-function renderGroupAvatarStack(chat: GroupChatProfile): string {
-  const participants = chat.participantCharacterIds
-    .map(id => state.characters.find(character => character.id === id && character.worldId === chat.worldId))
-    .filter((character): character is CharacterProfile => Boolean(character))
-    .slice(0, 4);
-  if (participants.length === 0) {
-    return '<span class="group-avatar-stack"><span class="avatar group-avatar-fallback">群</span></span>';
-  }
-  return `
-    <span class="group-avatar-stack" aria-hidden="true" data-group-avatar-count="${participants.length}">
-      ${participants.map(character => `<span class="avatar"${avatarToneAttribute(character)}>${renderAvatar(character)}</span>`).join('')}
-    </span>
-  `;
 }
 
 function renderGroupConversationRows(): string {
@@ -2652,46 +2212,6 @@ function openPrivateChatByCharacterId(characterId: string, options: { pushHistor
   if (!directSpeaker) void generateOpeningMessage(character, render, privateConversationActorId(character));
 }
 
-function renderChatStatusShelf(character?: CharacterProfile): string {
-  if (!character) return '';
-  const status = characterStatusFor(character);
-  const isOpen = chatStatusShelfOpenCharacterIds.has(character.id);
-  const unresolvedItems = status.unresolvedItems.slice(0, 3);
-  const summary = chatStatusShelfLine(character);
-  return `
-    <section class="chat-status-shelf ${isOpen ? 'is-open' : ''}" aria-label="${escapeHtml(character.name)} 的当前状态">
-      <button class="chat-status-shelf-toggle" type="button" data-chat-status-shelf="${escapeHtml(character.id)}" aria-expanded="${isOpen ? 'true' : 'false'}">
-        <span class="chat-status-dot" aria-hidden="true"></span>
-        <span class="chat-status-summary">
-          <strong>${escapeHtml(summary)}</strong>
-          <small>${escapeHtml(compactText(relationshipLabel(character), 72))}</small>
-        </span>
-        <span class="chat-status-arrow" aria-hidden="true">${isOpen ? '⌃' : '⌄'}</span>
-      </button>
-      ${isOpen ? `
-        <div class="chat-status-expanded">
-          <div class="chat-status-metrics">
-            <span><small>现在</small><strong>${escapeHtml(status.mood || '近况安静')}</strong></span>
-            <span><small>关系</small><strong>${escapeHtml(relationshipStageLabel(status.relationshipStage))}</strong></span>
-            <span><small>未处理</small><strong>${unresolvedItems.length > 0 ? `${unresolvedItems.length} 件` : '暂时没有'}</strong></span>
-            <span><small>下一步</small><strong>${escapeHtml(compactText(status.nextInclination, 60))}</strong></span>
-          </div>
-          <div class="chat-status-unresolved">
-            <strong>未解决事项</strong>
-            ${unresolvedItems.length > 0
-              ? `<ul>${unresolvedItems.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`
-              : '<p>暂时没有待处理事项。</p>'}
-          </div>
-          <div class="chat-status-actions">
-            <button class="secondary chat-status-detail-button" type="button" data-open-context-preview="${escapeHtml(character.id)}">上下文预览</button>
-            <button class="secondary chat-status-detail-button" type="button" data-open-character-status="${escapeHtml(character.id)}">查看完整状态</button>
-          </div>
-        </div>
-      ` : ''}
-    </section>
-  `;
-}
-
 function renderContextPreviewPanel(character?: CharacterProfile): string {
   if (!character || contextPreviewCharacterId !== character.id) return '';
   const actorId = privateConversationActorId(character);
@@ -2751,27 +2271,6 @@ function renderContextPreviewPanel(character?: CharacterProfile): string {
   `;
 }
 
-function activePrivateChatEventSuggestion(
-  character?: CharacterProfile,
-  directSpeaker?: CharacterProfile,
-): PrivateChatEventSuggestion | undefined {
-  if (!character) return undefined;
-  if (directSpeaker && directSpeaker.id !== character.id) {
-    return pendingPrivateChatEventSuggestionsForThread({
-      worldId: character.worldId,
-      sourceKind: 'character_direct',
-      threadId: characterDirectThreadIdFor(character.worldId, directSpeaker.id, character.id),
-    })[0];
-  }
-  const conversation = conversationFor(character.id, privateConversationActorId(character));
-  if (!conversation) return undefined;
-  return pendingPrivateChatEventSuggestionsForThread({
-    worldId: character.worldId,
-    sourceKind: 'private_chat',
-    threadId: conversation.id,
-  })[0];
-}
-
 function renderPrivateChatEventSuggestionCard(
   character?: CharacterProfile,
   directSpeaker?: CharacterProfile,
@@ -2818,89 +2317,6 @@ function openEventComposerFromPrivateSuggestion(suggestion: PrivateChatEventSugg
   preserveScrollForNextRender();
   saveUiSessionSnapshot();
   renderWithUiTransition('overlay-in');
-}
-
-function privateChatSpeaker(): PrivateChatSpeaker {
-  const actor = communicationActor(activeWorld().id);
-  if (actor.type === 'character') {
-    return { speakerType: 'character', speakerCharacterId: actor.character.id };
-  }
-  return { speakerType: 'user' };
-}
-
-function privateChatSpeakerName(message: ChatMessage): string {
-  if (message.speakerType === 'character' && message.speakerCharacterId) {
-    return state.characters.find(character => character.id === message.speakerCharacterId)?.name ?? '已删除角色';
-  }
-  return state.userName.trim() || '我';
-}
-
-function privateChatSpeakerAvatar(message: ChatMessage): string {
-  if (message.speakerType === 'character' && message.speakerCharacterId) {
-    const character = state.characters.find(item => item.id === message.speakerCharacterId);
-    return character ? renderAvatar(character) : escapeHtml(privateChatSpeakerName(message).slice(0, 1));
-  }
-  return renderUserAvatar(state.userName);
-}
-
-function renderPrivateChatTargetSelector(): string {
-  const characters = state.characters.filter(character => character.worldId === activeWorld().id);
-  const selectedId = communicationActorId(activeWorld().id) === 'user'
-    || characters.some(character => character.id === communicationActorId(activeWorld().id))
-    ? communicationActorId(activeWorld().id)
-    : 'user';
-  const selectedCharacter = characters.find(character => character.id === selectedId);
-  const selectedName = selectedCharacter?.name ?? (state.userName.trim() || '我');
-  const optionItems = [
-    {
-      id: 'user',
-      name: state.userName.trim() || '我',
-      avatar: renderUserAvatar(state.userName),
-      character: undefined,
-    },
-    ...characters.map(character => ({
-      id: character.id,
-      name: character.name,
-      avatar: renderAvatar(character),
-      character,
-    })),
-  ];
-  return `
-    <details class="private-chat-identity-select">
-      <summary aria-label="选择通讯身份">
-        <span class="avatar private-chat-identity-avatar"${avatarToneAttribute(selectedCharacter)}>${selectedCharacter ? renderAvatar(selectedCharacter) : renderUserAvatar(state.userName)}</span>
-        <span class="private-chat-identity-copy">
-          <strong>${escapeHtml(selectedName)}</strong>
-          <small>选择通讯身份</small>
-        </span>
-        <span class="private-chat-identity-chevron" aria-hidden="true">${icon('chevronDown')}</span>
-      </summary>
-      <div class="private-chat-identity-menu" role="listbox" aria-label="选择通讯身份">
-        ${optionItems.map(option => `
-          <button
-            class="private-chat-identity-option ${option.id === selectedId ? 'is-active' : ''}"
-            type="button"
-            role="option"
-            aria-selected="${option.id === selectedId ? 'true' : 'false'}"
-            data-private-chat-identity-option="${escapeHtml(option.id)}"
-          >
-            <span class="avatar private-chat-identity-option-avatar"${avatarToneAttribute(option.character)}>${option.avatar}</span>
-            <span class="private-chat-identity-option-copy">
-              <strong>${escapeHtml(option.name)}</strong>
-              <small>${option.id === selectedId ? '当前身份' : '切换身份'}</small>
-            </span>
-            <span class="private-chat-identity-option-check" aria-hidden="true">${option.id === selectedId ? '✓' : ''}</span>
-          </button>
-        `).join('')}
-      </div>
-    </details>
-  `;
-}
-
-function characterDirectSourceLabel(message: CharacterDirectMessage): string {
-  if (message.source === 'manual') return '手写身份';
-  if (message.source === 'auto_model') return '热闹世界';
-  return '生成回复';
 }
 
 function renderCharacterDirectMessages(character: CharacterProfile): string {
@@ -3087,84 +2503,6 @@ function renderStickerPicker(character?: CharacterProfile): string {
   `;
 }
 
-function renderStickerLibrary(
-  scope: StickerLibraryScope,
-  stickers: import('../core/types').StickerAsset[],
-  character?: CharacterProfile,
-): string {
-  const config = {
-    character: {
-      title: '角色专属表情包',
-      description: `仅供 ${character?.name ?? '当前角色'} 的模型使用，用户聊天面板不会显示。`,
-      importId: 'character-sticker-import',
-      empty: '导入后，当前角色会在合适的时候使用它们。',
-    },
-    common: {
-      title: '通用表情包',
-      description: '所有角色模型都可使用，用户也能从聊天面板直接发送。',
-      importId: 'common-sticker-import',
-      empty: '适合放所有人都能使用的常用表情。',
-    },
-    user: {
-      title: '用户表情包',
-      description: '只在你的聊天面板中显示，不会提供给角色模型。',
-      importId: 'user-sticker-import',
-      empty: '适合放只由你发送的个人表情。',
-    },
-  }[scope];
-  return `
-    <div class="sticker-library" data-sticker-library="${scope}">
-      <div class="sticker-library-heading"><strong>${config.title}</strong><span>${stickers.length}/48</span></div>
-      <p class="muted">${config.description} 导入后可以改名称并写备注，备注会帮助没有识图能力的模型理解图片。</p>
-      <label class="file-button sticker-import-button">${icon('import')}<span>批量导入</span>
-        <input id="${config.importId}" type="file" multiple accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" />
-      </label>
-      ${stickers.length > 0 ? `<div class="sticker-library-grid">${stickers.map(sticker => `
-        <figure>
-          <img src="${escapeHtml(displayImageUrl(sticker.dataUrl))}" alt="${escapeHtml(sticker.name)}" />
-          <figcaption title="${escapeHtml(sticker.name)}">${escapeHtml(sticker.name)}</figcaption>
-          ${sticker.note?.trim() ? `<small>${escapeHtml(compactText(sticker.note, 42))}</small>` : ''}
-          <button type="button" data-delete-sticker="${escapeHtml(sticker.id)}" data-sticker-scope="${scope}" aria-label="删除 ${escapeHtml(sticker.name)}">×</button>
-        </figure>
-      `).join('')}</div>` : `<div class="sticker-empty">${config.empty}</div>`}
-    </div>
-  `;
-}
-
-function renderCharacterHeader(character?: CharacterProfile, backButton = false): string {
-  if (!character) {
-    return `
-      <div class="chat-identity">
-        ${backButton ? '<button class="header-back" data-mobile-back aria-label="返回">‹</button>' : ''}
-        <div><strong>选择一个角色</strong><span>独立私聊会话</span></div>
-      </div>
-    `;
-  }
-  const directSpeaker = privateChatIdentityCharacter();
-  if (directSpeaker && directSpeaker.id !== character.id) {
-    return `
-      <div class="chat-identity">
-        ${backButton ? '<button class="header-back" data-mobile-back aria-label="返回">‹</button>' : ''}
-        <button class="avatar header-avatar avatar-button" id="open-character-profile" type="button" aria-label="查看角色状态">${renderAvatar(character)}</button>
-        <div>
-          <strong>${escapeHtml(character.name)}</strong>
-          <span>${escapeHtml(`以 ${directSpeaker.name} 身份查看私聊`)}</span>
-        </div>
-      </div>
-    `;
-  }
-  return `
-    <div class="chat-identity">
-      ${backButton ? '<button class="header-back" data-mobile-back aria-label="返回">‹</button>' : ''}
-      <button class="avatar header-avatar avatar-button" id="open-character-profile" type="button" aria-label="查看角色状态">${renderAvatar(character)}</button>
-      <div>
-        <strong>${escapeHtml(character.name)}</strong>
-        <span>${escapeHtml(compactText(relationshipLabel(character), 54))}</span>
-      </div>
-    </div>
-  `;
-}
-
 // 小注释：电脑版分区切换交给左侧导航栏，头部只留当前角色的设置入口。
 function renderDesktopHeaderActions(character?: CharacterProfile): string {
   if (!character) return '';
@@ -3182,139 +2520,6 @@ function renderCharacterPanelTabs(): string {
       <button class="${characterPanelPage === 'worldbook' ? 'is-active' : ''}" type="button" data-character-panel-page="worldbook">设置</button>
     </nav>
   `;
-}
-
-function renderStatusList(title: string, items: string[], empty: string): string {
-  return `
-    <section class="character-status-block">
-      <h3>${escapeHtml(title)}</h3>
-      ${items.length > 0
-        ? `<ul>${items.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`
-        : `<p>${escapeHtml(empty)}</p>`}
-    </section>
-  `;
-}
-
-function renderCharacterStatusPage(character: CharacterProfile): string {
-  const status = characterStatusFor(character);
-  const updated = status.updatedAt ? new Date(status.updatedAt).toLocaleString() : '尚未保存';
-  return `
-    <section class="character-panel-page character-status-page">
-      <div class="character-status-hero">
-        <span class="avatar character-panel-avatar">${renderAvatar(character)}</span>
-        <div class="character-panel-identity-copy">
-          <span class="settings-kicker">角色状态</span>
-          <h3>${escapeHtml(status.mood)}</h3>
-          <p>${escapeHtml(status.summary)}</p>
-        </div>
-      </div>
-      <div class="character-status-metrics">
-        <span><strong>${escapeHtml(relationshipStageLabel(status.relationshipStage))}</strong><small>关系阶段</small></span>
-        <span><strong>${status.affinity}</strong><small>好感度</small></span>
-        <span><strong>${escapeHtml(status.source === 'model' ? '模型摘要' : '规则摘要')}</strong><small>来源</small></span>
-      </div>
-      ${status.relationshipSummary ? `
-        <section class="character-status-block is-wide">
-          <h3>关系摘要</h3>
-          <p>${escapeHtml(status.relationshipSummary)}</p>
-        </section>
-      ` : ''}
-      <section class="character-status-block is-wide">
-        <h3>角色当前计划</h3>
-        <p>${escapeHtml(character.currentPlan?.text ?? '')}</p>
-        <p class="muted">来源：${escapeHtml(character.currentPlan?.source === 'model' ? '模型刷新' : '规则生成')}</p>
-      </section>
-      <div class="character-status-grid">
-        ${renderStatusList('最近三件重要记忆', status.recentMemoryTitles, '还没有足够的重要记忆。')}
-        ${renderStatusList('未解决事项', status.unresolvedItems, '暂时没有待处理事项。')}
-        ${renderStatusList('最近活跃来源', status.activeSources, '最近还没有明显活跃来源。')}
-        <section class="character-status-block">
-          <h3>下一步倾向</h3>
-          <p>${escapeHtml(status.nextInclination)}</p>
-        </section>
-      </div>
-      <footer class="character-status-footer">
-        <p class="muted">最后刷新：${escapeHtml(updated)}</p>
-        <button class="secondary" id="refresh-character-plan" type="button">刷新当前计划</button>
-        <button class="primary" id="refresh-character-status" type="button">刷新状态摘要</button>
-      </footer>
-    </section>
-  `;
-}
-
-function renderCharacterWorldBookEntryEditor(character: CharacterProfile): string {
-  const entries = characterWorldBookEntryDrafts(character);
-  return `
-    <section class="character-worldbook-editor" aria-label="附加世界书条目">
-      <header>
-        <div>
-          <strong>世界书</strong>
-          <p class="muted">按条目收起管理，点开后再编辑关键词、正文和触发方式。</p>
-        </div>
-        <div class="character-worldbook-actions">
-          <span class="character-worldbook-entry-count">${entries.length} 条</span>
-          <button id="add-character-worldbook-entry" class="secondary" type="button">${icon('add')}<span>新增</span></button>
-        </div>
-      </header>
-      ${entries.length > 0 ? `
-        <div class="character-worldbook-list">
-          ${entries.map((entry, index) => `
-            <details class="character-worldbook-entry" data-worldbook-entry-id="${escapeHtml(entry.id)}">
-              <summary class="character-worldbook-entry-head">
-                <span>
-                  <strong>${escapeHtml(entry.comment || `条目 ${index + 1}`)}</strong>
-                  <small>${escapeHtml(entry.keys || '未设置关键词')}</small>
-                </span>
-                <em>${entry.enabled ? '启用' : '停用'}</em>
-              </summary>
-              <div class="character-worldbook-grid">
-                <label class="field">
-                  <span>标题 / 注释</span>
-                  <input data-worldbook-entry-comment value="${escapeHtml(entry.comment)}" placeholder="例如：学院旧闻、某个 NPC、隐藏规则" />
-                </label>
-                <label class="field">
-                  <span>关键词</span>
-                  <input data-worldbook-entry-keys value="${escapeHtml(entry.keys)}" placeholder="多个关键词用逗号或顿号分隔" />
-                </label>
-                <label class="field">
-                  <span>插入顺序</span>
-                  <input data-worldbook-entry-order type="number" step="1" value="${entry.insertionOrder}" />
-                </label>
-                <label class="field">
-                  <span>位置</span>
-                  <input data-worldbook-entry-position type="number" step="1" value="${entry.position}" />
-                </label>
-              </div>
-              <label class="field">
-                <span>正文</span>
-                <textarea data-worldbook-entry-content placeholder="触发后要交给模型看的设定内容">${escapeHtml(entry.content)}</textarea>
-              </label>
-              <div class="character-worldbook-switches">
-                <label><input data-worldbook-entry-enabled type="checkbox" ${entry.enabled ? 'checked' : ''} />启用</label>
-                <label><input data-worldbook-entry-constant type="checkbox" ${entry.constant ? 'checked' : ''} />常驻</label>
-                <label><input data-worldbook-entry-selective type="checkbox" ${entry.selective ? 'checked' : ''} />选择性</label>
-              </div>
-              <button class="danger character-worldbook-delete" data-delete-character-worldbook-entry="${escapeHtml(entry.id)}" type="button">删除这个条目</button>
-            </details>
-          `).join('')}
-        </div>
-      ` : '<p class="muted character-worldbook-empty">还没有附加世界书条目。新增后可以像酒馆一样写关键词和正文。</p>'}
-    </section>
-  `;
-}
-
-function readCharacterWorldBookEntryDraftsFromPanel(): CharacterWorldBookEntryDraft[] {
-  return Array.from(document.querySelectorAll<HTMLElement>('.character-worldbook-entry')).map((entry, index) => ({
-    id: entry.dataset.worldbookEntryId ?? '',
-    comment: entry.querySelector<HTMLInputElement>('[data-worldbook-entry-comment]')?.value.trim() ?? '',
-    keys: entry.querySelector<HTMLInputElement>('[data-worldbook-entry-keys]')?.value.trim() ?? '',
-    content: entry.querySelector<HTMLTextAreaElement>('[data-worldbook-entry-content]')?.value.trim() ?? '',
-    enabled: entry.querySelector<HTMLInputElement>('[data-worldbook-entry-enabled]')?.checked ?? true,
-    constant: entry.querySelector<HTMLInputElement>('[data-worldbook-entry-constant]')?.checked ?? false,
-    selective: entry.querySelector<HTMLInputElement>('[data-worldbook-entry-selective]')?.checked ?? false,
-    insertionOrder: finiteNumber(entry.querySelector<HTMLInputElement>('[data-worldbook-entry-order]')?.value ?? '', index),
-    position: finiteNumber(entry.querySelector<HTMLInputElement>('[data-worldbook-entry-position]')?.value ?? '', 0),
-  }));
 }
 
 function renderCharacterSettingsPage(character: CharacterProfile): string {
@@ -3371,21 +2576,6 @@ function renderCharacterSettingsPage(character: CharacterProfile): string {
   `;
 }
 
-function renderCharacterWorldBookPage(character: CharacterProfile): string {
-  return `
-    <section class="character-panel-page character-worldbook-page">
-      <div class="character-worldbook-page-note">
-        <strong>${escapeHtml(character.name)} 的角色世界书</strong>
-        <p class="muted">每个条目可以单独设置关键词、正文、常驻和选择性触发。这里保存的是这个角色自己的附加世界书，不会改其它角色。</p>
-      </div>
-      ${renderCharacterWorldBookEntryEditor(character)}
-      <footer class="character-worldbook-page-actions">
-        <button id="save-character-worldbook" class="primary" type="button">保存世界书</button>
-      </footer>
-    </section>
-  `;
-}
-
 function renderCharacterPanel(character?: CharacterProfile): string {
   if (!characterPanelOpen || !character) return '';
   const statusMode = characterPanelPage === 'status';
@@ -3435,29 +2625,6 @@ function renderMessageEditDialog(): string {
   `;
 }
 
-function groupSpeakerName(message: GroupChatMessage): string {
-  if (message.speakerType === 'user') return state.userName || '我';
-  if (message.speakerType === 'system') return '系统';
-  return state.characters.find(character => character.id === message.speakerCharacterId)?.name ?? '已删除角色';
-}
-
-function renderGroupMessageAvatar(message: GroupChatMessage): string {
-  if (message.speakerType === 'character') {
-    const character = state.characters.find(item => item.id === message.speakerCharacterId);
-    return character ? renderAvatar(character) : escapeHtml(groupSpeakerName(message).slice(0, 1));
-  }
-  return renderUserAvatar(state.userName);
-}
-
-function userSelfLabel(): string {
-  const name = state.userName.trim();
-  return name && name !== '我' ? `我（${name}）` : '我';
-}
-
-function groupUserSpeakerLabel(): string {
-  return userSelfLabel();
-}
-
 function renderGroupMessages(chat?: GroupChatProfile): string {
   const generatingHint = isGroupGenerating()
     ? '<div class="group-generation-hint">角色正在组织下一句…</div>'
@@ -3499,110 +2666,6 @@ function renderGroupMessages(chat?: GroupChatProfile): string {
       </article>
     `;
   }).join('')}${generatingHint}`;
-}
-
-function renderGroupSpeakerPicker(chat?: GroupChatProfile): string {
-  if (!chat) return '';
-  const participants = groupParticipants(chat);
-  const selected = groupSpeakerFromCommunicationIdentity(chat);
-  const selectedCharacter = participants.find(character => character.id === selected);
-  const selectedLabel = selectedCharacter?.name ?? groupUserSpeakerLabel();
-  return `
-    <div class="group-speaker-switch is-readonly">
-      <span>发言身份</span>
-      <strong>${escapeHtml(selectedLabel)}</strong>
-      <small>跟随消息页左上角通讯身份</small>
-    </div>
-  `;
-}
-
-function renderGroupParticipantsEditor(chat?: GroupChatProfile): string {
-  const characters = state.characters.filter(character => character.worldId === activeWorld().id);
-  if (characters.length === 0) {
-    return '<p class="muted">当前世界还没有角色。先导入或写一张角色卡，再创建群聊。</p>';
-  }
-  const selected = new Set(chat?.participantCharacterIds ?? characters.map(character => character.id));
-  return `
-    <div class="group-participant-grid">
-      ${characters.map(character => `
-        <label class="group-participant-option ${selected.has(character.id) ? 'is-active' : ''}">
-          <input type="checkbox" data-group-participant value="${escapeHtml(character.id)}" ${selected.has(character.id) ? 'checked' : ''} />
-          <span class="avatar"${avatarToneAttribute(character)}>${renderAvatar(character)}</span>
-          <strong>${escapeHtml(character.name)}</strong>
-        </label>
-      `).join('')}
-    </div>
-  `;
-}
-
-function renderGroupMemberActions(chat?: GroupChatProfile): string {
-  if (!chat) return '';
-  const participants = groupParticipants(chat);
-  if (participants.length === 0) return '<p class="muted">这个群聊还没有角色成员。</p>';
-  return `
-    <div class="group-member-actions">
-      ${participants.map(character => `
-        <button class="secondary" type="button" data-generate-group-speaker="${escapeHtml(character.id)}" ${isGroupGenerating() ? 'disabled' : ''}>
-          让 ${escapeHtml(character.name)} 说
-        </button>
-      `).join('')}
-    </div>
-  `;
-}
-
-function renderGroupHeader(chat?: GroupChatProfile, mobile = false): string {
-  const participants = chat ? groupParticipants(chat) : [];
-  const subtitle = chat ? `${participants.length} 位成员` : '创建或管理群聊';
-  return `
-    <div class="chat-identity group-chat-identity">
-      ${mobile ? '<button class="header-back" data-mobile-group-back aria-label="返回">‹</button>' : ''}
-      ${chat ? renderGroupAvatarStack(chat) : '<span class="avatar group-avatar-fallback">群</span>'}
-      <div>
-        <strong>${escapeHtml(chat?.title ?? '群聊')}</strong>
-        <span>${escapeHtml(subtitle)}</span>
-      </div>
-    </div>
-  `;
-}
-
-function renderGroupManagementSection(chat: GroupChatProfile): string {
-  const participants = groupParticipants(chat);
-  const messageCount = groupMessagesFor(chat.id).length;
-  const disabled = isGroupGenerating();
-  return `
-    <section class="group-settings-section group-management-section">
-      <div class="mobile-section-label">
-        <strong>群聊管理</strong>
-        <span>${participants.length} 位成员 · ${messageCount} 条聊天记录</span>
-      </div>
-      <p class="muted">清空只删除这个群的聊天记录；解散会删除群聊和记录，角色卡不会被删除。</p>
-      <div class="group-danger-actions">
-        <button class="secondary" id="clear-group-messages" type="button" ${messageCount > 0 && !disabled ? '' : 'disabled'}>清空聊天记录</button>
-        <button class="danger" id="delete-group-chat" type="button" ${disabled ? 'disabled' : ''}>解散群聊</button>
-      </div>
-    </section>
-  `;
-}
-
-const GROUP_REPLY_LIVELINESS_OPTIONS: Array<{ value: GroupReplyLiveliness; label: string; description: string }> = [
-  { value: 'lively', label: '热闹', description: '优先 2-3 位角色短句接话，单人最多 3 个气泡。' },
-  { value: 'natural', label: '自然', description: '保持旧节奏，最多 2 位角色、整轮最多 3 个气泡。' },
-  { value: 'quiet', label: '安静', description: '最多 1 位角色接话，也可以没人接。' },
-];
-
-function groupReplyLivelinessValue(value: unknown): GroupReplyLiveliness {
-  return value === 'quiet' || value === 'natural' || value === 'lively' ? value : 'lively';
-}
-
-function renderGroupReplyLivelinessOptions(selected: GroupReplyLiveliness): string {
-  return GROUP_REPLY_LIVELINESS_OPTIONS.map(option =>
-    `<option value="${option.value}" ${option.value === selected ? 'selected' : ''}>${option.label}</option>`,
-  ).join('');
-}
-
-function groupReplyLivelinessDescription(value: GroupReplyLiveliness): string {
-  return GROUP_REPLY_LIVELINESS_OPTIONS.find(option => option.value === value)?.description
-    ?? GROUP_REPLY_LIVELINESS_OPTIONS[0].description;
 }
 
 function renderGroupSettingsPanel(chat?: GroupChatProfile): string {
@@ -4335,142 +3398,6 @@ function renderMoments(): string {
   }).join('');
 }
 
-function renderEventAvatars(event: WorldEvent): string {
-  const participants = event.participantCharacterIds
-    .map(id => state.characters.find(character => character.id === id))
-    .filter((character): character is CharacterProfile => Boolean(character));
-  if (participants.length === 0) {
-    return '<span class="event-avatar world-avatar" data-avatar-tone="world">岛</span>';
-  }
-  return participants.slice(0, 4).map(character =>
-    `<span class="event-avatar" title="${escapeHtml(character.name)}"${avatarToneAttribute(character)}>${renderAvatar(character)}</span>`,
-  ).join('');
-}
-
-function renderEventParticipantNames(event: WorldEvent): string {
-  const names = event.participantCharacterIds
-    .map(id => state.characters.find(character => character.id === id)?.name)
-    .filter((name): name is string => Boolean(name));
-  const leadName = event.leadActor?.name && !names.includes(event.leadActor.name)
-    ? event.leadActor.name
-    : '';
-  return [leadName, ...names].filter(Boolean).join('、') || '整个世界';
-}
-
-function renderTimelineCharacters(entry: TimelineEntry): string {
-  const names = entry.characterIds
-    .map(id => entry.characterNames[id] ?? state.characters.find(character => character.id === id)?.name)
-    .filter((name): name is string => Boolean(name));
-  if (names.length === 0) return '<span>整个世界</span>';
-  return names.map(name => `<span>${escapeHtml(name)}</span>`).join('');
-}
-
-function timelineCharacterText(entry: TimelineEntry): string {
-  return entry.characterIds
-    .map(id => entry.characterNames[id] ?? state.characters.find(character => character.id === id)?.name)
-    .filter((name): name is string => Boolean(name))
-    .join('、') || '整个世界';
-}
-
-function renderTimelineDetails(entry: TimelineEntry): string {
-  const contextState = entry.revokedAt
-    ? '已撤销影响，不进入模型上下文'
-    : entry.includeInContext ? '允许进入近期模型上下文' : '仅作为世界记录保存';
-  return `
-    <details class="timeline-details">
-      <summary>查看详情</summary>
-      <dl>
-        <div><dt>来源</dt><dd>${escapeHtml(timelineSourceLabel(entry))}</dd></div>
-        <div><dt>关联</dt><dd>${escapeHtml(timelineCharacterText(entry))}</dd></div>
-        <div><dt>记录时间</dt><dd>${escapeHtml(new Date(entry.createdAt).toLocaleString())}</dd></div>
-        <div><dt>上下文状态</dt><dd>${escapeHtml(contextState)}</dd></div>
-        ${entry.revokedAt ? `<div><dt>撤销时间</dt><dd>${escapeHtml(new Date(entry.revokedAt).toLocaleString())}</dd></div>` : ''}
-      </dl>
-    </details>
-  `;
-}
-
-function renderTimeline(): string {
-  const entries = timelineForActiveWorld();
-  if (entries.length === 0) {
-    return '<div class="moments-empty"><strong>还没有世界记录</strong><span>发布动态、创建事件，或手动记下一件应该被这个世界记住的事。</span></div>';
-  }
-  return entries.map(entry => {
-    const rollbackState = rollbackStateForTimelineEntry(entry);
-    return `
-    <article class="timeline-card ${entry.revokedAt ? 'is-revoked' : ''}" data-timeline-entry="${escapeHtml(entry.id)}">
-      <div class="timeline-card-head">
-        <span class="timeline-type">${escapeHtml(timelineTypeLabel(entry.type))}</span>
-        <time>${formatConversationTime(entry.createdAt)}</time>
-      </div>
-      <h3>${escapeHtml(entry.title)}</h3>
-      <p>${escapeHtml(entry.summary)}</p>
-      <div class="timeline-characters">${renderTimelineCharacters(entry)}</div>
-      <div class="timeline-meta">
-        <span>${entry.revokedAt ? '已撤销，不再进入上下文' : entry.includeInContext ? '进入上下文' : '仅作记录'}</span>
-        ${rollbackState?.canRollback ? '<span>可撤销影响</span>' : rollbackState?.rolledBackAt ? '<span>影响已撤销</span>' : ''}
-      </div>
-      ${renderTimelineDetails(entry)}
-      ${!entry.revokedAt || rollbackState?.canRollback ? `
-        <footer class="timeline-card-actions">
-          ${!entry.revokedAt ? `<button class="secondary" type="button" data-toggle-timeline-context="${escapeHtml(entry.id)}">${entry.includeInContext ? '设为仅保存' : '进入上下文'}</button>` : ''}
-          ${rollbackState?.canRollback ? `<button class="secondary" type="button" data-rollback-timeline="${escapeHtml(entry.id)}">撤销影响</button>` : ''}
-        </footer>
-      ` : ''}
-    </article>
-  `;
-  }).join('');
-}
-
-function renderDailyBriefCard(): string {
-  const brief = todayBriefForActiveWorld();
-  if (!brief) {
-    return `
-      <section class="daily-brief-card is-quiet">
-        <div>
-          <span class="timeline-type">今日简报</span>
-          <h3>今天暂时安静</h3>
-          <p>${escapeHtml(quietBriefText())}</p>
-        </div>
-      </section>
-    `;
-  }
-  const suggestedNames = brief.suggestedCharacterIds
-    .map(id => state.characters.find(character => character.id === id)?.name)
-    .filter((name): name is string => Boolean(name));
-  return `
-    <section class="daily-brief-card">
-      <div class="daily-brief-head">
-        <span class="timeline-type">今日简报</span>
-        <small>${escapeHtml(brief.dateKey)}</small>
-      </div>
-      <h3>${escapeHtml(brief.title)}</h3>
-      <div class="daily-brief-sections">
-        ${brief.sections.map(section => `<p>${escapeHtml(section)}</p>`).join('')}
-      </div>
-      <footer>
-        <span>${brief.changeCount} 项变化</span>
-        <span>${brief.unreadCount} 条未读</span>
-        ${suggestedNames.length > 0 ? `<span>建议关注：${escapeHtml(suggestedNames.join('、'))}</span>` : ''}
-      </footer>
-    </section>
-  `;
-}
-
-function renderDailyBriefBanner(): string {
-  const brief = todayBriefForActiveWorld();
-  const title = brief ? `${brief.changeCount} 项今日变化` : '今天暂时安静';
-  const summary = brief
-    ? compactText(brief.sections[0] ?? brief.summary, 86)
-    : quietBriefText();
-  return `
-    <button class="daily-brief-banner" type="button" data-open-timeline>
-      <span>${icon('timeline')}</span>
-      <span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(summary)}</small></span>
-    </button>
-  `;
-}
-
 function renderTimelinePage(mobile = false): string {
   const briefCard = renderDailyBriefCard();
   const count = timelineForActiveWorld().length;
@@ -4606,33 +3533,11 @@ function renderWorldRenderModeSetting(): string {
   `;
 }
 
-function renderWorldStageHeader(): string {
-  const world = activeWorld();
-  const location = world.currentLocation.trim() || '日常生活场景';
-  const atmosphere = world.sceneAtmosphere.trim() || '轻松、自然、适合日常 RP';
-  return `
-    <div class="world-stage-header" aria-label="当前 RP 舞台">
-      <strong>${escapeHtml(world.name)}</strong>
-      <span>${escapeHtml(location)} · ${escapeHtml(atmosphere)}</span>
-      <small>${escapeHtml(formatCompanionDateTime(state))}</small>
-    </div>
-  `;
-}
-
 function worldWorkbenchPanelContext(): WorldWorkbenchPanelContext {
   return {
     timelineNoteDraft,
     renderTimeline,
   };
-}
-
-type WorldEventSettingsPanelContext = {
-  surface: 'drawer' | 'page';
-  character?: CharacterProfile;
-};
-
-function renderEventSettingsSurfaceName(surface: WorldEventSettingsPanelContext['surface']): string {
-  return surface === 'drawer' ? '世界抽屉' : '独立设置页';
 }
 
 function eventSettingsCharacter(preferred?: CharacterProfile): CharacterProfile | undefined {
@@ -4648,30 +3553,6 @@ function eventSettingsCharacter(preferred?: CharacterProfile): CharacterProfile 
     return candidate;
   }
   return proactiveManagerCharacter();
-}
-
-function renderWorldEventSettingsPreview(event: WorldEvent, character?: CharacterProfile): string {
-  const messageCount = worldEventRpMessages(event.id).length;
-  const eventId = escapeHtml(event.id);
-  return `
-    <div class="event-swipe-row" data-event-swipe-row="${eventId}">
-      <div class="event-swipe-actions">
-        <button class="event-swipe-delete" data-delete-event="${eventId}" type="button" tabindex="-1" aria-hidden="true">删除</button>
-      </div>
-      <button class="event-settings-preview world-event-entry-card event-swipe-content" data-open-world-event-rp="${eventId}" type="button">
-      <div class="event-avatar-stack">${renderEventAvatars(event)}</div>
-      <div class="world-event-entry-main">
-        <strong>${escapeHtml(event.title)}</strong>
-        <p>${escapeHtml(worldEventRpPreview(event, character))}</p>
-        <footer class="world-event-entry-meta">
-          <span>${escapeHtml(renderEventParticipantNames(event))}</span>
-          <span>${messageCount > 0 ? `${messageCount} 条` : escapeHtml(eventTypeLabel(event.type))}</span>
-          <span class="world-event-entry-status ${event.status === 'resolved' ? 'is-resolved' : ''}">${event.status === 'resolved' ? '已归档' : '进行中'}</span>
-        </footer>
-        </div>
-      </button>
-    </div>
-  `;
 }
 
 /**
@@ -4779,59 +3660,6 @@ function renderWorldEventSettingsPanel(context: WorldEventSettingsPanelContext):
   `;
 }
 
-function characterForRpSpeaker(speaker?: string): CharacterProfile | undefined {
-  const normalized = speaker?.trim();
-  if (!normalized) return undefined;
-  return state.characters.find(character =>
-    character.worldId === activeWorld().id
-    && (character.name === normalized || character.nickname === normalized),
-  );
-}
-
-function renderRpSegment(segment: RpRenderSegment, fallbackCharacter?: CharacterProfile): string {
-  if (segment.kind === 'narration') {
-    return `
-      <article class="narrative-card">
-        <span class="render-label">旁白</span>
-        <p class="narrative-text">${escapeHtml(segment.text)}</p>
-      </article>
-    `;
-  }
-  const speakerCharacter = characterForRpSpeaker(segment.speaker) ?? fallbackCharacter;
-  const speakerName = segment.speaker || speakerCharacter?.name || '角色';
-  const emotion = segment.kind === 'thought' ? `内心 · ${segment.emotion ?? '日常'}` : segment.emotion ?? '日常';
-  return `
-    <div class="dialogue-turn">
-      <span class="avatar"${avatarToneAttribute(speakerCharacter)}>${speakerCharacter ? renderAvatar(speakerCharacter) : escapeHtml(speakerName.slice(0, 1))}</span>
-      <div class="dialogue-bubble">
-        <div class="dialogue-head">
-          <span class="dialogue-name">${escapeHtml(speakerName)}</span>
-          <span class="emotion-chip">${escapeHtml(emotion)}</span>
-        </div>
-        <p class="dialogue-line">${escapeHtml(segment.text)}</p>
-      </div>
-    </div>
-  `;
-}
-
-function renderWorldEventNarration(event: WorldEvent): string {
-  const resultText = event.decision?.result
-    ? `\n\n收束：${event.decision.result}`
-    : '';
-  const statusText = event.status === 'resolved' ? '已写入记忆' : '正在发生';
-  return `
-    <article class="narrative-card world-event-narration">
-      <span class="render-label">世界小事件 · ${escapeHtml(statusText)}</span>
-      <h3>${escapeHtml(event.title)}</h3>
-      <p class="narrative-text">${escapeHtml(`${event.description}${resultText}`)}</p>
-      <footer>
-        <span>${escapeHtml(renderEventParticipantNames(event))}</span>
-        <span>${escapeHtml(formatConversationTime(event.createdAt))}</span>
-      </footer>
-    </article>
-  `;
-}
-
 function selectedWorldRpEvent(): WorldEvent | undefined {
   const worldId = activeWorld().id;
   return state.worldEvents.find(event => event.id === activeWorldRpEventId && event.worldId === worldId);
@@ -4866,18 +3694,6 @@ function renderWorldRpMessageActions(message: WorldEventRpMessage): string {
   `;
 }
 
-function renderWorldRpVariantBar(message: WorldEventRpMessage): string {
-  const variantInfo = worldEventRpMessageVariantInfo(message);
-  if (variantInfo.count <= 1) return '';
-  return `
-    <div class="world-rp-variant-bar ${message.role === 'assistant' ? 'is-assistant' : 'is-user'}">
-      <button type="button" data-world-rp-message-variant-prev="${escapeHtml(message.id)}" aria-label="上一个版本">‹</button>
-      <span>&lt;${variantInfo.index + 1}/${variantInfo.count}&gt;</span>
-      <button type="button" data-world-rp-message-variant-next="${escapeHtml(message.id)}" aria-label="下一个版本">›</button>
-    </div>
-  `;
-}
-
 function renderWorldRpMessageEditDialog(): string {
   const message = editableWorldRpMessage();
   if (!message) return '';
@@ -4903,82 +3719,6 @@ function renderWorldRpMessageEditDialog(): string {
         </footer>
       </section>
     </div>
-  `;
-}
-
-function worldEventRpPreview(event: WorldEvent, character?: CharacterProfile): string {
-  const latest = worldEventRpMessages(event.id).slice(-1)[0];
-  const raw = latest?.content || event.decision?.result || event.description;
-  const segments = parseRpRenderSegments(raw, {
-    fallbackSpeaker: latest?.speaker || character?.name || '角色',
-    fallbackEmotion: '日常',
-    plainTextMode: 'narration',
-  });
-  const text = segments.map(segment => segment.text).filter(Boolean).join(' ');
-  return compactText(text || event.description, 140);
-}
-
-function buildWorldEventAutoCloseSummary(event: WorldEvent): string {
-  const recentRp = worldEventRpMessages(event.id)
-    .slice(-4)
-    .map(message => `${message.speaker || (message.role === 'assistant' ? '模型续写' : '旁白')}：${message.content}`)
-    .join('\n');
-  // Big comment: the end button writes a useful archive note without asking the user to fill another modal.
-  return [
-    event.description.trim(),
-    recentRp ? `最近 RP 记录：\n${recentRp}` : '',
-    `事件「${event.title}」已结束，作为当前世界的日常片段归档。`,
-  ].filter(Boolean).join('\n\n');
-}
-
-function renderWorldEventLobby(events: WorldEvent[], character?: CharacterProfile): string {
-  if (events.length === 0) {
-    return `
-      <div class="world-event-lobby">
-        <div class="world-event-empty">
-          <strong>没有更多片段</strong>
-          <span>生成一段日常后，角色对话和旁白都会围绕这个片段展开。</span>
-          <div class="world-event-empty-actions">
-            <button class="primary" data-open-event-composer type="button">${icon('add')}<span>生成片段</span></button>
-          </div>
-        </div>
-      </div>
-    `;
-  }
-  return `
-    <section class="world-event-lobby" aria-label="日常片段列表">
-      <div class="world-event-lobby-heading">
-        <div>
-          <strong>日常片段</strong>
-          <small>点击进入 RP</small>
-        </div>
-      </div>
-      <div class="world-event-entry-list">
-        ${events.map(event => {
-          const messageCount = worldEventRpMessages(event.id).length;
-          const eventId = escapeHtml(event.id);
-          return `
-            <div class="event-swipe-row" data-event-swipe-row="${eventId}">
-              <div class="event-swipe-actions">
-                <button class="event-swipe-delete" data-delete-event="${eventId}" type="button" tabindex="-1" aria-hidden="true">删除</button>
-              </div>
-              <button class="world-event-entry-card conversation-entry event-swipe-content" data-open-world-event-rp="${eventId}" type="button">
-              <div class="event-avatar-stack">${renderEventAvatars(event)}</div>
-              <div class="world-event-entry-main">
-                <strong>${escapeHtml(event.title)}</strong>
-                <p>${escapeHtml(worldEventRpPreview(event, character))}</p>
-                <footer class="world-event-entry-meta">
-                  <span>${escapeHtml(renderEventParticipantNames(event))}</span>
-                  <span>${messageCount > 0 ? `${messageCount} 条` : escapeHtml(eventTypeLabel(event.type))}</span>
-                  <span class="world-event-entry-status ${event.status === 'resolved' ? 'is-resolved' : ''}">${event.status === 'resolved' ? '已归档' : '进行中'}</span>
-                </footer>
-              </div>
-              </button>
-            </div>
-          `;
-        }).join('')}
-      </div>
-    </section>
   `;
 }
 
@@ -5069,151 +3809,12 @@ function renderWorldStageComposer(character?: CharacterProfile): string {
   `;
 }
 
-function worldInsightCharacters(): CharacterProfile[] {
-  return state.characters
-    .filter(character => character.worldId === activeWorld().id)
-    .sort((left, right) => left.name.localeCompare(right.name));
-}
-
-function worldInsightRelationships(characterIds: Set<string>): CharacterRelationshipRecord[] {
-  return state.characterRelationships
-    .filter(relationship =>
-      relationship.worldId === activeWorld().id
-      && characterIds.has(relationship.characterAId)
-      && characterIds.has(relationship.characterBId),
-    )
-    .sort((left, right) => right.updatedAt - left.updatedAt);
-}
-
-function relationshipStageWeight(stage: RelationshipStage): number {
-  const weights: Record<RelationshipStage, number> = {
-    stranger: 1,
-    familiar: 2,
-    close: 3,
-    intimate: 4,
-    strained: 3,
-  };
-  return weights[stage];
-}
-
-function relationshipInsightTone(relationship: CharacterRelationshipRecord): RelationshipStage {
-  const stages = [relationship.aToB.stage, relationship.bToA.stage];
-  if (stages.includes('strained')) return 'strained';
-  if (stages.includes('intimate')) return 'intimate';
-  if (stages.includes('close')) return 'close';
-  if (stages.includes('familiar')) return 'familiar';
-  return 'stranger';
-}
-
-function relationshipInsightStrokeWidth(relationship: CharacterRelationshipRecord): string {
-  const weight = (relationshipStageWeight(relationship.aToB.stage) + relationshipStageWeight(relationship.bToA.stage)) / 2;
-  return (1.0 + weight * 0.16).toFixed(1);
-}
-
-function relationshipPairIsSelected(relationship: CharacterRelationshipRecord, first?: CharacterProfile, second?: CharacterProfile): boolean {
-  if (!first || !second) return false;
-  return (
-    (relationship.characterAId === first.id && relationship.characterBId === second.id)
-    || (relationship.characterAId === second.id && relationship.characterBId === first.id)
-  );
-}
-
 function selectedRelationshipPairForInsight(characters: CharacterProfile[]): [CharacterProfile | undefined, CharacterProfile | undefined] {
   const first = characters.find(character => character.id === relationshipPairACharacterId);
   const second = characters.find(character => character.id === relationshipPairBCharacterId && character.id !== first?.id);
   if (!first) relationshipPairACharacterId = '';
   if (!second) relationshipPairBCharacterId = '';
   return [first, second];
-}
-
-function relationshipInsightVisibleRelationships(
-  relationships: CharacterRelationshipRecord[],
-  first?: CharacterProfile,
-  second?: CharacterProfile,
-): CharacterRelationshipRecord[] {
-  if (first && second) {
-    return relationships.filter(relationship => relationshipPairIsSelected(relationship, first, second));
-  }
-  if (first) {
-    return relationships.filter(relationship =>
-      relationship.characterAId === first.id || relationship.characterBId === first.id,
-    );
-  }
-  return relationships;
-}
-
-function relationshipInsightVisibleCharacterIds(
-  characters: CharacterProfile[],
-  relationships: CharacterRelationshipRecord[],
-  first?: CharacterProfile,
-  second?: CharacterProfile,
-): Set<string> {
-  if (!first && !second) return new Set(characters.map(character => character.id));
-  const visibleIds = new Set([first?.id ?? '', second?.id ?? ''].filter(Boolean));
-  relationships.forEach(relationship => {
-    visibleIds.add(relationship.characterAId);
-    visibleIds.add(relationship.characterBId);
-  });
-  return visibleIds;
-}
-
-function relationshipPairLabel(relationship: CharacterRelationshipRecord, left: CharacterProfile, right: CharacterProfile): string {
-  const leftSide = relationshipSideFor(relationship, left.id);
-  const rightSide = relationshipSideFor(relationship, right.id);
-  return `${left.name}: ${relationshipStageLabel(leftSide.stage)} / ${right.name}: ${relationshipStageLabel(rightSide.stage)}`;
-}
-
-function renderRelationshipStageChip(stage: RelationshipStage): string {
-  return `<span class="relationship-stage-chip stage-${stage}">${escapeHtml(relationshipStageLabel(stage))}</span>`;
-}
-
-function renderRelationshipOverviewList(
-  relationships: CharacterRelationshipRecord[],
-  characterById: Map<string, CharacterProfile>,
-): string {
-  if (relationships.length === 0) {
-    return `
-      <div class="relationship-overview-empty">
-        <strong>还没有关系记录</strong>
-        <span>先在图谱上点选两个角色，就可以建立第一条双向关系。</span>
-      </div>
-    `;
-  }
-  return `
-    <div class="relationship-overview-list">
-      ${relationships.map(relationship => {
-        const left = characterById.get(relationship.characterAId);
-        const right = characterById.get(relationship.characterBId);
-        if (!left || !right) return '';
-        const leftSide = relationshipSideFor(relationship, left.id);
-        const rightSide = relationshipSideFor(relationship, right.id);
-        const summary = [leftSide.summary, rightSide.summary]
-          .map(text => text.trim())
-          .filter(Boolean)
-          .map(text => compactText(text, 48))
-          .join(' / ');
-        return `
-          <button
-            class="relationship-overview-row stage-${relationshipInsightTone(relationship)}"
-            data-world-relationship-line="${escapeHtml(relationship.id)}"
-            title="${escapeHtml(relationshipPairLabel(relationship, left, right))}"
-            type="button"
-          >
-            <span class="relationship-overview-names">
-              <strong>${escapeHtml(left.name)}</strong>
-              <span>↔</span>
-              <strong>${escapeHtml(right.name)}</strong>
-            </span>
-            <span class="relationship-overview-stages">
-              ${renderRelationshipStageChip(leftSide.stage)}
-              ${renderRelationshipStageChip(rightSide.stage)}
-            </span>
-            <span class="relationship-overview-summary">${summary ? escapeHtml(summary) : '暂无摘要'}</span>
-          </button>
-        `;
-      }).join('')}
-    </div>
-  `;
 }
 
 function renderWorldInsightTabs(): string {
@@ -5224,17 +3825,6 @@ function renderWorldInsightTabs(): string {
       `).join('')}
     </nav>
   `;
-}
-
-function relationshipNetworkPosition(index: number, total: number): { x: number; y: number } {
-  if (total <= 1) return { x: 50, y: 50 };
-  if (total === 2) return { x: index === 0 ? 30 : 70, y: 50 };
-  const angle = (-Math.PI / 2) + (Math.PI * 2 * index) / total;
-  const radius = total <= 5 ? 34 : 38;
-  return {
-    x: 50 + Math.cos(angle) * radius,
-    y: 50 + Math.sin(angle) * radius,
-  };
 }
 
 function renderWorldRelationshipInsight(): string {
@@ -5328,22 +3918,6 @@ function renderWorldRelationshipInsight(): string {
   `;
 }
 
-function timelineInsightDateKey(entry: TimelineEntry): string {
-  return new Date(entry.createdAt).toLocaleDateString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-}
-
-function timelineInsightDateLabel(entry: TimelineEntry): string {
-  return new Date(entry.createdAt).toLocaleDateString('zh-CN', {
-    month: 'long',
-    day: 'numeric',
-    weekday: 'short',
-  });
-}
-
 function renderWorldTimelineFilterButtons(entries: TimelineEntry[]): string {
   const counts = entries.reduce((map, entry) => map.set(entry.type, (map.get(entry.type) ?? 0) + 1), new Map<TimelineEntry['type'], number>());
   return `
@@ -5378,32 +3952,6 @@ function renderWorldTimelineSearchControls(): string {
         `).join('')}
       </select>
     </div>
-  `;
-}
-
-function renderTimelineTrackEntry(entry: TimelineEntry): string {
-  const rollbackState = rollbackStateForTimelineEntry(entry);
-  return `
-    <article class="timeline-track-entry type-${escapeHtml(entry.type)} ${entry.revokedAt ? 'is-revoked' : ''}" data-timeline-entry="${escapeHtml(entry.id)}">
-      <div class="timeline-track-entry-head">
-        <span class="timeline-type">${escapeHtml(timelineTypeLabel(entry.type))}</span>
-        <time>${formatConversationTime(entry.createdAt)}</time>
-      </div>
-      <h3>${escapeHtml(entry.title)}</h3>
-      <p>${escapeHtml(entry.summary)}</p>
-      <div class="timeline-characters">${renderTimelineCharacters(entry)}</div>
-      <div class="timeline-meta">
-        <span>${entry.revokedAt ? '已撤销，不再进入上下文' : entry.includeInContext ? '进入上下文' : '仅作记录'}</span>
-        ${rollbackState?.canRollback ? '<span>可撤销影响</span>' : rollbackState?.rolledBackAt ? '<span>影响已撤销</span>' : ''}
-      </div>
-      ${renderTimelineDetails(entry)}
-      ${!entry.revokedAt || rollbackState?.canRollback ? `
-        <footer class="timeline-card-actions">
-          ${!entry.revokedAt ? `<button class="secondary" type="button" data-toggle-timeline-context="${escapeHtml(entry.id)}">${entry.includeInContext ? '设为仅保存' : '进入上下文'}</button>` : ''}
-          ${rollbackState?.canRollback ? `<button class="secondary" type="button" data-rollback-timeline="${escapeHtml(entry.id)}">撤销影响</button>` : ''}
-        </footer>
-      ` : ''}
-    </article>
   `;
 }
 
@@ -5451,82 +3999,6 @@ function renderWorldTimelineInsight(): string {
           `).join('')}
         </div>
       `}
-    </section>
-  `;
-}
-
-function memorySummaryStatusText(summary: MemorySummary): string {
-  if (summary.status === 'pending_confirmation') return '待确认';
-  if (summary.status === 'paused') return '已停用';
-  return summary.includeInContext ? '进入上下文' : '仅保存';
-}
-
-function memorySummaryCharacterText(summary: MemorySummary): string {
-  if (summary.characterIds.length === 0) return '整个世界';
-  return summary.characterIds
-    .map(id => state.characters.find(character => character.id === id)?.name ?? '已删除角色')
-    .slice(0, 4)
-    .join('、');
-}
-
-function renderMemorySummaryCard(summary: MemorySummary): string {
-  const isMacro = summary.layer === 'macro';
-  const editAction = `<button class="secondary small-button" type="button" data-edit-memory-summary="${escapeHtml(summary.id)}">编辑</button>`;
-  const toggleAction = summary.status === 'paused'
-    ? `<button class="secondary small-button" type="button" data-resume-memory-summary="${escapeHtml(summary.id)}">启用</button>`
-    : `<button class="secondary small-button" type="button" data-pause-memory-summary="${escapeHtml(summary.id)}">停用</button>`;
-  const extraActions = [
-    toggleAction,
-    isMacro && summary.status === 'pending_confirmation'
-      ? `<button class="primary small-button" type="button" data-confirm-memory-summary="${escapeHtml(summary.id)}">确认</button>`
-      : '',
-    isMacro && summary.status === 'pending_confirmation'
-      ? `<button class="secondary small-button" type="button" data-discard-memory-summary="${escapeHtml(summary.id)}">丢弃</button>`
-      : '',
-  ].filter(Boolean);
-  const collapsedActions = extraActions.length > 1 ? extraActions : [];
-  const visibleActions = collapsedActions.length > 0 ? [editAction] : [editAction, toggleAction];
-  return `
-    <article class="memory-summary-card layer-${escapeHtml(summary.layer)} status-${escapeHtml(summary.status)}">
-      <header>
-        <span class="timeline-type">${escapeHtml(summaryLayerLabel(summary.layer))}</span>
-        <small>${escapeHtml(memorySummaryStatusText(summary))}</small>
-      </header>
-      <h3>${escapeHtml(summary.title)}</h3>
-      <p>${escapeHtml(summary.factSummary || '还没有形成稳定事实摘要。')}</p>
-      ${summary.emotionalLine ? `<p class="memory-summary-emotion">${escapeHtml(summary.emotionalLine)}</p>` : ''}
-      ${summary.unresolvedItems.length > 0 ? `
-        <div class="memory-summary-unresolved">
-          ${summary.unresolvedItems.slice(0, 3).map(item => `<span>${escapeHtml(item)}</span>`).join('')}
-        </div>
-      ` : ''}
-      <footer>
-        <span>${escapeHtml(memorySummaryCharacterText(summary))}</span>
-        <div class="memory-summary-card-actions">
-          ${visibleActions.join('')}
-          ${collapsedActions.length > 0 ? `
-            <details class="memory-summary-more-actions">
-              <summary class="secondary small-button">更多</summary>
-              <div>${collapsedActions.join('')}</div>
-            </details>
-          ` : ''}
-        </div>
-      </footer>
-    </article>
-  `;
-}
-
-function renderMemorySummaryGroup(layer: MemorySummary['layer'], title: string, emptyText: string, summaries: MemorySummary[]): string {
-  const rows = summaries.filter(summary => summary.layer === layer);
-  return `
-    <section class="memory-summary-group">
-      <header>
-        <strong>${escapeHtml(title)}</strong>
-        <span>${rows.length} 条</span>
-      </header>
-      ${rows.length > 0
-        ? `<div class="memory-summary-list">${rows.map(renderMemorySummaryCard).join('')}</div>`
-        : `<p class="muted">${escapeHtml(emptyText)}</p>`}
     </section>
   `;
 }
@@ -5608,223 +4080,6 @@ function renderWorldWorkbenchPage(mobile = false): string {
   `;
 }
 
-function renderRelationship(character?: CharacterProfile): string {
-  if (!character) {
-    return '<p class="muted">导入角色后可设置关系状态。</p>';
-  }
-  const relationship = character.relationship;
-  return `
-    <label class="field">
-      <span>关系阶段</span>
-      <select id="relationship-stage">
-        ${[
-          ['stranger', '陌生'],
-          ['familiar', '熟悉'],
-          ['close', '亲近'],
-          ['intimate', '亲密'],
-          ['strained', '紧张'],
-        ].map(([value, label]) => `<option value="${value}" ${relationship.stage === value ? 'selected' : ''}>${label}</option>`).join('')}
-      </select>
-    </label>
-    ${renderAffinityMeter(character)}
-    <label class="field"><span>好感度（没有上限）</span><input id="relationship-affinity" type="number" min="0" step="1" value="${Math.max(0, Math.round(relationship.affinity))}" /></label>
-    <p class="muted">进度条只显示 0 到 100；实际好感度可以继续增加。</p>
-    <label class="field"><span>关系摘要</span><textarea id="relationship-summary" placeholder="例如：刚刚和好，但彼此仍有些试探。">${escapeHtml(relationship.summary)}</textarea></label>
-    <button id="save-relationship" class="secondary">保存关系状态</button>
-  `;
-}
-
-function renderRelationshipStageOptions(active: RelationshipStage): string {
-  return [
-    ['stranger', '陌生'],
-    ['familiar', '熟悉'],
-    ['close', '亲近'],
-    ['intimate', '亲密'],
-    ['strained', '紧张'],
-  ].map(([value, label]) => `<option value="${value}" ${active === value ? 'selected' : ''}>${label}</option>`).join('');
-}
-
-function renderCharacterRelationshipEditor(
-  first?: CharacterProfile,
-  second?: CharacterProfile,
-): string {
-  const characters = state.characters.filter(character => character.worldId === activeWorld().id);
-  if (characters.length < 2 || !first || !second) {
-    return '<p class="muted">当前世界至少需要两个角色，才能设置角色之间的关系。</p>';
-  }
-  const relationship = findCharacterRelationship(first.worldId, first.id, second.id);
-  const firstSide = relationship
-    ? relationshipSideFor(relationship, first.id)
-    : { stage: 'stranger' as RelationshipStage, summary: '', updatedAt: 0 };
-  const secondSide = relationship
-    ? relationshipSideFor(relationship, second.id)
-    : { stage: 'stranger' as RelationshipStage, summary: '', updatedAt: 0 };
-  const firstOptions = characters
-    .map(character => `<option value="${escapeHtml(character.id)}" ${character.id === first.id ? 'selected' : ''}>${escapeHtml(character.name)}</option>`)
-    .join('');
-  const secondOptions = characters
-    .map(character => `<option value="${escapeHtml(character.id)}" ${character.id === second.id ? 'selected' : ''} ${character.id === first.id ? 'disabled' : ''}>${escapeHtml(character.name)}</option>`)
-    .join('');
-  const suggestions = pendingRelationshipSuggestionsForPair(first.worldId, first.id, second.id);
-  const suggestionList = suggestions.length > 0 ? `
-    <div class="relationship-suggestions">
-      <strong>待确认阶段建议</strong>
-      ${suggestions.map(suggestion => {
-        const from = state.characters.find(character => character.id === suggestion.fromCharacterId);
-        const to = state.characters.find(character => character.id === suggestion.toCharacterId);
-        return `
-          <div class="relationship-suggestion-row">
-            <span>${escapeHtml(from?.name ?? '角色')} → ${escapeHtml(to?.name ?? '角色')}：${escapeHtml(relationshipStageLabel(suggestion.suggestedStage))}</span>
-            <small>${escapeHtml(suggestion.reason || '事件结算建议')}</small>
-            <button class="secondary" type="button" data-apply-relationship-suggestion="${escapeHtml(suggestion.id)}">应用</button>
-            <button class="secondary" type="button" data-ignore-relationship-suggestion="${escapeHtml(suggestion.id)}">忽略</button>
-          </div>
-        `;
-      }).join('')}
-    </div>
-  ` : '';
-  return `
-    <div class="relationship-pair-selector">
-      <label class="field">
-        <span>角色 A</span>
-        <select id="relationship-pair-a-select">${firstOptions}</select>
-      </label>
-      <label class="field">
-        <span>角色 B</span>
-        <select id="relationship-pair-b-select">${secondOptions}</select>
-      </label>
-    </div>
-    <div class="character-relationship-grid">
-      <section class="character-relationship-side">
-        <h2>${escapeHtml(first.name)} 怎么看 ${escapeHtml(second.name)}</h2>
-        <label class="field">
-          <span>关系阶段</span>
-          <select id="relationship-pair-a-stage">${renderRelationshipStageOptions(firstSide.stage)}</select>
-        </label>
-        <label class="field">
-          <span>视角摘要</span>
-          <textarea id="relationship-pair-a-summary" placeholder="只写这个角色怎么看对方，不写数值好感度。">${escapeHtml(firstSide.summary)}</textarea>
-        </label>
-      </section>
-      <section class="character-relationship-side">
-        <h2>${escapeHtml(second.name)} 怎么看 ${escapeHtml(first.name)}</h2>
-        <label class="field">
-          <span>关系阶段</span>
-          <select id="relationship-pair-b-stage">${renderRelationshipStageOptions(secondSide.stage)}</select>
-        </label>
-        <label class="field">
-          <span>视角摘要</span>
-          <textarea id="relationship-pair-b-summary" placeholder="另一边可以完全不同，关系不是自动对称的。">${escapeHtml(secondSide.summary)}</textarea>
-        </label>
-      </section>
-    </div>
-    ${suggestionList}
-    <button id="save-character-relationship" class="secondary" type="button">保存角色之间的关系</button>
-  `;
-}
-
-function renderAutoMessage(character?: CharacterProfile): string {
-  if (!character) {
-    return '<p class="muted">导入角色后可设置主动消息。</p>';
-  }
-  const schedule = character.autoMessage;
-  const momentSchedule = character.autoMoment;
-  const eventSchedule = character.autoEvent;
-  const nextAttempt = schedule.nextAttemptAt ? new Date(schedule.nextAttemptAt).toLocaleString() : '未安排';
-  const nextMoment = momentSchedule.nextAttemptAt ? new Date(momentSchedule.nextAttemptAt).toLocaleString() : '未安排';
-  const nextEvent = eventSchedule.nextAttemptAt ? new Date(eventSchedule.nextAttemptAt).toLocaleString() : '未安排';
-  const autoMessageSettings = `
-    <label class="field field-inline"><span>启用主动消息</span><input id="auto-enabled" type="checkbox" ${schedule.enabled ? 'checked' : ''} /></label>
-    <div class="two-columns">
-      <label class="field"><span>最小间隔（小时）</span><input id="auto-min-hours" type="number" min="0.05" step="0.05" value="${schedule.baseIntervalMin / 3600000}" /></label>
-      <label class="field"><span>最大间隔（小时）</span><input id="auto-max-hours" type="number" min="0.05" step="0.05" value="${schedule.baseIntervalMax / 3600000}" /></label>
-    </div>
-    <div class="two-columns">
-      <label class="field"><span>每日上限</span><input id="auto-daily-limit" type="number" min="1" value="${schedule.dailyLimit}" /></label>
-      <label class="field"><span>硬性最大间隔（小时）</span><input id="auto-max-interval" type="number" min="1" value="${schedule.maxInterval / 3600000}" /></label>
-    </div>
-    <label class="field field-inline"><span>启用安静时段</span><input id="auto-quiet-enabled" type="checkbox" ${schedule.quietHours.enabled ? 'checked' : ''} /></label>
-    <div class="two-columns">
-      <label class="field"><span>安静开始</span><input id="auto-quiet-start" value="${escapeHtml(schedule.quietHours.start)}" /></label>
-      <label class="field"><span>安静结束</span><input id="auto-quiet-end" value="${escapeHtml(schedule.quietHours.end)}" /></label>
-    </div>
-    <label class="field field-inline"><span>允许后台通知</span><input id="auto-background-notify" type="checkbox" ${schedule.backgroundNotificationsEnabled ? 'checked' : ''} /></label>
-    <label class="field">
-      <span>通知隐私</span>
-      <select id="auto-notification-privacy">
-        <option value="generic" ${schedule.notificationPrivacy === 'generic' ? 'selected' : ''}>显示角色名，只提示有新消息</option>
-        <option value="full" ${schedule.notificationPrivacy === 'full' ? 'selected' : ''}>显示完整消息</option>
-        <option value="hide_character" ${schedule.notificationPrivacy === 'hide_character' ? 'selected' : ''}>隐藏角色名和内容</option>
-      </select>
-    </label>
-    <label class="field">
-      <span>主动消息节奏策略</span>
-      <textarea id="auto-pacing-strategy" rows="7" placeholder="写下这个角色在用户未回复时应该怎么试探、等待、降频或沉默。">${escapeHtml(schedule.pacingStrategy || createAutoMessagePacingStrategy(character))}</textarea>
-    </label>
-    <button id="regenerate-auto-pacing-strategy" class="secondary" type="button">按人设重建策略</button>
-    <button id="save-auto-message" class="secondary">保存主动消息设置</button>
-    <button id="run-auto-check" class="secondary secondary-gap">立即检查一次</button>
-    ${schedule.pendingResetDecision ? `
-      <div class="reset-decision">
-        <strong>联系节奏已经变化</strong>
-        <p class="muted">你回复了此前未回应的主动消息。请选择是否恢复频率。</p>
-        <button id="restore-auto-pacing" class="secondary">恢复正常频率</button>
-        <button id="keep-auto-pacing" class="secondary secondary-gap">保持当前降频</button>
-      </div>
-    ` : ''}
-    <p class="muted">状态：${schedule.enabled ? '已启用' : '未启用'} · ${escapeHtml(pacingStateLabel(schedule.currentPacingState))}</p>
-    <p class="muted">下次尝试：${escapeHtml(nextAttempt)}</p>
-    <p class="muted">未回复次数：${schedule.unansweredCount}</p>
-    <p class="muted">节奏说明：${escapeHtml(schedule.pacingReason)}</p>
-  `;
-  const worldActivitySettings = `
-    <h2>世界活跃度</h2>
-    <p class="muted">高模拟会让自动动态带动角色评论、楼主自由回复，并让生活线索更倾向多角色参与。会明显增加 token 消耗，默认关闭。</p>
-    <label class="field field-inline"><span>高模拟世界互动</span><input id="world-high-simulation" type="checkbox" ${state.worldInteractionHighSimulation ? 'checked' : ''} /></label>
-    <p class="muted">当前：${state.worldInteractionHighSimulation ? '高模拟已开启，世界会更主动运转。' : '轻量模式，自动互动保持克制。'}</p>
-  `;
-  const autoMomentSettings = `
-    <h2>自动动态</h2>
-    <p class="muted">角色会按自己的生活节奏在手机上发布动态。应用未运行期间错过的动态不会补发。</p>
-    <label class="field field-inline"><span>启用自动动态</span><input id="auto-moment-enabled" type="checkbox" ${momentSchedule.enabled ? 'checked' : ''} /></label>
-    <div class="two-columns">
-      <label class="field"><span>最小间隔（小时）</span><input id="auto-moment-min-hours" type="number" min="0.25" step="0.25" value="${momentSchedule.baseIntervalMin / 3600000}" /></label>
-      <label class="field"><span>最大间隔（小时）</span><input id="auto-moment-max-hours" type="number" min="0.25" step="0.25" value="${momentSchedule.baseIntervalMax / 3600000}" /></label>
-    </div>
-    <label class="field"><span>每日动态上限</span><input id="auto-moment-daily-limit" type="number" min="1" value="${momentSchedule.dailyLimit}" /></label>
-    <div class="two-columns">
-      <label class="field"><span>安静开始</span><input id="auto-moment-quiet-start" value="${escapeHtml(momentSchedule.quietHours.start)}" /></label>
-      <label class="field"><span>安静结束</span><input id="auto-moment-quiet-end" value="${escapeHtml(momentSchedule.quietHours.end)}" /></label>
-    </div>
-    <p class="muted">下次自动动态：${escapeHtml(nextMoment)}</p>
-    <p class="muted">状态：${escapeHtml(momentSchedule.statusReason)}</p>
-  `;
-  const autoEventSettings = `
-    <h2>自动岛上事件</h2>
-    <p class="muted">每个角色都会按自己的节奏冒出生活事件。事件需要你选择分支后才会结算关系。</p>
-    <label class="field field-inline"><span>启用自动事件</span><input id="auto-event-enabled" type="checkbox" ${eventSchedule.enabled ? 'checked' : ''} /></label>
-    <div class="two-columns">
-      <label class="field"><span>最小间隔（小时）</span><input id="auto-event-min-hours" type="number" min="0.25" step="0.25" value="${eventSchedule.baseIntervalMin / 3600000}" /></label>
-      <label class="field"><span>最大间隔（小时）</span><input id="auto-event-max-hours" type="number" min="0.25" step="0.25" value="${eventSchedule.baseIntervalMax / 3600000}" /></label>
-    </div>
-    <label class="field"><span>每日事件上限</span><input id="auto-event-daily-limit" type="number" min="1" value="${eventSchedule.dailyLimit}" /></label>
-    <div class="two-columns">
-      <label class="field"><span>安静开始</span><input id="auto-event-quiet-start" value="${escapeHtml(eventSchedule.quietHours.start)}" /></label>
-      <label class="field"><span>安静结束</span><input id="auto-event-quiet-end" value="${escapeHtml(eventSchedule.quietHours.end)}" /></label>
-    </div>
-    <p class="muted">下次自动事件：${escapeHtml(nextEvent)}</p>
-    <p class="muted">状态：${escapeHtml(eventSchedule.statusReason)}</p>
-  `;
-  return `
-    <div class="settings-fold-list">
-      ${renderSettingsFold('主动私信', `${schedule.enabled ? '已启用' : '未启用'}，${pacingStateLabel(schedule.currentPacingState)}`, autoMessageSettings, true)}
-      ${renderSettingsFold('世界活跃度', state.worldInteractionHighSimulation ? '高模拟已开启' : '轻量模式', worldActivitySettings)}
-      ${renderSettingsFold('自动动态', `${momentSchedule.enabled ? '已启用' : '未启用'}，下次 ${nextMoment}`, autoMomentSettings)}
-      ${renderSettingsFold('自动事件', `${eventSchedule.enabled ? '已启用' : '未启用'}，下次 ${nextEvent}`, autoEventSettings)}
-    </div>
-  `;
-}
-
 function activePromptPreset(): PromptPreset | undefined {
   const preferredId = editingPromptPresetId
     || state.activeChatPromptPresetId
@@ -5835,104 +4090,6 @@ function activePromptPreset(): PromptPreset | undefined {
   const preset = state.promptPresets.find(item => item.id === preferredId) ?? state.promptPresets[0];
   editingPromptPresetId = preset?.id ?? '';
   return preset;
-}
-
-function promptPresetById(id: string): PromptPreset | undefined {
-  return state.promptPresets.find(preset => preset.id === id);
-}
-
-function renderPromptPresetOptions(activeId?: string): string {
-  return state.promptPresets.map(preset =>
-    `<option value="${escapeHtml(preset.id)}" ${preset.id === activeId ? 'selected' : ''}>${escapeHtml(preset.name)}</option>`,
-  ).join('');
-}
-
-function renderPromptPresetRows(preset: PromptPreset): string {
-  return preset.prompts.map(prompt => {
-    const identifier = escapeHtml(prompt.identifier);
-    const preview = prompt.marker
-      ? '由本应用动态填充'
-      : compactText(prompt.content || '空提示词', 120);
-    return `
-      <details class="prompt-preset-row ${prompt.enabled ? 'is-enabled' : ''}">
-        <summary class="prompt-preset-row-summary">
-          ${renderSwitchControl(`data-preset-prompt="${identifier}"`, prompt.enabled, `启用 ${prompt.name}`)}
-          <span>
-            <strong>${escapeHtml(prompt.name)}</strong>
-            <small>${escapeHtml(preview)}</small>
-          </span>
-          <em>${escapeHtml(prompt.role)}</em>
-        </summary>
-        <div class="prompt-preset-main">
-          <div class="prompt-preset-line">
-            <label class="prompt-preset-field prompt-title-field">
-              <span>名称</span>
-              <input data-preset-prompt-name="${identifier}" value="${escapeHtml(prompt.name)}" />
-            </label>
-            <label class="prompt-preset-field prompt-role-field">
-              <span>角色</span>
-              <select data-preset-prompt-role="${identifier}">${renderPromptRoleOptions(prompt.role)}</select>
-            </label>
-          </div>
-          ${prompt.marker ? `
-            <p class="prompt-preset-marker">${escapeHtml(preview)}</p>
-          ` : `
-            <label class="prompt-preset-field prompt-content-field">
-              <span>内容</span>
-              <textarea rows="3" data-preset-prompt-content="${identifier}">${escapeHtml(prompt.content)}</textarea>
-            </label>
-          `}
-        </div>
-        <span class="prompt-preset-meta">
-          <em>${escapeHtml(prompt.role)}</em>
-          ${prompt.marker ? '<b>动态槽位</b>' : ''}
-        </span>
-      </details>
-    `;
-  }).join('');
-}
-
-function renderPromptRegexRows(preset: PromptPreset): string {
-  if (preset.regexScripts.length === 0) {
-    return `
-      <div class="empty-panel prompt-regex-empty">
-        <strong>还没有正则脚本</strong>
-        <p>可以手动新增，或导入带 regex_scripts 的 SillyTavern 预设。正则会在私聊模型输出后执行。</p>
-      </div>
-    `;
-  }
-  return preset.regexScripts.map(script => {
-    const id = escapeHtml(script.id);
-    const tags = [
-      script.promptOnly ? 'Prompt only' : '',
-      script.markdownOnly ? 'Markdown only' : '',
-    ].filter(Boolean).join(' · ');
-    return `
-      <article class="prompt-regex-row ${script.enabled ? 'is-enabled' : ''}">
-        ${renderSwitchControl(`data-preset-regex="${id}"`, script.enabled, `启用 ${script.name}`)}
-        <div class="prompt-regex-main">
-          <div class="prompt-regex-line">
-            <label class="prompt-preset-field prompt-regex-name">
-              <span>名称</span>
-              <input data-preset-regex-name="${id}" value="${escapeHtml(script.name)}" />
-            </label>
-            <button class="plain-button danger-text" type="button" data-delete-preset-regex="${id}">删除</button>
-          </div>
-          <div class="prompt-regex-fields">
-            <label class="prompt-preset-field">
-              <span>查找正则</span>
-              <textarea rows="2" data-preset-regex-find="${id}" placeholder="/pattern/g">${escapeHtml(script.findRegex)}</textarea>
-            </label>
-            <label class="prompt-preset-field">
-              <span>替换为</span>
-              <textarea rows="2" data-preset-regex-replace="${id}" placeholder="留空表示删除匹配内容">${escapeHtml(script.replaceString)}</textarea>
-            </label>
-          </div>
-          ${tags ? `<small>${escapeHtml(tags)} 已保留；当前统一按私聊输出正则执行。</small>` : ''}
-        </div>
-      </article>
-    `;
-  }).join('');
 }
 
 function renderPromptPresetSettings(): string {
@@ -6555,43 +4712,6 @@ function renderModelOnboarding(): string {
   `;
 }
 
-function renderCompanionTimeFields(prefix: 'settings' | 'onboarding'): string {
-  const minutes = clampVirtualTimeMinutes(state.virtualTimeMinutes);
-  const hour = Math.floor(minutes / 60);
-  const minute = minutes % 60;
-  const mode = state.companionTimeMode;
-  const radioName = `${prefix}-companion-time-mode`;
-  return `
-    <div class="time-mode-settings" role="radiogroup" aria-label="陪伴时间模式">
-      <label class="time-mode-option ${mode === 'system' ? 'is-active' : ''}">
-        <input type="radio" name="${radioName}" value="system" ${mode === 'system' ? 'checked' : ''} />
-        <span><strong>读取系统时间</strong><small>角色按这台设备的真实日期和时间理解早晚、作息和动态。</small></span>
-      </label>
-      <label class="time-mode-option ${mode === 'virtual' ? 'is-active' : ''}">
-        <input type="radio" name="${radioName}" value="virtual" ${mode === 'virtual' ? 'checked' : ''} />
-        <span><strong>使用虚拟时间</strong><small>你手动拨一个角色世界里的手机时间，聊天和动态都会按它来写。</small></span>
-      </label>
-    </div>
-    <div class="virtual-clock-control ${mode === 'virtual' ? '' : 'is-disabled'}" data-virtual-clock="${prefix}">
-      <div class="virtual-clock-readout">
-        <strong id="${prefix}-virtual-clock-readout">${formatClockMinutes(minutes)}</strong>
-        <span>${mode === 'virtual' ? '当前虚拟时间' : '选择虚拟时间后启用'}</span>
-      </div>
-      <div class="virtual-clock-fields">
-        <label class="field">
-          <span>小时</span>
-          <input id="${prefix}-virtual-time-hour" type="number" min="0" max="23" step="1" value="${hour}" ${mode === 'virtual' ? '' : 'disabled'} />
-        </label>
-        <label class="field">
-          <span>分钟</span>
-          <input id="${prefix}-virtual-time-minute" type="number" min="0" max="59" step="1" value="${minute}" ${mode === 'virtual' ? '' : 'disabled'} />
-        </label>
-      </div>
-      <input class="virtual-clock-range" id="${prefix}-virtual-time-range" type="range" min="0" max="1439" step="5" value="${minutes}" aria-label="调整虚拟时间" ${mode === 'virtual' ? '' : 'disabled'} />
-    </div>
-  `;
-}
-
 function renderTimeModeOnboarding(): string {
   if (!timeModeOnboardingOpen) return '';
   return `
@@ -6642,88 +4762,6 @@ function renderChatReplyModeOnboarding(): string {
       </section>
     </div>
   `;
-}
-
-function cardCandidateSourceLabel(source: CharacterCardCandidate['source']): string {
-  const labels: Record<CharacterCardCandidate['source'], string> = {
-    card_name: '卡名',
-    description: '正文',
-    world_book: '世界书',
-    structured: '结构字段',
-  };
-  return labels[source];
-}
-
-function cardImportFollowupLabel(action: CardImportFollowupAction): string {
-  return action === 'worldbook' ? '角色世界书'
-    : action === 'opening' ? '角色开场白'
-      : '角色资料';
-}
-
-function isCardImportFollowupAction(value: string): value is CardImportFollowupAction {
-  return value === 'profile' || value === 'opening' || value === 'worldbook';
-}
-
-function worldBundleExportedAtLabel(value: string): string {
-  if (!value) return '未知时间';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '未知时间' : date.toLocaleString();
-}
-
-function worldBundleImportRows(preview: WorldBundlePreview): Array<{
-  section: WorldBundleSection;
-  title: string;
-  detail: string;
-  disabled?: boolean;
-}> {
-  return [
-    {
-      section: 'world',
-      title: '世界资料',
-      detail: '世界观、用户设定、地点、氛围、场景和天气',
-      disabled: true,
-    },
-    {
-      section: 'characters',
-      title: '角色',
-      detail: `${preview.characterCount} 个角色及角色设定`,
-    },
-    {
-      section: 'relationships',
-      title: '角色关系',
-      detail: `${preview.relationshipCount} 条关系，${preview.relationshipSuggestionCount} 条关系建议`,
-    },
-    {
-      section: 'chats',
-      title: '聊天记录',
-      detail: `${preview.privateChatCount} 段私聊、${preview.privateMessageCount} 条私聊消息、${preview.groupChatCount} 个群聊、${preview.groupMessageCount} 条群聊消息、${preview.directThreadCount} 段角色私聊、${preview.directMessageCount} 条角色私聊消息`,
-    },
-    {
-      section: 'moments',
-      title: '动态',
-      detail: `${preview.momentCount} 条动态及评论`,
-    },
-    {
-      section: 'events',
-      title: '世界事件',
-      detail: `${preview.eventCount} 个事件，${preview.privateEventSuggestionCount} 条事件建议`,
-    },
-    {
-      section: 'timeline',
-      title: '世界记录',
-      detail: `${preview.timelineCount} 条时间线，${preview.impactCount} 条影响记录，${preview.interactionCount} 条角色互动`,
-    },
-    {
-      section: 'summaries',
-      title: '记忆与状态',
-      detail: `${preview.summaryCount} 条记忆小结，${preview.statusCount} 条角色状态，${preview.dailyBriefCount} 份每日简报`,
-    },
-    {
-      section: 'drafts',
-      title: '写卡草稿',
-      detail: `${preview.draftCount} 份草稿`,
-    },
-  ];
 }
 
 function renderWorldBundleImportDialog(): string {
@@ -6791,12 +4829,6 @@ function renderCardRecognitionDialog(): string {
       </section>
     </div>
   `;
-}
-
-function stickerScopeLabel(scope: StickerLibraryScope): string {
-  return scope === 'character' ? '角色专属'
-    : scope === 'common' ? '通用'
-      : '用户';
 }
 
 function renderStickerImportDialog(): string {
@@ -7242,88 +5274,6 @@ function openPromptDialog(options: Parameters<typeof openAppPrompt>[0]): void {
   openAppPrompt(options, () => renderWithUiTransition('overlay-in'));
 }
 
-function modelIsReady(): boolean {
-  return Boolean(state.modelConfig.apiUrl.trim() && state.modelConfig.model.trim());
-}
-
-function cardRecognitionMessages(parsed: ParsedCharacterCardFile): ModelMessage[] {
-  const { character, candidates } = parsed;
-  const cardContext = compactText([
-    `卡名：${character.name}`,
-    characterSettingsText(character),
-    character.firstMessage ? `开场白：${character.firstMessage}` : '',
-    character.creatorNotes ? `作者备注：${character.creatorNotes}` : '',
-  ].filter(Boolean).join('\n\n'), 2600);
-  const candidateList = candidates.map(candidate => ({
-    id: candidate.id,
-    name: candidate.name,
-    source: cardCandidateSourceLabel(candidate.source),
-    confidence: candidate.confidence,
-    primary: candidate.isPrimary === true,
-    snippet: compactText(candidate.snippet, 220),
-  }));
-  return [
-    {
-      role: 'system',
-      content: [
-        '你是 SillyTavern 角色卡导入助手。',
-        '任务：从候选列表里判断哪些是真正应该作为独立聊天对象导入的角色。',
-        '只允许选择候选列表中已有的 id，不要创造新名字。',
-        '排除章节标题、设定分类、世界观概念、关系说明、空泛标签。',
-        '如果这是一张单人角色卡，只选择原卡名对应的候选。',
-        '只输出 JSON，不要解释。',
-      ].join('\n'),
-    },
-    {
-      role: 'user',
-      content: JSON.stringify({
-        outputSchema: { characterIds: ['候选 id'], reason: '一句话原因' },
-        cardContext,
-        candidates: candidateList,
-      }, null, 2),
-    },
-  ];
-}
-
-function parseAiCardRecognition(raw: string, candidates: CharacterCardCandidate[]): CharacterCardCandidate[] {
-  const cleaned = raw.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
-  const start = cleaned.indexOf('{');
-  const end = cleaned.lastIndexOf('}');
-  if (start < 0 || end <= start) return [];
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(cleaned.slice(start, end + 1));
-  } catch {
-    return [];
-  }
-  if (!parsed || typeof parsed !== 'object') return [];
-  const record = parsed as Record<string, unknown>;
-  const rawIds = Array.isArray(record.characterIds)
-    ? record.characterIds
-    : Array.isArray(record.ids)
-      ? record.ids
-      : Array.isArray(record.characters)
-        ? record.characters
-        : [];
-  const ids = new Set<string>();
-  const names = new Set<string>();
-  rawIds.forEach(item => {
-    if (typeof item === 'string') {
-      ids.add(item);
-      names.add(item.trim().toLocaleLowerCase());
-      return;
-    }
-    if (item && typeof item === 'object') {
-      const itemRecord = item as Record<string, unknown>;
-      if (typeof itemRecord.id === 'string') ids.add(itemRecord.id);
-      if (typeof itemRecord.name === 'string') names.add(itemRecord.name.trim().toLocaleLowerCase());
-    }
-  });
-  return candidates.filter(candidate =>
-    ids.has(candidate.id) || names.has(candidate.name.trim().toLocaleLowerCase()),
-  );
-}
-
 async function importCardRecognitionWithAi(parsed: ParsedCharacterCardFile): Promise<boolean> {
   if (!modelIsReady()) return false;
   try {
@@ -7340,60 +5290,6 @@ async function importCardRecognitionWithAi(parsed: ParsedCharacterCardFile): Pro
     console.warn('AI card recognition failed:', error);
     return false;
   }
-}
-
-function cleanGeneratedIntro(value: string): string {
-  return compactText(
-    value
-      .replace(/<\/?msg>/gi, '')
-      .replace(/^["'“”‘’\s]+|["'“”‘’\s]+$/g, '')
-      .trim(),
-    220,
-  );
-}
-
-async function generateImportProfileNote(character: CharacterProfile): Promise<boolean> {
-  if (!modelIsReady()) return false;
-  const instruction = [
-    `请只基于角色卡、人设和世界书，为「${character.name}」写一段给用户看的角色介绍。`,
-    '用途：显示在角色信息和聊天页开头的浅色备注框，让用户快速知道这个角色是谁、来自哪里、主要性格/经历、当前处境，以及和 user 已有的关系背景。',
-    '这不是聊天开场，不是 first_mes，不是聊天的引子；不要写“你打开聊天”“她给你发来消息”“要不要和她聊聊”等邀聊句。',
-    '要求：中文，2 到 4 句，80 到 180 字；像角色小档案摘要，具体但克制。',
-    '不要输出 <msg>、角色对白、标题、列表、引号、Markdown、JSON 或解释文字。',
-    '不要写说话方式、语言风格或输出格式；不要代替用户行动，不要扩写成小说；设定不足时只概括已知背景和关系，不要硬编大段设定。',
-  ].join('\n');
-  const content = await callModel(character, instruction, true, false, undefined, { contextMessages: [] });
-  const intro = cleanGeneratedIntro(content);
-  if (!intro) return false;
-  character.profileNote = intro;
-  saveState();
-  return true;
-}
-
-function cleanGeneratedPacingStrategy(value: string): string {
-  return compactText(
-    value
-      .replace(/<\/?msg>/gi, '')
-      .replace(/^["'“”‘’\s]+|["'“”‘’\s]+$/g, '')
-      .trim(),
-    900,
-  );
-}
-
-async function generateImportAutoMessagePacingStrategy(character: CharacterProfile): Promise<boolean> {
-  if (!modelIsReady()) return false;
-  const instruction = [
-    `请只基于角色卡、人设、世界书和背景备注，为「${character.name}」写一段“主动消息节奏策略”。`,
-    '用途：当角色每隔一段时间主动私聊 user 后，如果 user 没有回复，应用会参考这段自然语言决定试探、等待、降频或沉默的节奏。',
-    '必须覆盖：正常主动联系倾向；连续 1 次未回复；连续 2 到 3 次未回复；连续 4 次以上未回复；关系亲近或紧张时如何微调。',
-    '要求：中文，5 到 8 条短句；像给应用看的规则，不要写角色对白，不要写 JSON，不要写代码，不要输出 <msg> 标签。',
-  ].join('\n');
-  const content = await callModel(character, instruction, true, false);
-  const strategy = cleanGeneratedPacingStrategy(content);
-  if (!strategy) return false;
-  character.autoMessage.pacingStrategy = strategy;
-  saveState();
-  return true;
 }
 
 async function importCharactersWithOpening(characters: CharacterProfile[], status: string): Promise<void> {
@@ -7505,23 +5401,6 @@ async function replyToUserComment(momentId: string, commentId?: string): Promise
     autoCommentingMomentIds.delete(momentId);
     render();
   }
-}
-
-function scrollMessagesToBottom(): void {
-  const messages = document.querySelector<HTMLElement>('.messages, .group-messages, .world-workbench-scroll');
-  if (!messages) return;
-  const previousBehavior = messages.style.scrollBehavior;
-  messages.style.scrollBehavior = 'auto';
-  try {
-    messages.scrollTop = messages.scrollHeight;
-  } finally {
-    messages.style.scrollBehavior = previousBehavior;
-  }
-}
-
-function isChatScrollNearBottom(container = document.querySelector<HTMLElement>('.messages, .group-messages, .world-workbench-scroll')): boolean {
-  if (!container) return true;
-  return container.scrollHeight - container.scrollTop - container.clientHeight < 140;
 }
 
 function requestChatStickToBottom(): void {
@@ -7659,57 +5538,6 @@ function closeGroupMessageActionMenuInPlace(): void {
   });
 }
 
-function resizeComposerTextarea(textarea = document.querySelector<HTMLTextAreaElement>('#message-input')): void {
-  if (!textarea) return;
-  textarea.style.height = '0px';
-  const nextHeight = Math.min(Math.max(textarea.scrollHeight, 42), 126);
-  textarea.style.height = `${nextHeight}px`;
-  textarea.style.overflowY = textarea.scrollHeight > 126 ? 'auto' : 'hidden';
-}
-
-function isImeComposing(event: Event): boolean {
-  return 'isComposing' in event && Boolean((event as InputEvent).isComposing);
-}
-
-function shouldSubmitTextareaOnEnter(event: KeyboardEvent): boolean {
-  return state.enterToSend
-    && event.key === 'Enter'
-    && !event.shiftKey
-    && !event.ctrlKey
-    && !event.altKey
-    && !event.metaKey
-    && !event.isComposing;
-}
-
-function requestTextareaFormSubmit(textarea: HTMLTextAreaElement, event: KeyboardEvent): void {
-  if (!shouldSubmitTextareaOnEnter(event)) return;
-  event.preventDefault();
-  textarea.form?.requestSubmit();
-}
-
-function requestTextareaFormSubmitFromBeforeInput(textarea: HTMLTextAreaElement, event: InputEvent): void {
-  if (!state.enterToSend || event.inputType !== 'insertLineBreak' || event.isComposing) return;
-  event.preventDefault();
-  textarea.form?.requestSubmit();
-}
-
-function canRefocusComposerInput(input: HTMLTextAreaElement): boolean {
-  const active = document.activeElement as HTMLElement | null;
-  if (!active || active === document.body || active === input) return true;
-  return Boolean(active.closest('#composer, #group-composer, #world-rp-composer, .chat-composer-area'));
-}
-
-function focusComposerInputForKeyboard(input: HTMLTextAreaElement): void {
-  input.focus({ preventScroll: true });
-  try {
-    input.setSelectionRange(input.value.length, input.value.length);
-  } catch {
-    // Mobile browsers can reject selection updates while the IME is settling.
-  }
-  resizeComposerTextarea(input);
-  updateKeyboardOffset();
-}
-
 function runDelayedMessageComposerFocus(characterId: string): void {
   if (!messageComposerFocusKeepalive || messageComposerFocusKeepalive.characterId !== characterId) return;
   if (Date.now() > messageComposerFocusKeepalive.until) {
@@ -7824,22 +5652,6 @@ function focusPendingMomentComment(): boolean {
   input.focus({ preventScroll: true });
   input.setSelectionRange(input.value.length, input.value.length);
   return true;
-}
-
-function keepMomentComposerVisible(): void {
-  const composer = document.querySelector<HTMLElement>('.moments-publisher.is-open');
-  if (!composer) return;
-  window.requestAnimationFrame(() => {
-    composer.dataset.keyboardAdjustedAt = String(Date.now());
-  });
-}
-
-function setMomentComposerKeyboardFocus(active: boolean): void {
-  const touchLike = window.matchMedia('(pointer: coarse)').matches;
-  document.documentElement.classList.toggle(
-    'moment-composer-keyboard-focus',
-    active && (isCompactViewport() || touchLike),
-  );
 }
 
 function clearMomentComposerKeyboardTimers(): void {
@@ -8004,22 +5816,6 @@ function closeGroupSettingsPanel(renderTransition = true): void {
   finishClose();
 }
 
-function updateKeyboardOffset(): void {
-  const viewport = window.visualViewport;
-  const offset = viewport
-    ? Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)
-    : 0;
-  const rounded = Math.round(offset);
-  document.documentElement.style.setProperty('--keyboard-offset', `${rounded}px`);
-  document.documentElement.classList.toggle('keyboard-open', rounded > 80);
-  if (rounded > 80 && isChatScrollNearBottom()) {
-    window.setTimeout(scrollMessagesToBottom, 80);
-    window.setTimeout(scrollMessagesToBottom, 220);
-    window.setTimeout(keepMomentComposerVisible, 80);
-    window.setTimeout(keepMomentComposerVisible, 220);
-  }
-}
-
 function installVisualViewportListener(): void {
   if (visualViewportListenerInstalled) return;
   visualViewportListenerInstalled = true;
@@ -8027,12 +5823,6 @@ function installVisualViewportListener(): void {
   window.visualViewport?.addEventListener('scroll', updateKeyboardOffset);
   window.addEventListener('resize', updateKeyboardOffset);
   updateKeyboardOffset();
-}
-
-function closePrivateIdentityMenus(): void {
-  document.querySelectorAll<HTMLDetailsElement>('.private-chat-identity-select[open]').forEach(details => {
-    details.open = false;
-  });
 }
 
 function installPrivateIdentityMenuOutsideListener(): void {

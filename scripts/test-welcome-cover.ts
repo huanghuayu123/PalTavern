@@ -2,6 +2,7 @@ export {};
 declare const require: (id: string) => any;
 
 const fs = require('node:fs');
+const { readAppUiSource } = require('./read-ui-source');
 const path = require('node:path');
 
 const values = new Map<string, string>();
@@ -78,7 +79,7 @@ if (firstRunGuide.shouldShowFirstRunGuide({ ...firstRunState, dismissed: true })
   throw new Error('First-run guide should stay hidden after dismissal.');
 }
 
-const uiSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/ui/app.ts'), 'utf8');
+const uiSource = readAppUiSource();
 if (
   !uiSource.includes('renderWelcomeCover()')
   || !uiSource.includes('markWelcomeCoverSeen()')
