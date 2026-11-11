@@ -444,7 +444,10 @@ export function playMorphs(capture: MorphCapture, options: { duration?: number; 
     let sx = to.width > 0 ? from.width / to.width : 1;
     let sy = to.height > 0 ? from.height / to.height : 1;
     if (from.scale === 'uniform') {
-      sx = sy;
+      // 小注释：等比缩放取宽高两个比例的中间值，前后形状稍有出入时也不会被压窄或拉宽。
+      const uniform = Math.sqrt(sx * sy);
+      sx = uniform;
+      sy = uniform;
     }
     if (Math.abs(dx) < 0.75 && Math.abs(dy) < 0.75 && Math.abs(sx - 1) < 0.01 && Math.abs(sy - 1) < 0.01) return;
     moved.set(element, { dx: from.left - to.left, dy: from.top - to.top });
@@ -457,8 +460,10 @@ export function playMorphs(capture: MorphCapture, options: { duration?: number; 
 }
 
 function morphTransform(from: MotionBox, to: MotionBox, shiftX: number, shiftY: number, uniform: boolean): string {
-  const sy = to.height > 0 ? from.height / to.height : 1;
-  const sx = uniform ? sy : to.width > 0 ? from.width / to.width : 1;
+  const ry = to.height > 0 ? from.height / to.height : 1;
+  const rx = to.width > 0 ? from.width / to.width : 1;
+  const sy = uniform ? Math.sqrt(rx * ry) : ry;
+  const sx = uniform ? sy : rx;
   return `translate(${(from.left - to.left - shiftX).toFixed(2)}px, ${(from.top - to.top - shiftY).toFixed(2)}px) scale(${sx.toFixed(4)}, ${sy.toFixed(4)})`;
 }
 
@@ -563,6 +568,12 @@ export function enterDetail(renderPage: () => void, source: MotionSource | null)
     // 然后一边往上归位一边向下铺开；头像、名字扣掉页面位移后直线飞到顶栏里。
     const shiftY = from.top - pageBox.top;
     const startClip = { left: from.left, top: pageBox.top, width: from.width, height: from.height, radius: from.radius };
+    // 小注释：正在飞的头像、名字就是那一行里的那一份，垫底旧画面里的同一份先藏起来，免得出现两个。
+    Array.from(morphAnimations.keys()).forEach(element => {
+      if (!page.contains(element)) return;
+      const copy = old.morphs.get(element.dataset.morph ?? '');
+      if (copy) copy.style.visibility = 'hidden';
+    });
     animations.push(...rideAlongMorphs(page, 0, shiftY, duration, easing));
     animations.push(animate(page, [
       { transform: `translateY(${shiftY.toFixed(1)}px)`, clipPath: insetFor(startClip, pageBox), opacity: 0.6 },
@@ -626,6 +637,12 @@ export function exitDetail(renderPage: () => void): void {
         ?? (target.getAttribute('data-morph') === key ? target : null);
       const fromEntry = lastCapture?.entries.get(key);
       if (!landing || !fromEntry) return;
+      // 小注释：列表里真的那一份先藏着，等复制层里飞回来的那一份快到位时再交接，免得同时出现两个。
+      animations.push(animate(landing, [
+        { opacity: 0 },
+        { opacity: 0, offset: 0.72 },
+        { opacity: 1 },
+      ], { duration: exitMs, easing }));
       animations.push(animate(cloneElement, [
         { transformOrigin: '0 0', transform: 'none' },
         { transformOrigin: '0 0', transform: morphTransform(boxOf(landing), fromEntry, 0, shiftY, fromEntry.scale === 'uniform') },
@@ -634,7 +651,7 @@ export function exitDetail(renderPage: () => void): void {
     // 小注释：裁剪比位移先到位（四分之三处就只剩顶栏那一条），最后一段只是这一条落到那一行上并淡掉。
     animations.push(animate(old.layer, [
       { transform: 'none', clipPath: insetFor(startBox, old.box), opacity: 1 },
-      { opacity: 1, offset: 0.6 },
+      { opacity: 1, offset: 0.72 },
       { clipPath: insetFor(endClip, old.box), offset: 0.75 },
       { transform: `translateY(${shiftY.toFixed(1)}px)`, clipPath: insetFor(endClip, old.box), opacity: 0 },
     ], { duration: exitMs, easing, fill: 'forwards' }));

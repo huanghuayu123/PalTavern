@@ -981,10 +981,15 @@ html[data-compact-ui] .header-back:active {
   background: var(--c-press);
 }
 
+/* 小注释：旧样式给按钮统一加了最小高度 44px，会把顶栏头像撑成竖椭圆；这里把宽高都锁成 36px 正圆。 */
 html[data-compact-ui] .mobile-chat-detail .header-avatar {
+  flex: none;
   width: 36px;
   min-width: 36px;
+  max-width: 36px;
   height: 36px;
+  min-height: 36px;
+  max-height: 36px;
   margin: 0;
   padding: 0;
   font-size: 15px;
