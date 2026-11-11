@@ -31,6 +31,7 @@ const WORLD_INSIGHT_SCOPE = '.world-insight-transition-frame';
 const SEGMENT_SCOPE = '[data-motion-scope="segment"]';
 
 let pendingSource: MotionSource | null = null;
+let pendingDetailScope: string | undefined;
 
 export function mainSectionTransition(from: MainSectionTransitionId, to: MainSectionTransitionId): UiTransitionKind {
   if (from === to) return 'quiet';
@@ -50,6 +51,11 @@ export function prepareChatRevealFromElement(trigger: HTMLElement | null): void 
   pendingSource = sourceFromElement(trigger);
 }
 
+/** 详情只占页面的一块（例如世界页顶栏下面的内容区）时调用：下一次进出详情只动这一块。 */
+export function prepareDetailScope(selector: string): void {
+  pendingDetailScope = selector;
+}
+
 /** 点按钮打开整页或浮层时调用：记住按钮，新画面从按钮的位置长出来。 */
 export function prepareActionExpandFromElement(trigger: HTMLElement | null): void {
   pendingSource = sourceFromElement(trigger);
@@ -59,16 +65,18 @@ export function renderWithUiTransition(kind: UiTransitionKind, renderPage: () =>
   // 小注释：显式指定的来源优先，其次用最近一次点按的元素。
   const source = pendingSource;
   pendingSource = null;
+  const detailScope = pendingDetailScope;
+  pendingDetailScope = undefined;
   if (kind === 'quiet') {
     renderPage();
     return;
   }
   if (kind === 'detail-in') {
-    enterDetail(renderPage, source ?? takeTapSource());
+    enterDetail(renderPage, source ?? takeTapSource(), detailScope);
     return;
   }
   if (kind === 'detail-out') {
-    exitDetail(renderPage);
+    exitDetail(renderPage, detailScope);
     return;
   }
   if (kind === 'overlay-in') {

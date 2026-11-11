@@ -282,6 +282,7 @@ import {
   mainSectionTransition,
   prepareActionExpandFromElement,
   prepareChatRevealFromElement,
+  prepareDetailScope,
   renderWithUiTransition as runUiTransition,
   type UiTransitionKind,
 } from './transitions';
@@ -658,6 +659,10 @@ let focusGroupInputAfterRenderChatId = '';
 let messageComposerFocusKeepalive: { characterId: string; until: number } | null = null;
 let groupComposerFocusKeepalive: { chatId: string; until: number } | null = null;
 let focusMomentCommentAfterRenderId = '';
+// 小注释：手机上评论框默认收起，这里记着当前展开的是哪条动态（只是界面状态，不存档）。
+let momentCommentFormOpenId = '';
+// 小注释：世界页里进出日常片段时，只让顶栏下面的内容区展开和收回。
+const WORLD_DETAIL_SCOPE = '.world-workbench-scroll';
 let contactQuery = '';
 let quotedMessageId = '';
 let messageActionId = '';
@@ -2945,13 +2950,13 @@ function renderChatPane(character?: CharacterProfile, mobile = false): string {
   `;
 }
 
-function renderMomentComposerLauncher(): string {
+function renderMomentComposerLauncher(mobile = false): string {
   const composerVisible = momentComposerOpen || momentComposerDropClosing;
   return `
     <button class="moment-compose-fab" id="open-moment-composer" type="button" aria-haspopup="dialog">
-      ${icon('send')}<span>发布动态</span>
+      ${icon(mobile ? 'edit' : 'send')}<span>发布动态</span>
     </button>
-    ${composerVisible ? '<button class="moment-composer-backdrop" id="close-moment-composer-backdrop" type="button" aria-label="关闭发布动态"></button>' : ''}
+    ${composerVisible ? '<button class="moment-composer-backdrop" id="close-moment-composer-backdrop" type="button" aria-label="关闭发布动态" data-morph="moment-composer-backdrop" data-motion-enter="fade" data-motion-exit="fade"></button>' : ''}
   `;
 }
 
@@ -3123,7 +3128,7 @@ function renderMomentsPage(mobile = false): string {
           <section class="moments-feed">${renderMoments()}</section>
         </div>
       </section>
-      ${renderMomentComposerLauncher()}
+      ${renderMomentComposerLauncher(mobile)}
       ${momentsTutorialOpen ? renderMomentsTutorial() : ''}
     </main>
   `;
@@ -3353,6 +3358,7 @@ function setMomentCommentReplyTarget(momentId: string, commentId: string): void 
   if (!momentId || !commentId) return;
   momentCommentReplyTargetDrafts.set(momentId, commentId);
   momentCommentActionMenu = null;
+  momentCommentFormOpenId = momentId;
   focusMomentCommentAfterRenderId = momentId;
   saveUiSessionSnapshot({ captureDom: true });
 }
@@ -3382,6 +3388,7 @@ function momentCommentCharacterFromCommunicationIdentity(moment: MomentEntry): C
 
 function renderMoments(): string {
   const moments = momentsForFeed();
+  const compact = isCompactViewport();
   if (moments.length === 0) {
     return '<div class="moments-empty"><strong>还没有动态</strong><span>在上方发布第一条近况，或让当前角色先说点什么。</span></div>';
   }
@@ -3409,8 +3416,25 @@ function renderMoments(): string {
     const avatar = character
       ? renderAvatar(character)
       : escapeHtml(author.slice(0, 1));
+    // 小注释：手机上评论框点“评论”才展开；正在回复某条评论、或刚要聚焦输入框时也保持展开。
+    const commentFormOpen = !compact
+      || momentCommentFormOpenId === moment.id
+      || Boolean(replyTarget)
+      || focusMomentCommentAfterRenderId === moment.id;
+    const commentsBlank = compact
+      && comments.length === 0
+      && !commentFormOpen
+      && !autoCommentingMomentIds.has(moment.id)
+      && !(detailOpen && visibleCommentCharacters.length > 0);
+    const momentId = escapeHtml(moment.id);
+    const compactActions = compact ? `
+          <div class="moment-action-row">
+            <button class="moment-action moment-comment-toggle" data-toggle-moment-comment="${momentId}" type="button" aria-expanded="${commentFormOpen ? 'true' : 'false'}">${icon('message')}<span>${comments.length > 0 ? `评论 ${comments.length}` : '评论'}</span></button>
+            <button class="moment-action" data-open-moment-detail="${momentId}" type="button" aria-expanded="${detailOpen ? 'true' : 'false'}">${detailOpen ? '收起' : '详情'}</button>
+            <button class="moment-action moment-delete" data-moment-id="${momentId}" type="button" aria-label="删除这条动态">删除</button>
+          </div>` : '';
     return `
-      <article class="moment-card">
+      <article class="moment-card"${compact ? ` data-morph="moment-card:${momentId}" data-morph-scale="none" data-motion-enter="rise" data-motion-exit="collapse"` : ''}>
         <div class="moment-avatar ${character ? '' : 'user-avatar'}"${character ? avatarToneAttribute(character) : ' data-avatar-tone="user"'}>${avatar}</div>
         <div class="moment-body">
           <div class="moment-header">
@@ -3418,13 +3442,13 @@ function renderMoments(): string {
               <strong>${escapeHtml(author)}</strong>
               <span><time>${formatConversationTime(moment.createdAt)}</time><em>${escapeHtml(momentWorld?.name ?? '未知世界')}</em><em>${escapeHtml(momentVisibilityLabel(moment.visibility))}</em></span>
             </div>
-            <div class="moment-header-actions">
+            ${compact ? '' : `<div class="moment-header-actions">
               <button class="secondary small-button" data-open-moment-detail="${escapeHtml(moment.id)}" type="button">${detailOpen ? '收起' : '详情'}</button>
               <button class="moment-delete" data-moment-id="${escapeHtml(moment.id)}" aria-label="删除这条动态">删除</button>
-            </div>
+            </div>`}
           </div>
-          <div class="moment-content">${escapeHtml(moment.content)}</div>
-          <div class="moment-comments ${comments.length === 0 ? 'is-empty' : ''}">
+          <div class="moment-content">${escapeHtml(moment.content)}</div>${compactActions}
+          <div class="moment-comments ${comments.length === 0 ? 'is-empty' : ''}${commentsBlank ? ' is-blank' : ''}">
             ${comments.length > 0 ? renderedComments.map(comment => {
               const commenter = momentCommentAuthorName(comment);
               const replied = comment.replyToCommentId
@@ -3444,7 +3468,7 @@ function renderMoments(): string {
                 canCharacterViewMoment(moment, character) && character.id !== comment.characterId,
               );
               return `
-                <div class="moment-comment ${commentMenuOpen ? 'is-menu-open' : ''}" data-moment-comment-moment="${escapeHtml(moment.id)}" data-moment-comment-id="${escapeHtml(comment.id)}">
+                <div class="moment-comment ${commentMenuOpen ? 'is-menu-open' : ''}" data-moment-comment-moment="${escapeHtml(moment.id)}" data-moment-comment-id="${escapeHtml(comment.id)}"${compact ? ` data-morph="moment-comment:${escapeHtml(comment.id)}" data-morph-scale="none" data-motion-enter="rise"` : ''}>
                   <div class="moment-comment-copy">
                     <strong>${escapeHtml(commenter)}</strong>
                     ${replyContext ? `<small class="moment-comment-reply-context">${escapeHtml(replyContext)}</small>` : ''}
@@ -3482,14 +3506,14 @@ function renderMoments(): string {
                 <button type="button" data-clear-comment-reply="${escapeHtml(moment.id)}" aria-label="取消回复目标">取消</button>
               </div>
             ` : ''}
-            <form class="moment-comment-form moment-comment-inline-form" data-comment-form="${escapeHtml(moment.id)}">
+            ${commentFormOpen ? `<form class="moment-comment-form moment-comment-inline-form" data-comment-form="${escapeHtml(moment.id)}"${compact ? ` data-morph="comment-form:${momentId}" data-morph-scale="none" data-motion-enter="reveal" data-motion-exit="collapse"` : ''}>
               <select class="moment-comment-author-select" data-comment-actor-select="${escapeHtml(moment.id)}" aria-label="选择评论身份">
                 <option value="user" ${commentActorSelectedId === 'user' ? 'selected' : ''}>${escapeHtml(userSelfLabel())}</option>
                 ${commentActorCharacters.map(item => `<option value="${escapeHtml(item.id)}" ${commentActorSelectedId === item.id ? 'selected' : ''}>${escapeHtml(item.name)}</option>`).join('')}
               </select>
               <input data-comment-input="${escapeHtml(moment.id)}" value="${escapeHtml(momentCommentDrafts.get(moment.id) ?? '')}" placeholder="${replyTarget ? `回复 ${escapeHtml(momentCommentAuthorName(replyTarget))}…` : '写评论…'}" aria-label="评论这条动态" />
               <button class="secondary moment-comment-submit" type="submit" aria-label="发送评论" ${commentActorCanView ? '' : 'disabled'}>${icon('send')}</button>
-            </form>
+            </form>` : ''}
             ${detailOpen && visibleCommentCharacters.length > 0 ? `
               <div class="moment-character-picker">
                 <select data-character-select="${escapeHtml(moment.id)}" aria-label="选择评论角色">
@@ -3596,21 +3620,26 @@ function renderWorldSettingsPanel(): string {
   const world = activeWorld();
   const panelClasses = ['world-gear-panel', worldGearPanelClosing ? 'is-closing' : ''].filter(Boolean).join(' ');
   const panelOpen = worldGearPanelOpen || worldGearPanelClosing;
-  const trigger = isCompactViewport()
-    ? `<button class="icon-button world-gear-trigger" data-open-world-gear type="button" aria-label="涓栫晫涓庢椂闂寸嚎璁剧疆">${icon('settings')}</button>`
+  const compact = isCompactViewport();
+  // 小注释：手机上齿轮按钮只放一个在顶栏里；打开后的整页左上角有自己的返回按钮。
+  const trigger = compact
+    ? `<button class="icon-button world-gear-trigger" data-open-world-gear data-morph="world-gear" type="button" aria-label="世界与时间线设置">${icon('settings')}</button>`
+    : '';
+  const backButton = compact
+    ? `<button class="icon-button world-gear-back" data-open-world-gear type="button" aria-label="返回世界">${icon('back')}</button>`
     : '';
   return `
     ${trigger}
     <details class="${panelClasses}" ${panelOpen ? 'open' : ''}>
-      ${trigger}
       <summary class="icon-button" data-open-world-gear aria-label="世界与时间线设置">${icon('settings')}</summary>
       <section class="world-gear-card" aria-label="世界设置与时间线">
         <header>
+          ${backButton}
           <div>
             <strong>${escapeHtml(world.name)}</strong>
             <span>世界资料、记忆、时间线和小事件</span>
           </div>
-          <button class="small-button primary-small" data-save-world-workbench type="button">保存</button>
+          <button class="small-button primary-small world-gear-save" data-save-world-workbench type="button">保存</button>
         </header>
         <div class="world-gear-body">
           <section class="world-drawer-section world-profile-section">
@@ -3912,7 +3941,7 @@ function renderWorldStageComposer(character?: CharacterProfile): string {
     ? `继续和 ${character.name} RP，可以写台词、动作或旁白…`
     : '先选择一个角色，再继续世界 RP';
   return `
-    <form class="composer world-stage-composer" id="world-rp-composer">
+    <form class="composer world-stage-composer" id="world-rp-composer" data-morph="world-rp-composer" data-morph-scale="none" data-motion-enter="rise" data-motion-exit="sink">
       <textarea id="world-rp-input" rows="1" enterkeyhint="${state.enterToSend ? 'send' : 'enter'}" aria-label="世界 RP 输入框" placeholder="${escapeHtml(placeholder)}" ${disabled ? 'disabled' : ''}>${escapeHtml(worldRpInputDraft)}</textarea>
       <button class="primary send-button" type="submit" aria-label="继续 RP" ${disabled ? 'disabled' : ''}>${icon('send')}<span>继续</span></button>
     </form>
@@ -3928,8 +3957,10 @@ function selectedRelationshipPairForInsight(characters: CharacterProfile[]): [Ch
 }
 
 function renderWorldInsightTabs(): string {
+  const activeIndex = Math.max(0, WORLD_INSIGHT_TABS.findIndex(tab => tab.value === worldInsightTab));
   return `
     <nav class="world-insight-tabs" aria-label="世界洞察">
+      <span class="segment-thumb" data-morph="indicator:world-insight-tabs" style="--segment-index:${activeIndex};--segment-count:${WORLD_INSIGHT_TABS.length}" aria-hidden="true"></span>
       ${WORLD_INSIGHT_TABS.map(tab => `
         <button class="${worldInsightTab === tab.value ? 'is-active' : ''}" data-world-insight-tab="${escapeHtml(tab.value)}" type="button">${escapeHtml(tab.label)}</button>
       `).join('')}
@@ -4131,10 +4162,10 @@ function renderMemorySummaryDrawer(): string {
         <div class="memory-summary-tools">
           ${character ? `<button class="secondary" type="button" data-refresh-character-memory-summaries="${escapeHtml(character.id)}">刷新角色总结</button>` : ''}
           <button class="secondary" type="button" data-refresh-macro-summary>生成世界大结</button>
-          <button class="secondary" type="button" data-toggle-memory-summary-drawer aria-expanded="${memorySummaryDrawerExpanded ? 'true' : 'false'}">${memorySummaryDrawerExpanded ? '收起' : '展开'}</button>
+          <button class="secondary memory-summary-toggle" type="button" data-toggle-memory-summary-drawer aria-expanded="${memorySummaryDrawerExpanded ? 'true' : 'false'}">${memorySummaryDrawerExpanded ? '收起' : '展开'}</button>
         </div>
       </header>
-      <div class="memory-summary-drawer-body">
+      <div class="memory-summary-drawer-body" data-morph="memory-drawer-body" data-morph-scale="none" data-motion-enter="reveal" data-motion-exit="collapse">
       <div class="memory-summary-grid">
         ${renderMemorySummaryGroup('micro', '片段', '聊天、事件或动态积累后会形成片段小结。', summaries)}
         ${renderMemorySummaryGroup('middle', '角色与事件', '片段小结积累后会形成角色或事件中结。', summaries)}
@@ -4162,11 +4193,18 @@ function renderWorldWorkbenchPage(mobile = false): string {
   const internalDetailRenderers = [renderEventsPage, renderTimelinePage, renderWorldEventNarration]
     .map(renderer => renderer.name)
     .join(',');
+  // 小注释：手机上点世界名就能切换世界（透明的下拉框盖在标题上），只有一个世界时不显示箭头。
+  const worldSwitch = mobile && state.worlds.length > 1
+    ? `<label class="world-title-switch"><select data-world-select aria-label="切换世界">${state.worlds.map(world =>
+      `<option value="${escapeHtml(world.id)}" ${world.id === activeWorld().id ? 'selected' : ''}>${escapeHtml(world.name)}</option>`,
+    ).join('')}</select></label>`
+    : '';
   return `
     <main class="chat world-workbench ${mobile ? 'mobile-page' : ''}" data-render-mode-label="旁白 + 对话" data-world-atmosphere-label="当前氛围" data-internal-detail-renderers="${escapeHtml(internalDetailRenderers)}">
-      <header class="chat-header world-workbench-header">
+      <header class="chat-header world-workbench-header${worldSwitch ? ' has-world-switch' : ''}">
         ${renderWorldPersonaSelector()}
         ${renderWorldStageHeader()}
+        ${worldSwitch}
         <div class="world-topbar-tabs">
           ${renderWorldInsightTabs()}
         </div>
@@ -5985,6 +6023,13 @@ function closeWorldGearPanel(renderTransition = true): void {
   worldGearPanelCloseTimer = undefined;
   captureVisibleDraftsFromDom();
   worldGearPanelOpen = false;
+  if (renderTransition && isCompactViewport()) {
+    // 小注释：手机上整页直接收回顶栏的齿轮按钮，动画交给动效引擎，不再等旧的关闭动画。
+    worldGearPanelClosing = false;
+    saveUiSessionSnapshot({ captureDom: false });
+    renderWithUiTransition('overlay-out');
+    return;
+  }
   worldGearPanelClosing = true;
   saveUiSessionSnapshot({ captureDom: false });
   const finishClose = () => {
@@ -6302,7 +6347,8 @@ function bindUi(): void {
     window.setTimeout(keepMomentComposerVisible, 80);
   });
   const closeMomentComposer = () => {
-    closeMomentComposerWithTransition(true, true);
+    // 小注释：手机上面板直接由动效引擎沉回底部，不再等旧的下坠动画。
+    closeMomentComposerWithTransition(true, !isCompactViewport());
   };
   document.querySelector<HTMLButtonElement>('#close-moment-composer')?.addEventListener('click', closeMomentComposer);
   document.querySelector<HTMLButtonElement>('#close-moment-composer-backdrop')?.addEventListener('click', closeMomentComposer);
@@ -7059,7 +7105,7 @@ function bindUi(): void {
       return;
     }
     if (event.key === 'Escape' && momentComposerOpen) {
-      closeMomentComposerWithTransition(true, true);
+      closeMomentComposerWithTransition(true, !isCompactViewport());
       return;
     }
     if (event.key === 'Escape' && groupSettingsOpen) {
@@ -9119,6 +9165,8 @@ function bindUi(): void {
       worldRpMessageActionId = '';
       saveUiSessionSnapshot({ captureDom: false });
       requestChatStickToBottom();
+      // 小注释：片段从列表那一行展开成下面的内容区，世界名和分段控件留在原地。
+      prepareDetailScope(WORLD_DETAIL_SCOPE);
       renderWithUiTransition('detail-in');
     });
   });
@@ -9128,6 +9176,7 @@ function bindUi(): void {
     worldRpMessageEditId = '';
     worldRpMessageActionId = '';
     saveUiSessionSnapshot({ captureDom: false });
+    prepareDetailScope(WORLD_DETAIL_SCOPE);
     renderWithUiTransition('detail-out');
   });
   document.querySelector<HTMLButtonElement>('[data-end-world-rp-event]')?.addEventListener('click', buttonEvent => {
@@ -9769,6 +9818,7 @@ function bindUi(): void {
       if (momentId) {
         momentCommentReplyTargetDrafts.delete(momentId);
         clearMomentCommentActionMenu(momentId);
+        momentCommentFormOpenId = momentId;
         focusMomentCommentAfterRenderId = momentId;
         preserveScrollForNextRender();
         saveUiSessionSnapshot({ captureDom: true });
@@ -9890,6 +9940,7 @@ function bindUi(): void {
         momentCommentDrafts.delete(momentId);
         momentCommentReplyTargetDrafts.delete(momentId);
         clearMomentCommentActionMenu(momentId);
+        if (momentCommentFormOpenId === momentId) momentCommentFormOpenId = '';
         const willReply = Boolean(moment?.characterId && !commentCharacter && modelIsReady());
         setStatusText(willReply ? '评论已发送，对方正在回复…' : '评论已发送。');
         preserveScrollForNextRender();
@@ -10067,6 +10118,23 @@ function bindUi(): void {
           preserveScrollForNextRender();
         },
       });
+    });
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-toggle-moment-comment]').forEach(button => {
+    button.addEventListener('click', () => {
+      const momentId = button.dataset.toggleMomentComment ?? '';
+      if (!momentId) return;
+      captureVisibleDraftsFromDom();
+      const opening = button.getAttribute('aria-expanded') !== 'true';
+      // 小注释：收起时草稿留在 momentCommentDrafts 里，下次展开还在；回复目标也一起清掉，免得框又被撑开。
+      momentCommentFormOpenId = opening ? momentId : '';
+      if (!opening) {
+        momentCommentReplyTargetDrafts.delete(momentId);
+        clearMomentCommentActionMenu(momentId);
+      }
+      if (opening) focusMomentCommentAfterRenderId = momentId;
+      preserveScrollForNextRender();
+      render();
     });
   });
   document.querySelectorAll<HTMLButtonElement>('[data-open-moment-detail]').forEach(button => {

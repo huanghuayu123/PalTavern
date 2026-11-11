@@ -374,7 +374,7 @@ export function renderWorldEventLobby(events: WorldEvent[], character?: Characte
     `;
   }
   return `
-    <section class="world-event-lobby" aria-label="日常片段列表">
+    <section class="world-event-lobby" aria-label="日常片段列表" data-morph="world-event-lobby" data-morph-scale="none">
       <div class="world-event-lobby-heading">
         <div>
           <strong>日常片段</strong>

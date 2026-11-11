@@ -279,7 +279,8 @@ html[data-compact-ui] {
   mix-blend-mode: normal;
 }
 
-/* 小注释：角色页“状态 / 设置”分段的滑块只在手机/平板新界面里显示，电脑版保持原样。 */
-.character-panel-tabs > .segment-thumb {
+/* 小注释：分段控件的滑块（角色页“状态 / 设置”、世界页“小事件 / 关系 / 时间线”）只在手机/平板新界面里显示，电脑版保持原样。 */
+.character-panel-tabs > .segment-thumb,
+.world-insight-tabs > .segment-thumb {
   display: none;
 }

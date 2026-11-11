@@ -61,14 +61,14 @@ const OVERLAY_SELECTOR = [
   '.moments-publisher.is-open',
   '.sticker-picker',
   '.message-profile-popover',
-  '.world-gear-panel',
+  '.world-gear-panel[open]',
   '.model-onboarding-overlay',
   '.time-mode-onboarding-overlay',
   '.reply-mode-onboarding-overlay',
 ].join(',');
 // 小注释：复制出来的旧画面里，只保留样式要用到的 data 属性，其余事件钩子全部去掉，避免被脚本误选。
 const CLONE_KEEP_DATA = new Set(['data-avatar-tone', 'data-group-settings-mode', 'data-group-avatar-count', 'data-swatch']);
-const SCROLL_CONTAINERS = '.messages, .group-messages, .world-workbench-scroll, .moments-scroll, .mobile-settings-content, .character-panel, .character-panel-page, .mobile-list-page, .settings-content, .desktop-list-scroll, .tablet-landscape-list-scroll, .mobile-page';
+const SCROLL_CONTAINERS = '.messages, .group-messages, .world-workbench-scroll, .world-gear-body, .moments-scroll, .mobile-settings-content, .character-panel, .character-panel-page, .mobile-list-page, .settings-content, .desktop-list-scroll, .tablet-landscape-list-scroll, .mobile-page';
 
 const liveAnimations = new Set<Animation>();
 const animationListeners = new Map<Animation, Array<() => void>>();
@@ -651,7 +651,17 @@ function quickFade(renderPage: () => void): void {
  * 进入详情：被点的那一行或按钮长成整页。
  * 旧画面复制一份垫在下面并微微后退，新页面从来源的位置裁剪展开；头像、标题等由 playMorphs 一起飞过去。
  */
-export function enterDetail(renderPage: () => void, source: MotionSource | null): void {
+/** 找“这一页”：给了范围（例如世界页下面的内容区）就只用那一块，顶栏这类不变的部分留在原地不动。 */
+function detailPage(scopeSelector?: string): HTMLElement | null {
+  if (scopeSelector) {
+    const scoped = Array.from(document.querySelectorAll<HTMLElement>(scopeSelector))
+      .find(element => !element.closest('.pt-motion-clone') && onScreen(boxOf(element)));
+    if (scoped) return scoped;
+  }
+  return currentPage();
+}
+
+export function enterDetail(renderPage: () => void, source: MotionSource | null, scopeSelector?: string): void {
   settlePageMotion();
   if (isMotionReduced()) {
     quickFade(renderPage);
@@ -659,7 +669,7 @@ export function enterDetail(renderPage: () => void, source: MotionSource | null)
   }
   const old = cloneShell();
   renderPage();
-  const page = currentPage();
+  const page = detailPage(scopeSelector);
   if (!old || !page) {
     if (old) dropLayer(old.layer);
     return;
@@ -723,14 +733,14 @@ export function enterDetail(renderPage: () => void, source: MotionSource | null)
 }
 
 /** 退出详情：当前页面缩回当初点开它的那一行；那一行不在屏幕上时，就向右退出。 */
-export function exitDetail(renderPage: () => void): void {
+export function exitDetail(renderPage: () => void, scopeSelector?: string): void {
   settlePageMotion();
   if (isMotionReduced()) {
     quickFade(renderPage);
     return;
   }
   const origin = detailStack.pop() ?? null;
-  const oldPage = currentPage();
+  const oldPage = detailPage(scopeSelector);
   const oldPageBox = oldPage ? { ...boxOf(oldPage), radius: 0 } : null;
   const old = cloneShell();
   renderPage();
@@ -740,7 +750,7 @@ export function exitDetail(renderPage: () => void): void {
   const startBox = oldPageBox ?? { ...old.box, radius: 0 };
   const target = origin?.key ? findByKey(origin.key) : null;
   const targetBox = target ? { ...boxOf(target, true), radius: Math.max(10, boxOf(target, true).radius) } : null;
-  const page = currentPage();
+  const page = detailPage(scopeSelector);
   const duration = MOTION_MS.emphasized;
   const animations: Array<Animation | null> = [];
   if (target && targetBox && isRowSource(targetBox, startBox)) {
@@ -866,13 +876,18 @@ function fadeScrim(overlay: HTMLElement, show: boolean, duration: number, fill?:
 }
 
 function overlaySurface(overlay: HTMLElement): HTMLElement {
-  return overlay.querySelector<HTMLElement>('.action-sheet, [role="dialog"] > section, section[class*="dialog"], section[class*="window"], .app-dialog, .group-settings-sheet, .moments-tutorial-sheet')
+  return overlay.querySelector<HTMLElement>('.action-sheet, [role="dialog"] > section, section[class*="dialog"], section[class*="window"], .app-dialog, .group-settings-sheet, .moments-tutorial-sheet, .world-gear-card')
     ?? overlay;
+}
+
+/** 几乎铺满屏幕的浮层其实是一整页（例如世界设置）：它从按钮处展开成整页，不当作底部菜单。 */
+function isFullPage(box: MotionBox): boolean {
+  return box.width >= window.innerWidth * 0.9 && box.height >= window.innerHeight * 0.85 && box.top <= 24;
 }
 
 /** 贴着屏幕底边、几乎通栏的浮层就是底部菜单：它从底边升起、落回底边，不从按钮处长出来。 */
 function isBottomSheet(box: MotionBox): boolean {
-  return box.top + box.height >= window.innerHeight - 2 && box.width >= window.innerWidth * 0.9;
+  return box.top + box.height >= window.innerHeight - 2 && box.width >= window.innerWidth * 0.9 && !isFullPage(box);
 }
 
 /** 浮层打开：从被点的位置长出来；底部菜单和找不到来源时从底部升起。 */
@@ -890,7 +905,15 @@ export function openOverlay(renderPage: () => void, source: MotionSource | null)
     if (surface !== overlay) {
       fadeScrim(overlay, true, MOTION_MS.fast);
     }
-    if (isBottomSheet(box)) {
+    if (isFullPage(box) && source && onScreen(source)) {
+      const full = { ...box, radius: 0 };
+      const from = { ...source, radius: Math.max(source.radius, 12) };
+      animate(surface, [
+        { clipPath: insetFor(from, box), opacity: 0.5 },
+        { clipPath: insetFor(lerpBox(from, full, 0.4), box), opacity: 1, offset: 0.4 },
+        { clipPath: insetFor(full, box), opacity: 1 },
+      ], { duration: MOTION_MS.base + 60, easing: MOTION_EASE.decelerate });
+    } else if (isBottomSheet(box)) {
       animate(surface, [
         { transform: `translateY(${Math.round(box.height)}px)` },
         { transform: 'none' },
@@ -922,7 +945,20 @@ export function closeOverlay(renderPage: () => void): void {
     return;
   }
   const clones = overlays.map(overlay => {
-    const box = boxOf(overlay);
+    // 小注释：有的浮层本身只是个很小的壳（例如世界设置的 details），真正的整页是里面 fixed 的那块；
+    // 复制层会裁掉超出自己的内容，所以按两者合起来的范围摆放。
+    const own = boxOf(overlay);
+    const inner = boxOf(overlaySurface(overlay));
+    const left = Math.min(own.left, inner.left);
+    const top = Math.min(own.top, inner.top);
+    const box = {
+      left,
+      top,
+      width: Math.max(own.left + own.width, inner.left + inner.width) - left,
+      height: Math.max(own.top + own.height, inner.top + inner.height) - top,
+      radius: own.radius,
+    };
+    const live = readLiveState(overlay);
     const clone = overlay.cloneNode(true) as HTMLElement;
     stripClone(clone);
     clone.classList.add('pt-motion-clone');
@@ -934,24 +970,34 @@ export function closeOverlay(renderPage: () => void): void {
       position: 'fixed', left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px`, height: `${box.height}px`,
       margin: '0', pointerEvents: 'none', zIndex: '80',
     });
-    return { overlay, clone };
+    return { overlay, clone, live };
   });
   const survivors = new Set<Element>();
   renderPage();
   document.querySelectorAll(OVERLAY_SELECTOR).forEach(element => survivors.add(element));
-  clones.forEach(({ clone }) => {
+  clones.forEach(({ clone, live }) => {
     const animations: Array<Animation | null> = [];
     // 小注释：同一个浮层重画后还在（只是内容变了）时不做关闭动画。
     const className = clone.className.split(' ').find(name => name && name !== 'pt-motion-clone') ?? '';
     if (className && Array.from(survivors).some(element => (element as HTMLElement).classList?.contains(className))) return;
     document.body.appendChild(clone);
+    applyLiveState(clone, live);
     trackLayer(clone);
     const origin = overlayStack.pop() ?? null;
     const target = origin?.key ? findByKey(origin.key) : null;
     const surface = overlaySurface(clone);
     const box = boxOf(surface);
     if (surface !== clone) animations.push(fadeScrim(clone, false, MOTION_MS.exit, 'forwards'));
-    if (isBottomSheet(box)) {
+    if (isFullPage(box) && target) {
+      const targetBox = boxOf(target, true);
+      const to = { ...targetBox, radius: Math.max(targetBox.radius, 12) };
+      const full = { ...box, radius: 0 };
+      animations.push(animate(surface, [
+        { clipPath: insetFor(full, box), opacity: 1 },
+        { clipPath: insetFor(lerpBox(full, to, 0.6), box), opacity: 0.9, offset: 0.6 },
+        { clipPath: insetFor(to, box), opacity: 0 },
+      ], { duration: MOTION_MS.base, easing: MOTION_EASE.standard, fill: 'forwards' }));
+    } else if (isBottomSheet(box)) {
       animations.push(animate(surface, [
         { transform: 'none' },
         { transform: `translateY(${Math.round(box.height)}px)` },
