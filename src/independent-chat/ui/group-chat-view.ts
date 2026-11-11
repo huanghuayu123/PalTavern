@@ -59,11 +59,12 @@ export function renderGroupAvatarStack(chat: GroupChatProfile): string {
     .map(id => state.characters.find(character => character.id === id && character.worldId === chat.worldId))
     .filter((character): character is CharacterProfile => Boolean(character))
     .slice(0, 4);
+  const morph = `data-morph="avatar:group:${escapeHtml(chat.id)}" data-morph-scale="uniform"`;
   if (participants.length === 0) {
-    return '<span class="group-avatar-stack"><span class="avatar group-avatar-fallback">群</span></span>';
+    return `<span class="group-avatar-stack" ${morph}><span class="avatar group-avatar-fallback">群</span></span>`;
   }
   return `
-    <span class="group-avatar-stack" aria-hidden="true" data-group-avatar-count="${participants.length}">
+    <span class="group-avatar-stack" aria-hidden="true" data-group-avatar-count="${participants.length}" ${morph}>
       ${participants.map(character => `<span class="avatar"${avatarToneAttribute(character)}>${renderAvatar(character)}</span>`).join('')}
     </span>
   `;
@@ -149,7 +150,7 @@ export function renderGroupHeader(chat?: GroupChatProfile, mobile = false): stri
       ${mobile ? '<button class="header-back" data-mobile-group-back aria-label="返回">‹</button>' : ''}
       ${chat ? renderGroupAvatarStack(chat) : '<span class="avatar group-avatar-fallback">群</span>'}
       <div>
-        <strong>${escapeHtml(chat?.title ?? '群聊')}</strong>
+        <strong${chat ? ` data-morph="title:group:${escapeHtml(chat.id)}" data-morph-scale="uniform"` : ''}>${escapeHtml(chat?.title ?? '群聊')}</strong>
         <span>${escapeHtml(subtitle)}</span>
       </div>
     </div>

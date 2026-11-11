@@ -3,6 +3,10 @@
  * Keeps the original PalTavern rendering, event binding, and view switching in one UI surface.
  */
 import type {
+  AppearanceAccent,
+  AppearanceColorScheme,
+  AppearanceMotion,
+  AppearanceSettings,
   ChatReplyMode,
   CharacterProfile,
   GroupChatProfile,
@@ -97,6 +101,16 @@ import {
   stopReply,
 } from '../chat/private-chat';
 import type { ParsedChatPart } from '../chat/format';
+import { applyAppearance } from './appearance';
+import {
+  captureMorphs,
+  fadeOutThen,
+  installMotionTapTracking,
+  playAppearanceSwitch,
+  playMorphs,
+  playSendFlight,
+  prepareSendFlight,
+} from './motion';
 import {
   appendCharacterDirectMessage,
   characterDirectMessagesFor,
@@ -219,6 +233,7 @@ import {
   markConversationRead,
   messagesFor,
   normalizeChatBackgroundImage,
+  normalizeAppearance,
   normalizeChatFontScale,
   onStorageSaveStatusChange,
   resetDailyModelUsage,
@@ -471,7 +486,7 @@ if (!app) {
 }
 const appRoot = app;
 // 小注释：UI 层只负责读状态、渲染和派发动作，不在这里改业务存储结构。
-type SettingsSection = 'world' | 'drafts' | 'stickers' | 'model' | 'prompts' | 'relationship' | 'interactions' | 'proactive' | 'chat' | 'notifications' | 'data';
+type SettingsSection = 'world' | 'drafts' | 'stickers' | 'model' | 'prompts' | 'relationship' | 'interactions' | 'proactive' | 'chat' | 'appearance' | 'notifications' | 'data';
 type MobileSection = 'messages' | 'contacts' | 'groups' | 'world' | 'moments' | 'settings';
 type MobileHistoryLayer = 'section' | 'chat' | 'settings-detail' | 'modal';
 type CharacterPanelPage = 'worldbook' | 'worldbook-editor' | 'status';
@@ -667,6 +682,8 @@ let pendingCardRecognition: ParsedCharacterCardFile | null = null;
 let pendingWorldBundleImport: WorldBundlePreview | null = null;
 let pendingCardImportFollowup: CardImportFollowupAction | null = null;
 let pendingStickerImport: PendingStickerImport | null = null;
+// 小注释：手机“角色”页右上角“+”弹出的底部菜单（写角色卡 / 导入角色卡）。
+let addCharacterSheetOpen = false;
 let modelFormDraft: {
   provider: ModelProvider;
   apiUrl: string;
@@ -712,7 +729,7 @@ let pendingScrollRestore: UiScrollSnapshot | null = null;
 let mobileListScrollRestore: MobileListScrollSnapshot | null = null;
 let scrollCharacterPanelToTopAfterRender = false;
 
-const SETTINGS_SECTIONS: SettingsSection[] = ['world', 'drafts', 'stickers', 'model', 'prompts', 'relationship', 'interactions', 'proactive', 'chat', 'notifications', 'data'];
+const SETTINGS_SECTIONS: SettingsSection[] = ['world', 'drafts', 'stickers', 'model', 'prompts', 'relationship', 'interactions', 'proactive', 'chat', 'appearance', 'notifications', 'data'];
 const MOBILE_SECTIONS: MobileSection[] = ['messages', 'contacts', 'groups', 'world', 'moments', 'settings'];
 const MAIN_NAV_ITEMS: Array<{ id: MobileSection; label: string; iconName: IconName }> = [
   { id: 'messages', label: '消息', iconName: 'message' },
@@ -1279,6 +1296,7 @@ function hasMobileBackTarget(): boolean {
     || timeModeOnboardingOpen
     || chatReplyModeOnboardingOpen
     || momentsTutorialOpen
+    || addCharacterSheetOpen
     || characterPanelOpen
     || eventComposerOpen
     || Boolean(worldRpMessageEditId)
@@ -1317,6 +1335,10 @@ function ensureMobileHistoryForState(): void {
 
 function closeMobileLayer(): boolean {
   captureVisibleDraftsFromDom();
+  if (addCharacterSheetOpen) {
+    addCharacterSheetOpen = false;
+    return true;
+  }
   if (pendingCardRecognition) {
     pendingCardRecognition = null;
     saveUiSessionSnapshot();
@@ -1777,12 +1799,15 @@ function clearPendingIdleRender(): void {
   pendingIdleRenderFlush = null;
 }
 
-function applyCharacterAccent(_character?: CharacterProfile): void {
-  const root = document.documentElement.style;
-  root.removeProperty('--accent');
-  root.removeProperty('--accent-strong');
-  root.removeProperty('--accent-soft');
-  root.removeProperty('--accent-rgb');
+// 小注释：手机和平板横屏都算“移动端”，新的移动端样式只认这个标记，电脑版完全不受影响。
+function applyLayoutMarker(layoutMode: ReturnType<typeof getViewportLayoutMode>): void {
+  const root = document.documentElement;
+  const compact = layoutMode !== 'desktop';
+  if (root.hasAttribute('data-compact-ui') !== compact) {
+    if (compact) root.setAttribute('data-compact-ui', '');
+    else root.removeAttribute('data-compact-ui');
+  }
+  if (root.getAttribute('data-layout') !== layoutMode) root.setAttribute('data-layout', layoutMode);
 }
 
 function currentWorldCharacters(): CharacterProfile[] {
@@ -2092,10 +2117,10 @@ function renderContacts(mode: 'contacts' | 'recent' = 'contacts'): string {
     }
     const activityAt = directLatest?.createdAt ?? directThread?.updatedAt ?? latest?.createdAt;
     return `
-    <button class="contact conversation-row ${highlightPrivate && character.id === activeCharacter()?.id ? 'is-active' : ''}" data-character-id="${escapeHtml(character.id)}">
-      <span class="avatar"${avatarToneAttribute(character)}>${renderAvatar(character)}</span>
+    <button class="contact conversation-row ${highlightPrivate && character.id === activeCharacter()?.id ? 'is-active' : ''}" data-character-id="${escapeHtml(character.id)}" data-morph="row:char:${escapeHtml(character.id)}">
+      <span class="avatar"${avatarToneAttribute(character)} data-morph="avatar:char:${escapeHtml(character.id)}" data-morph-scale="uniform">${renderAvatar(character)}</span>
       <span class="contact-copy">
-        <span class="contact-name">${escapeHtml(character.name)}</span>
+        <span class="contact-name" data-morph="title:char:${escapeHtml(character.id)}" data-morph-scale="uniform">${escapeHtml(character.name)}</span>
         <span class="contact-subtitle">${escapeHtml(subtitle)}</span>
       </span>
       <span class="conversation-meta">
@@ -2125,10 +2150,10 @@ function renderGroupConversationRows(): string {
       ? `${groupSpeakerName(latest)}：${compactText(latest.content, 48)}`
       : `${participants.length} 位成员，点开进入群聊`;
     return `
-      <button class="contact conversation-row group-conversation-row ${highlightGroup && chat.id === state.activeGroupChatId ? 'is-active' : ''}" data-group-chat-id="${escapeHtml(chat.id)}">
+      <button class="contact conversation-row group-conversation-row ${highlightGroup && chat.id === state.activeGroupChatId ? 'is-active' : ''}" data-group-chat-id="${escapeHtml(chat.id)}" data-morph="row:group:${escapeHtml(chat.id)}">
         ${renderGroupAvatarStack(chat)}
         <span class="contact-copy">
-          <span class="contact-name">${escapeHtml(chat.title)}</span>
+          <span class="contact-name" data-morph="title:group:${escapeHtml(chat.id)}" data-morph-scale="uniform">${escapeHtml(chat.title)}</span>
           <span class="contact-subtitle">${escapeHtml(subtitle)}</span>
         </span>
         <span class="conversation-meta">
@@ -2505,7 +2530,7 @@ function renderMessages(character?: CharacterProfile): string {
     }
     return `
     ${showTime ? `<div class="message-time">${formatConversationTime(message.createdAt)}</div>` : ''}
-    <div class="message-row ${message.role === 'assistant' ? 'assistant' : 'user'} ${selfAuthoredCharacter ? 'is-authored-character' : ''} ${messageActionId === message.id ? 'has-actions-open-above' : ''} ${arrival.className}"${arrival.style}>
+    <div class="message-row ${message.role === 'assistant' ? 'assistant' : 'user'} ${selfAuthoredCharacter ? 'is-authored-character' : ''} ${messageActionId === message.id ? 'has-actions-open-above' : ''} ${arrival.className}"${arrival.style} data-morph="msg:${escapeHtml(message.id)}">
       ${message.role === 'assistant'
         ? `<button class="message-avatar assistant-avatar message-profile-trigger" type="button" data-message-profile-character="${escapeHtml(character.id)}" aria-label="查看 ${escapeHtml(character.name)} 和 user 的关系"${avatarToneAttribute(character)}>${renderAvatar(character)}</button>`
         : `<span class="message-avatar user-avatar" aria-hidden="true">${privateChatSpeakerAvatar(message)}</span>`}
@@ -2728,7 +2753,7 @@ function renderGroupMessages(chat?: GroupChatProfile): string {
     }
     const arrival = messageArrivalMarkup(message.id, message.createdAt, arrivalThreshold);
     return `
-      <article class="group-message ${message.speakerType === 'user' ? 'is-user' : 'is-character'} ${selfAuthoredCharacter ? 'is-authored-character' : ''} ${groupMessageActionId === message.id ? 'is-actions-open is-actions-open-above' : ''} ${arrival.className}"${arrival.style} data-group-message-id="${escapeHtml(message.id)}" tabindex="0">
+      <article class="group-message ${message.speakerType === 'user' ? 'is-user' : 'is-character'} ${selfAuthoredCharacter ? 'is-authored-character' : ''} ${groupMessageActionId === message.id ? 'is-actions-open is-actions-open-above' : ''} ${arrival.className}"${arrival.style} data-group-message-id="${escapeHtml(message.id)}" data-morph="gmsg:${escapeHtml(message.id)}" tabindex="0">
         <span class="avatar group-message-avatar">${renderGroupMessageAvatar(message)}</span>
         <div class="group-message-body">
           <header>
@@ -3298,6 +3323,7 @@ function renderSettingsItems(): string {
     ]],
     ['应用', [
       ['chat', '聊天与人设', '短消息、长消息与 user 人设'],
+      ['appearance', '外观', '主题色、深浅色与动效'],
       ['notifications', '通知', '权限、隐私与后台'],
       ['data', '数据与运行', '备份与操作记录'],
     ]],
@@ -4640,6 +4666,9 @@ function renderSettingsContent(character?: CharacterProfile): string {
       <button id="save-chat-reply-mode" class="secondary secondary-gap" type="button">保存聊天与 user 人设</button>
     </section>`;
   }
+  if (activeSettingsSection === 'appearance') {
+    return renderAppearanceSettings();
+  }
   if (activeSettingsSection === 'notifications') {
     const notificationPermissionSettings = `
       <p class="muted">${escapeHtml(notificationSupportText())}</p>
@@ -4687,6 +4716,89 @@ function renderSettingsContent(character?: CharacterProfile): string {
   `;
 }
 
+const APPEARANCE_ACCENT_OPTIONS: Array<[AppearanceAccent, string]> = [
+  ['teal', '青绿'],
+  ['sky', '天蓝'],
+  ['terracotta', '赤陶'],
+  ['sakura', '樱粉'],
+  ['lavender', '薰衣草'],
+  ['graphite', '石墨'],
+];
+const APPEARANCE_SCHEME_OPTIONS: Array<[AppearanceColorScheme, string]> = [
+  ['system', '跟随系统'],
+  ['light', '浅色'],
+  ['dark', '深色'],
+];
+const APPEARANCE_MOTION_OPTIONS: Array<[AppearanceMotion, string]> = [
+  ['full', '完整'],
+  ['reduced', '精简'],
+];
+
+function renderSegmentedOptions<T extends string>(group: string, attribute: string, options: Array<[T, string]>, current: T): string {
+  return `
+    <div class="segmented-control" role="radiogroup" aria-label="${escapeHtml(group)}" style="--segment-count:${options.length};--segment-index:${Math.max(0, options.findIndex(([id]) => id === current))}">
+      <span class="segmented-thumb" data-morph="segment:${escapeHtml(attribute)}" aria-hidden="true"></span>
+      ${options.map(([id, label]) => `
+        <button type="button" class="${id === current ? 'is-active' : ''}" ${attribute}="${escapeHtml(id)}" role="radio" aria-checked="${id === current ? 'true' : 'false'}">${escapeHtml(label)}</button>
+      `).join('')}
+    </div>
+  `;
+}
+
+// 小注释：换主题色时，旧画面要冻结在旧颜色上，这些是需要固定住的颜色变量。
+const THEME_VARIABLES = [
+  '--accent', '--accent-strong', '--accent-soft', '--accent-ink', '--on-accent', '--user-bubble-bg', '--warm-accent',
+  '--page', '--surface', '--surface-solid', '--surface-raised', '--surface-soft', '--surface-tint',
+  '--text', '--text-soft', '--text-faint', '--line', '--line-strong', '--shadow-soft', '--shadow',
+  '--group', '--group-bg', '--fill', '--fill-strong', '--separator', '--nav-bg', '--bubble-in', '--bubble-in-text',
+];
+
+function playAppearanceChange(trigger: HTMLElement | null, apply: () => void): void {
+  playAppearanceSwitch(trigger, apply, THEME_VARIABLES);
+}
+
+function changeAppearance(next: AppearanceSettings, trigger?: HTMLElement): void {
+  const previous = state.appearance;
+  if (previous.accent === next.accent && previous.colorScheme === next.colorScheme && previous.motion === next.motion) return;
+  state.appearance = next;
+  saveState();
+  preserveScrollForNextRender();
+  playAppearanceChange(trigger ?? null, () => render());
+}
+
+// 大注释：外观设置页。主题色、深浅色、动效档位改完立刻生效并保存，不需要额外点“保存”。
+function renderAppearanceSettings(): string {
+  const appearance = state.appearance;
+  return `
+    <section class="settings-card appearance-settings">
+      <div class="settings-heading">
+        <div><span class="settings-kicker">外观</span><h2>主题色、深浅色与动效</h2></div>
+        <p>改完立刻生效，所有页面一起变。</p>
+      </div>
+      <div class="appearance-group">
+        <h3>主题色</h3>
+        <div class="accent-options" role="radiogroup" aria-label="主题色">
+          ${APPEARANCE_ACCENT_OPTIONS.map(([id, label]) => `
+            <button type="button" class="accent-option ${appearance.accent === id ? 'is-active' : ''}" data-accent-option="${id}" role="radio" aria-checked="${appearance.accent === id ? 'true' : 'false'}">
+              <span class="accent-swatch" data-swatch="${id}" aria-hidden="true"></span>
+              <small>${label}</small>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+      <div class="appearance-group">
+        <h3>深色模式</h3>
+        ${renderSegmentedOptions('深色模式', 'data-color-scheme-option', APPEARANCE_SCHEME_OPTIONS, appearance.colorScheme)}
+      </div>
+      <div class="appearance-group">
+        <h3>动效</h3>
+        ${renderSegmentedOptions('动效', 'data-motion-option', APPEARANCE_MOTION_OPTIONS, appearance.motion)}
+        <p class="muted">完整：页面之间一镜到底地衔接。精简：只保留短暂的淡入淡出，适合老手机。系统打开“减少动态效果”时，自动按精简处理。</p>
+      </div>
+    </section>
+  `;
+}
+
 function renderDesktopSettingsPage(character?: CharacterProfile): string {
   if (!settingsOpen) return '';
   const groups: Array<[string, Array<[SettingsSection, string, string]>]> = [
@@ -4704,6 +4816,7 @@ function renderDesktopSettingsPage(character?: CharacterProfile): string {
     ]],
     ['应用', [
       ['chat', '聊天与人设', '短消息、长消息与 user 人设'],
+      ['appearance', '外观', '主题色、深浅色与动效'],
       ['notifications', '通知', '权限、隐私与后台'],
       ['data', '数据与运行', '备份与操作记录'],
     ]],
@@ -5255,6 +5368,29 @@ function renderTabletLandscape(character?: CharacterProfile): string {
   `;
 }
 
+function renderAddCharacterSheet(): string {
+  if (!addCharacterSheetOpen) return '';
+  return `
+    <div class="action-sheet-overlay" role="dialog" aria-modal="true" aria-label="添加角色">
+      <button class="action-sheet-backdrop" data-close-action-sheet type="button" aria-label="关闭"></button>
+      <section class="action-sheet">
+        <span class="action-sheet-grabber" aria-hidden="true"></span>
+        <h2>添加角色</h2>
+        <button class="action-sheet-item" data-open-authoring data-close-action-sheet-after type="button">
+          <span class="action-sheet-icon">${icon('edit')}</span>
+          <span class="action-sheet-copy"><strong>写一张角色卡</strong><small>从设定开始，一步步写出新角色</small></span>
+        </button>
+        <label class="action-sheet-item file-button">
+          <span class="action-sheet-icon">${icon('import')}</span>
+          <span class="action-sheet-copy"><strong>导入角色卡</strong><small>支持 SillyTavern 的 JSON 和 PNG 角色卡</small></span>
+          <input class="card-import" type="file" accept="${CARD_IMPORT_ACCEPT}" />
+        </label>
+        <button class="action-sheet-cancel" data-close-action-sheet type="button">取消</button>
+      </section>
+    </div>
+  `;
+}
+
 function renderMobile(character?: CharacterProfile): string {
   const worldOptions = state.worlds.map(world =>
     `<option value="${escapeHtml(world.id)}" ${world.id === activeWorld().id ? 'selected' : ''}>${escapeHtml(world.name)}</option>`,
@@ -5269,18 +5405,25 @@ function renderMobile(character?: CharacterProfile): string {
   } else if (mobileSection === 'groups') {
     content = renderGroupListPage(true);
   } else if (mobileSection === 'contacts') {
+    // 大注释：手机“角色”页。大标题 + 右上角“+”（写卡/导入收进底部菜单），标题下是世界切换和搜索，再往下是角色列表。
     content = `
-      <main class="mobile-page mobile-list-page">
-        <header class="mobile-page-header"><span class="eyebrow">${escapeHtml(activeWorld().name)}</span><h1>联系人</h1><p>选择一个角色，进入独立私聊。</p></header>
+      <main class="mobile-page mobile-list-page mobile-contacts-page">
+        <header class="mobile-page-header">
+          <div class="mobile-title-row">
+            <h1>角色</h1>
+            <div class="mobile-inbox-header-tools">
+              <button class="icon-button" data-open-add-character-sheet type="button" aria-label="添加角色" aria-haspopup="dialog">${icon('add')}</button>
+            </div>
+          </div>
+        </header>
         <div class="mobile-list-tools">
           <label class="world-switcher"><span>当前世界</span><select id="world-select">${worldOptions}</select></label>
           <label class="contact-search">${icon('search')}<input id="contact-search" value="${escapeHtml(contactQuery)}" placeholder="搜索角色" /></label>
           ${renderPrivateChatTargetSelector()}
-          <button class="primary" data-open-authoring>写角色卡</button>
-          <label class="file-button card-import-button">${icon('import')}<span>导入角色卡</span><input class="card-import" type="file" accept="${CARD_IMPORT_ACCEPT}" /></label>
         </div>
         <section class="mobile-conversation-list">${renderContacts('contacts')}</section>
       </main>
+      ${renderAddCharacterSheet()}
     `;
   } else if (mobileSection === 'moments') {
     content = renderMomentsPage(true);
@@ -5289,21 +5432,22 @@ function renderMobile(character?: CharacterProfile): string {
   } else if (mobileSection === 'settings') {
     content = renderMobileSettings(character);
   } else {
+    // 大注释：手机“消息”页。大标题“消息”，右上角搜索和新建群聊；通讯身份是标题下的小标签；下面直接是会话列表。
+    const identitySelector = renderPrivateChatTargetSelector();
     content = `
-      <main class="mobile-page mobile-list-page">
+      <main class="mobile-page mobile-list-page mobile-inbox-page">
         <header class="mobile-page-header mobile-inbox-header">
-          ${renderPrivateChatTargetSelector() || `<div><span class="eyebrow">${escapeHtml(activeWorld().name)}</span><h1>消息</h1><p>那些想说的话，都在这里。</p></div>`}
-          <div class="mobile-inbox-header-tools">
-            <button class="icon-button" data-mobile-section="contacts" type="button" aria-label="搜索角色">${icon('search')}</button>
-            <button class="icon-button inbox-create-group" data-open-groups type="button" aria-label="新建群聊">${icon('add')}</button>
+          <div class="mobile-title-row">
+            <h1>消息</h1>
+            <div class="mobile-inbox-header-tools">
+              <button class="icon-button" data-mobile-section="contacts" type="button" aria-label="搜索角色">${icon('search')}</button>
+              <button class="icon-button inbox-create-group" data-open-groups type="button" aria-label="新建群聊">${icon('add')}</button>
+            </div>
           </div>
+          ${identitySelector ? `<div class="mobile-identity-row">${identitySelector}</div>` : ''}
         </header>
         ${renderFirstRunGuide(firstRunGuideState())}
         <section class="mobile-inbox-panel mobile-inbox-private-panel">
-          <div class="mobile-section-label">
-            <strong>私信</strong>
-            <span>今天</span>
-          </div>
           <div class="mobile-conversation-list">${renderInboxConversations()}</div>
         </section>
         ${state.characters.length === 0 ? `
@@ -5328,8 +5472,10 @@ function renderMobile(character?: CharacterProfile): string {
               mobileSection === id || (mobileSection === 'groups' && id === 'messages') ? 'is-active' : '',
               bottomNavPressedSection === navSection ? 'is-pressing' : '',
             ].filter(Boolean).join(' ');
+            const active = mobileSection === id || (mobileSection === 'groups' && id === 'messages');
             return `
-              <button class="${classes}" data-mobile-section="${id}">
+              <button class="${classes}" data-mobile-section="${id}"${active ? ' aria-current="page"' : ''}>
+                ${active ? '<span class="bottom-nav-indicator" data-morph="indicator:bottom-nav" aria-hidden="true"></span>' : ''}
                 <span class="nav-icon">${icon(iconName)}</span><small>${label}</small>
               </button>
             `;
@@ -5562,6 +5708,7 @@ function preserveScrollForNextRender(): void {
 
 function closeTransientOverlaysForPageChange(): void {
   settingsOpen = false;
+  addCharacterSheetOpen = false;
   characterPanelOpen = false;
   resetGroupSettingsState();
   resetMobileGroupListClosing();
@@ -5924,7 +6071,15 @@ function installPrivateIdentityMenuOutsideListener(): void {
   });
 }
 
+// 小注释：自己刚发出的那条气泡；发送时文字从输入框飞到这里。
+function latestOwnBubble(): HTMLElement | null {
+  const rows = Array.from(document.querySelectorAll<HTMLElement>('.messages .message-row.user .message, .group-messages .group-message.is-user .group-message-body'));
+  return rows[rows.length - 1] ?? null;
+}
+
 export function render(): void {
+  installMotionTapTracking();
+  const morphCapture = captureMorphs();
   clearPendingIdleRender();
   const inputSnapshot = captureMessageInputFocus();
   const groupInputSnapshot = captureGroupMessageInputFocus();
@@ -5933,6 +6088,8 @@ export function render(): void {
   const preRenderScroll = captureScrollSnapshot();
   installStorageWarningListener();
   beginMessageArrivalTracking();
+  applyAppearance(state.appearance);
+  applyLayoutMarker(getViewportLayoutMode());
   if (isAuthoringOpen()) {
     appRoot.innerHTML = `${renderAuthoringScreen()}${renderAppDialog()}${renderStorageWarning()}`;
     bindAuthoringUi(render);
@@ -5956,7 +6113,6 @@ export function render(): void {
       ? renderMobile(character)
       : renderDesktop(character);
   appRoot.innerHTML = `${appShell}${renderGlobalStatus()}${renderStorageWarning()}${onboardingLayer}${renderCardRecognitionDialog()}${renderWorldBundleImportDialog()}${renderStickerImportDialog()}${renderAppDialog()}`;
-  applyCharacterAccent(character);
   bindUi();
   bindAppDialog(() => renderWithUiTransition('overlay-out'));
   installVisualViewportListener();
@@ -5964,6 +6120,9 @@ export function render(): void {
   const immediateForcedMessageFocus = focusPendingMessageComposer();
   const immediateForcedGroupFocus = focusPendingGroupComposer();
   const immediateChatScroll = settleChatScrollAfterRender(wasNearChatBottom, preRenderScroll);
+  // 小注释：位置都定下来以后再播衔接动画：同一个头像、标题、选中块从旧位置滑到新位置，列表项平滑换位。
+  playMorphs(morphCapture, { enterPrefixes: ['row'] });
+  playSendFlight(latestOwnBubble());
   window.requestAnimationFrame(() => {
     const restoredInput = restoreMessageInputFocus(inputSnapshot);
     const restoredGroupInput = restoreGroupMessageInputFocus(groupInputSnapshot);
@@ -6766,6 +6925,26 @@ function bindUi(): void {
   document.querySelector<HTMLButtonElement>('[data-settings-back]')?.addEventListener('click', () => {
     backMobileLayer();
   });
+  document.querySelectorAll<HTMLButtonElement>('[data-open-add-character-sheet]').forEach(button => {
+    button.addEventListener('click', () => {
+      addCharacterSheetOpen = true;
+      pushMobileHistory('modal');
+      renderWithUiTransition('overlay-in');
+    });
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-close-action-sheet]').forEach(button => {
+    button.addEventListener('click', () => {
+      if (!addCharacterSheetOpen) return;
+      addCharacterSheetOpen = false;
+      renderWithUiTransition('overlay-out');
+    });
+  });
+  // 小注释：从菜单里选了“写卡”或选好了要导入的文件，菜单就收起来，后续页面照常打开。
+  document.querySelectorAll<HTMLElement>('.action-sheet [data-close-action-sheet-after], .action-sheet .card-import').forEach(element => {
+    element.addEventListener(element instanceof HTMLInputElement ? 'change' : 'click', () => {
+      addCharacterSheetOpen = false;
+    }, { capture: true });
+  });
   document.querySelectorAll<HTMLButtonElement>('[data-mobile-section]').forEach(button => {
     button.addEventListener('pointerdown', () => {
       const nextSection = button.dataset.mobileSection;
@@ -7177,6 +7356,7 @@ function bindUi(): void {
     const input = document.querySelector<HTMLTextAreaElement>('#group-message-input');
     const content = input?.value ?? groupMessageDraftFor(chat);
     if (!content.trim() || !chat) return;
+    if (content.trim()) prepareSendFlight(input);
     const sent = sendGroupUserMessage(content, chat.id);
     if (input) {
       input.value = '';
@@ -8201,6 +8381,19 @@ function bindUi(): void {
     if (preview) preview.style.setProperty('--chat-font-scale', String(normalized));
     if (label) label.textContent = fontScaleLabel(normalized);
   });
+  document.querySelectorAll<HTMLButtonElement>('[data-accent-option], [data-color-scheme-option], [data-motion-option]').forEach(button => {
+    button.addEventListener('click', () => {
+      const accent = button.dataset.accentOption;
+      const colorScheme = button.dataset.colorSchemeOption;
+      const motion = button.dataset.motionOption;
+      changeAppearance(normalizeAppearance({
+        ...state.appearance,
+        ...(accent ? { accent } : {}),
+        ...(colorScheme ? { colorScheme } : {}),
+        ...(motion ? { motion } : {}),
+      }), button);
+    });
+  });
   document.querySelector<HTMLButtonElement>('#save-relationship')?.addEventListener('click', () => {
     const character = relationshipManagerCharacter();
     if (!character) return;
@@ -8629,6 +8822,7 @@ function bindUi(): void {
         ),
     );
     if (shouldKeepKeyboard) requestMessageComposerFocusAfterSubmit(character?.id ?? '');
+    prepareSendFlight(input);
     const replyToId = clearMessageComposerAfterSubmit(character, input, content, shouldKeepKeyboard);
     requestChatStickToBottom();
     const directSpeaker = privateChatIdentityCharacter();
@@ -9299,14 +9493,18 @@ function bindUi(): void {
   };
   document.querySelector<HTMLButtonElement>('#cancel-message-choice')?.addEventListener('click', closeMessageChoice);
   document.querySelector<HTMLButtonElement>('#close-message-choice')?.addEventListener('click', closeMessageChoice);
+  // 小注释：删除或撤回时，先让这条气泡淡出，再改数据；关掉对话框后，下面的消息会顺着补上来。
+  const messageRowFor = (messageId: string) => document.querySelector<HTMLElement>(`[data-morph="msg:${CSS.escape ? CSS.escape(messageId) : messageId}"]`);
   document.querySelector<HTMLButtonElement>('#confirm-delete-message')?.addEventListener('click', () => {
     const messageId = messageDeleteChoiceId;
-    if (deleteMessage(messageId)) {
-      if (quotedMessageId === messageId || !state.messages.some(message => message.id === quotedMessageId)) quotedMessageId = '';
-      setStatusText('消息已彻底删除，后续不会提供给 AI。');
-    }
-    messageDeleteChoiceId = '';
-    renderWithUiTransition('overlay-out');
+    fadeOutThen([messageRowFor(messageId)], () => {
+      if (deleteMessage(messageId)) {
+        if (quotedMessageId === messageId || !state.messages.some(message => message.id === quotedMessageId)) quotedMessageId = '';
+        setStatusText('消息已彻底删除，后续不会提供给 AI。');
+      }
+      messageDeleteChoiceId = '';
+      renderWithUiTransition('overlay-out');
+    });
   });
   document.querySelector<HTMLButtonElement>('#confirm-recall-message')?.addEventListener('click', () => {
     const messageId = messageDeleteChoiceId;

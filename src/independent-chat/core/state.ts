@@ -3,6 +3,8 @@
  * Owns persisted app state, defaults, migration, world isolation, and common state selectors.
  */
 import type {
+  AppearanceAccent,
+  AppearanceSettings,
   AppState,
   AutoEventSchedule,
   AutoMessageSchedule,
@@ -91,6 +93,19 @@ function normalizeModelProvider(provider: unknown, apiUrl: string): ModelProvide
   if (provider === 'deepseek' || provider === 'custom') return provider;
   const normalized = normalizeApiUrlBase(apiUrl);
   return normalized && normalized !== normalizeApiUrlBase(DEEPSEEK_API_URL) ? 'custom' : 'deepseek';
+}
+
+export const APPEARANCE_ACCENTS: AppearanceAccent[] = ['teal', 'sky', 'terracotta', 'sakura', 'lavender', 'graphite'];
+export const DEFAULT_APPEARANCE: AppearanceSettings = { accent: 'teal', colorScheme: 'system', motion: 'full' };
+
+// 小注释：外观设置逐项校验，认不出的值回到默认，保证旧存档和手改过的存档都能正常打开。
+export function normalizeAppearance(value: unknown): AppearanceSettings {
+  const input = value && typeof value === 'object' ? value as Partial<Record<keyof AppearanceSettings, unknown>> : {};
+  return {
+    accent: APPEARANCE_ACCENTS.includes(input.accent as AppearanceAccent) ? input.accent as AppearanceAccent : DEFAULT_APPEARANCE.accent,
+    colorScheme: input.colorScheme === 'light' || input.colorScheme === 'dark' ? input.colorScheme : 'system',
+    motion: input.motion === 'reduced' ? 'reduced' : 'full',
+  };
 }
 
 export function normalizeChatFontScale(value: unknown): number {
@@ -370,6 +385,7 @@ export function defaultState(): AppState {
     chatReplyMode: 'auto',
     enterToSend: false,
     chatFontScale: DEFAULT_CHAT_FONT_SCALE,
+    appearance: { ...DEFAULT_APPEARANCE },
     worldInteractionHighSimulation: false,
     worldInteractionNextAttemptAt: null,
     worldInteractionStatusReason: '角色互动循环保持克制，等待下一次自然检查。',
@@ -1434,6 +1450,7 @@ export function normalizeState(input: unknown): AppState {
   const chatReplyMode: ChatReplyMode = parsed.chatReplyMode === 'manual' ? 'manual' : 'auto';
   const enterToSend = parsed.enterToSend === true;
   const chatFontScale = normalizeChatFontScale(parsed.chatFontScale);
+  const appearance = normalizeAppearance(parsed.appearance);
   const worldInteractionHighSimulation = parsed.worldInteractionHighSimulation === true;
   const worldInteractionNextAttemptAt = typeof parsed.worldInteractionNextAttemptAt === 'number'
     ? parsed.worldInteractionNextAttemptAt
@@ -1727,6 +1744,7 @@ export function normalizeState(input: unknown): AppState {
     chatReplyMode,
     enterToSend,
     chatFontScale,
+    appearance,
     worldInteractionHighSimulation,
     worldInteractionNextAttemptAt,
     worldInteractionStatusReason,

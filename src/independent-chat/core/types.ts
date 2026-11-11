@@ -648,6 +648,17 @@ export interface PromptPreset {
   raw: unknown;
 }
 
+/** 外观设置：主题色、深浅色、动效档位。旧存档没有这一项时按默认值处理。 */
+export type AppearanceAccent = 'teal' | 'sky' | 'terracotta' | 'sakura' | 'lavender' | 'graphite';
+export type AppearanceColorScheme = 'system' | 'light' | 'dark';
+export type AppearanceMotion = 'full' | 'reduced';
+
+export interface AppearanceSettings {
+  accent: AppearanceAccent;
+  colorScheme: AppearanceColorScheme;
+  motion: AppearanceMotion;
+}
+
 export interface AppState {
   worlds: WorldProfile[];
   characters: CharacterProfile[];
@@ -679,6 +690,7 @@ export interface AppState {
   chatReplyMode: ChatReplyMode;
   enterToSend: boolean;
   chatFontScale: number;
+  appearance: AppearanceSettings;
   worldInteractionHighSimulation: boolean;
   worldInteractionNextAttemptAt: number | null;
   worldInteractionStatusReason: string;

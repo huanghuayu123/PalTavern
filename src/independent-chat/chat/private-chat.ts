@@ -773,8 +773,10 @@ export async function sendUserMessageOnly(
   const actorId = actorIdFromSpeaker(character, speaker);
   const conversation = ensureConversation(character, actorId);
   const message = appendUserMessage(character, conversation, text, replyToId, speaker);
-  await detectPrivateChatEventForMessage(character, conversation, message);
+  // 小注释：先把自己发的消息显示出来，再去做要问模型的事件检测，不让用户干等。
   statusText = '已发送。可以继续发短消息，或点生成回复。';
+  onChange();
+  await detectPrivateChatEventForMessage(character, conversation, message);
   onChange();
 }
 
@@ -819,6 +821,8 @@ export async function sendMessage(
   const actorId = actorIdFromSpeaker(character, speaker);
   const conversation = ensureConversation(character, actorId);
   const message = appendUserMessage(character, conversation, text, replyToId, speaker);
+  // 小注释：先把自己发的消息显示出来，再去做要问模型的事件检测，不让用户干等。
+  onChange();
   await detectPrivateChatEventForMessage(character, conversation, message);
   await generateModelReply(character, conversation, onChange);
 }

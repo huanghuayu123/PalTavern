@@ -3,6 +3,9 @@
  * Keeps the original boot order: styles, first render, opening message, then background scheduling.
  */
 import './styles.css';
+// 小注释：外观层（主题色、动效图层）和手机/平板新界面层，放在旧样式之后。
+import './styles-appearance.css';
+import './styles-mobile.css';
 import { generateOpeningMessage } from './chat/private-chat';
 import { startAutoMessageScheduler } from './automation/scheduler';
 import { activeCharacter } from './core/state';

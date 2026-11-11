@@ -1,0 +1,279 @@
+/* 大注释：外观层（全局，手机、平板、电脑都生效）。
+   1. 主题色预设：<html data-accent="..."> 决定一组主题色变量；默认青绿不写覆盖，和原来的颜色完全一致。
+      每种预设都写死浅色、深色两套具体色值，不用 color-mix，照顾老安卓 WebView。
+   2. 外观设置页里的色点、分段控件。
+   3. 动效引擎用到的图层样式（复制出来的旧画面、飞行中的文字）。 */
+
+:root[data-accent="sky"] {
+  --accent: #1769c2;
+  --accent-strong: #105aa8;
+  --accent-soft: #e3effb;
+  --accent-ink: #0b3766;
+  --accent-rgb: 23, 105, 194;
+  --on-accent: #ffffff;
+  --user-bubble-bg: #1769c2;
+  --surface-tint: #e8f1fa;
+}
+
+:root[data-accent="terracotta"] {
+  --accent: #b4512d;
+  --accent-strong: #98421f;
+  --accent-soft: #f8e8e1;
+  --accent-ink: #5a2312;
+  --accent-rgb: 180, 81, 45;
+  --on-accent: #ffffff;
+  --user-bubble-bg: #b4512d;
+  --surface-tint: #f7ece7;
+}
+
+:root[data-accent="sakura"] {
+  --accent: #bf3f6d;
+  --accent-strong: #a3315b;
+  --accent-soft: #fbe6ee;
+  --accent-ink: #5e1730;
+  --accent-rgb: 191, 63, 109;
+  --on-accent: #ffffff;
+  --user-bubble-bg: #bf3f6d;
+  --surface-tint: #f9edf2;
+}
+
+:root[data-accent="lavender"] {
+  --accent: #6750c4;
+  --accent-strong: #5641a8;
+  --accent-soft: #ece8fb;
+  --accent-ink: #2c2166;
+  --accent-rgb: 103, 80, 196;
+  --on-accent: #ffffff;
+  --user-bubble-bg: #6750c4;
+  --surface-tint: #f0edfa;
+}
+
+:root[data-accent="graphite"] {
+  --accent: #2f3438;
+  --accent-strong: #1f2326;
+  --accent-soft: #eceef0;
+  --accent-ink: #15181a;
+  --accent-rgb: 47, 52, 56;
+  --on-accent: #ffffff;
+  --user-bubble-bg: #2f3438;
+  --surface-tint: #f0f1f2;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-accent="sky"] {
+    --accent: #5aa9f0;
+    --accent-strong: #8cc4f5;
+    --accent-soft: rgba(90, 169, 240, 0.16);
+    --accent-ink: #e6f2ff;
+    --accent-rgb: 90, 169, 240;
+    --on-accent: #04172b;
+    --user-bubble-bg: #1f5f99;
+    --surface-tint: #13263a;
+  }
+
+  :root[data-accent="terracotta"] {
+    --accent: #e88a65;
+    --accent-strong: #f2ad91;
+    --accent-soft: rgba(232, 138, 101, 0.16);
+    --accent-ink: #ffeee7;
+    --accent-rgb: 232, 138, 101;
+    --on-accent: #2a0f05;
+    --user-bubble-bg: #9a4a2c;
+    --surface-tint: #33221b;
+  }
+
+  :root[data-accent="sakura"] {
+    --accent: #f08cb0;
+    --accent-strong: #f6b2ca;
+    --accent-soft: rgba(240, 140, 176, 0.16);
+    --accent-ink: #ffeef4;
+    --accent-rgb: 240, 140, 176;
+    --on-accent: #2c0716;
+    --user-bubble-bg: #9c3a60;
+    --surface-tint: #33202a;
+  }
+
+  :root[data-accent="lavender"] {
+    --accent: #a796f2;
+    --accent-strong: #c4b8f7;
+    --accent-soft: rgba(167, 150, 242, 0.16);
+    --accent-ink: #f1edff;
+    --accent-rgb: 167, 150, 242;
+    --on-accent: #170f3a;
+    --user-bubble-bg: #5b49a8;
+    --surface-tint: #241f3a;
+  }
+
+  :root[data-accent="graphite"] {
+    --accent: #d9dee2;
+    --accent-strong: #f0f3f5;
+    --accent-soft: rgba(217, 222, 226, 0.14);
+    --accent-ink: #ffffff;
+    --accent-rgb: 217, 222, 226;
+    --on-accent: #15181a;
+    --user-bubble-bg: #3a4045;
+    --surface-tint: #23272a;
+  }
+}
+
+/* 小注释：旧样式里有一批引用了却从没定义过的变量，这里补上，指向现有的颜色。 */
+:root {
+  --border: var(--line);
+  --muted: var(--text-soft);
+  --ink: var(--text);
+  --text-main: var(--text);
+  --surface-muted: var(--surface-soft);
+  --shadow-sm: var(--shadow-soft);
+  --shadow-lg: var(--shadow);
+}
+
+/* ---------- 外观设置页 ---------- */
+
+.appearance-settings .appearance-group {
+  display: grid;
+  gap: 10px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+
+.appearance-settings .appearance-group:first-of-type {
+  border-top: 0;
+}
+
+.appearance-settings .appearance-group h3 {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.accent-options {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.accent-option {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  min-height: 64px;
+  padding: 6px 0;
+  color: var(--text-soft);
+  background: transparent;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.accent-option small {
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.accent-option.is-active small {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.accent-swatch {
+  position: relative;
+  display: block;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+  transition: transform 160ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.accent-option:active .accent-swatch {
+  transform: scale(0.9);
+}
+
+.accent-option.is-active .accent-swatch {
+  box-shadow: 0 0 0 2px var(--surface-raised, #fff), 0 0 0 4px var(--accent);
+}
+
+.accent-swatch[data-swatch="teal"] { background: #0c8278; }
+.accent-swatch[data-swatch="sky"] { background: #1769c2; }
+.accent-swatch[data-swatch="terracotta"] { background: #b4512d; }
+.accent-swatch[data-swatch="sakura"] { background: #bf3f6d; }
+.accent-swatch[data-swatch="lavender"] { background: #6750c4; }
+.accent-swatch[data-swatch="graphite"] { background: #2f3438; }
+
+/* 小注释：分段控件。滑块是一个独立元素，按 --segment-index 定位；切换时由动效引擎把它从旧位置滑过去。 */
+.segmented-control {
+  position: relative;
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  padding: 2px;
+  background: var(--surface-soft);
+  border-radius: 10px;
+}
+
+.segmented-control > button {
+  position: relative;
+  z-index: 1;
+  min-height: 34px;
+  padding: 0 8px;
+  color: var(--text-soft);
+  font-size: 14px;
+  font-weight: 600;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.segmented-control > button.is-active {
+  color: var(--text);
+}
+
+.segmented-thumb {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc((100% - 4px) / var(--segment-count, 2));
+  background: var(--surface-raised, #fff);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
+  transform: translateX(calc(100% * var(--segment-index, 0)));
+}
+
+@media (prefers-color-scheme: dark) {
+  .segmented-thumb {
+    background: #3a3d42;
+    box-shadow: none;
+  }
+
+  .accent-option.is-active .accent-swatch {
+    box-shadow: 0 0 0 2px #17181b, 0 0 0 4px var(--accent);
+  }
+}
+
+/* ---------- 动效图层 ---------- */
+
+.pt-motion-clone {
+  overflow: hidden;
+  contain: layout paint;
+  will-change: transform, opacity, clip-path;
+}
+
+.pt-motion-clone *,
+.pt-motion-clone *::before,
+.pt-motion-clone *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+.pt-motion-ghost {
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+/* 小注释：换主题色时用浏览器的视图过渡；默认的淡入淡出关掉，由脚本做圆形扩散。 */
+:root[data-theme-transition]::view-transition-old(root),
+:root[data-theme-transition]::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}

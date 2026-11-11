@@ -163,9 +163,9 @@ export function renderCharacterHeader(character?: CharacterProfile, backButton =
     return `
       <div class="chat-identity">
         ${backButton ? '<button class="header-back" data-mobile-back aria-label="返回">‹</button>' : ''}
-        <button class="avatar header-avatar avatar-button" id="open-character-profile" type="button" aria-label="查看角色状态">${renderAvatar(character)}</button>
+        <button class="avatar header-avatar avatar-button" id="open-character-profile" type="button" aria-label="查看角色状态" data-morph="avatar:char:${escapeHtml(character.id)}" data-morph-scale="uniform">${renderAvatar(character)}</button>
         <div>
-          <strong>${escapeHtml(character.name)}</strong>
+          <strong data-morph="title:char:${escapeHtml(character.id)}" data-morph-scale="uniform">${escapeHtml(character.name)}</strong>
           <span>${escapeHtml(`以 ${directSpeaker.name} 身份查看私聊`)}</span>
         </div>
       </div>
@@ -174,9 +174,9 @@ export function renderCharacterHeader(character?: CharacterProfile, backButton =
   return `
     <div class="chat-identity">
       ${backButton ? '<button class="header-back" data-mobile-back aria-label="返回">‹</button>' : ''}
-      <button class="avatar header-avatar avatar-button" id="open-character-profile" type="button" aria-label="查看角色状态">${renderAvatar(character)}</button>
+      <button class="avatar header-avatar avatar-button" id="open-character-profile" type="button" aria-label="查看角色状态" data-morph="avatar:char:${escapeHtml(character.id)}" data-morph-scale="uniform">${renderAvatar(character)}</button>
       <div>
-        <strong>${escapeHtml(character.name)}</strong>
+        <strong data-morph="title:char:${escapeHtml(character.id)}" data-morph-scale="uniform">${escapeHtml(character.name)}</strong>
         <span>${escapeHtml(compactText(relationshipLabel(character), 54))}</span>
       </div>
     </div>
