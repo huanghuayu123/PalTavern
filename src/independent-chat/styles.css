@@ -17146,6 +17146,9 @@ html[data-ui-transition]:not([data-ui-transition^="main-"]) .moment-compose-fab 
     padding: 10px;
     border-radius: 10px;
   }
+}
+
+/* 小注释：下面这些新手引导和记忆抽屉样式原来被误放进了上面的手机端媒体查询里，电脑和平板上不生效，现在挪回全局。 */
 
 .first-run-guide.is-compact .first-run-steps {
   grid-template-columns: 1fr;
@@ -17344,6 +17347,7 @@ html[data-ui-transition]:not([data-ui-transition^="main-"]) .moment-compose-fab 
   }
 }
 
+@media (max-width: 720px) {
   .moment-undo-banner {
     display: grid;
     grid-template-columns: 1fr;
@@ -18202,4 +18206,437 @@ html[data-ui-transition]:not([data-ui-transition^="main-"]) .moment-compose-fab 
 .messages,
 .group-messages {
   background-attachment: scroll, scroll;
+}
+
+/* 大注释：电脑版三栏布局（导航栏 + 列表 + 主区）。
+   最左侧窄导航栏和手机底栏是同一套入口；中间列表只在“消息”“角色”出现，
+   世界、动态、设置直接占满右侧。这一层只作用于 .desktop-shell，手机和平板布局不受影响。 */
+.desktop-shell {
+  display: grid;
+  grid-template-columns: 76px 320px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  height: 100vh;
+  height: 100dvh;
+  margin: 0;
+  overflow: hidden;
+  background: var(--page);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.desktop-shell.without-list-pane {
+  grid-template-columns: 76px minmax(0, 1fr);
+}
+
+.desktop-shell > .desktop-rail,
+.desktop-shell > .desktop-list-pane,
+.desktop-shell > main {
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.desktop-shell > main {
+  height: 100%;
+}
+
+.desktop-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 16px 8px 14px;
+  background: var(--surface-soft);
+  border-right: 1px solid var(--line);
+}
+
+.desktop-rail-brand {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  margin-bottom: 18px;
+  place-items: center;
+  color: var(--on-accent, #fff);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  background: var(--accent);
+  border-radius: 13px;
+  box-shadow: 0 6px 16px rgba(12, 130, 120, 0.24);
+  user-select: none;
+}
+
+.desktop-rail-items,
+.desktop-rail-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.desktop-rail-footer {
+  margin-top: auto;
+}
+
+.desktop-rail .desktop-rail-button {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 60px;
+  min-width: 0;
+  height: 56px;
+  min-height: 0;
+  padding: 0;
+  color: var(--text-soft);
+  background: transparent;
+  border: 0;
+  border-radius: 14px;
+  box-shadow: none;
+  transform: none;
+  cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.desktop-rail-button .nav-icon {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+}
+
+.desktop-rail-button .ui-icon {
+  width: 21px;
+  height: 21px;
+}
+
+.desktop-rail-button small {
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.desktop-rail .desktop-rail-button:hover {
+  color: var(--text);
+  background: var(--surface-tint);
+}
+
+.desktop-rail .desktop-rail-button.is-active {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+
+.desktop-rail-button.is-active::before {
+  position: absolute;
+  top: 16px;
+  bottom: 16px;
+  left: -8px;
+  width: 3px;
+  content: "";
+  background: var(--accent);
+  border-radius: 0 3px 3px 0;
+}
+
+.desktop-rail .desktop-rail-button:active {
+  transform: scale(0.96);
+}
+
+/* 中间列表：身份、世界、搜索固定在上面，只有会话列表滚动。 */
+.desktop-shell > .desktop-list-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--surface-solid);
+  border-right: 1px solid var(--line);
+  box-shadow: none;
+}
+
+.desktop-list-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 14px 10px;
+}
+
+.desktop-list-header .private-chat-identity-select {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+}
+
+.desktop-list-header > .icon-button {
+  flex: 0 0 auto;
+}
+
+.desktop-list-tools {
+  display: grid;
+  gap: 8px;
+  padding: 0 14px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.desktop-list-tools .world-switcher {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.desktop-list-tools .world-switcher span {
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.desktop-list-tools select,
+.desktop-list-tools .contact-search {
+  min-height: 40px;
+  margin: 0;
+}
+
+.desktop-list-card-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.desktop-list-card-actions > .primary,
+.desktop-list-card-actions > .file-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 38px;
+  margin: 0;
+  padding: 0 10px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.desktop-list-card-actions .ui-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.desktop-list-scroll {
+  display: grid;
+  flex: 1 1 auto;
+  min-height: 0;
+  align-content: start;
+  gap: 12px;
+  padding: 12px 10px 18px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.desktop-list-scroll .contacts-section {
+  display: grid;
+  gap: 4px;
+  min-height: 0;
+  margin: 0;
+}
+
+.desktop-list-scroll .section-label {
+  padding: 2px 6px 4px;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.desktop-list-scroll .contact-list {
+  display: grid;
+  gap: 2px;
+  overflow: visible;
+}
+
+/* 今日变化：完整收在列表宽度里，不再往右溢出。 */
+.desktop-list-scroll .daily-brief-banner {
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 10px;
+  background: var(--surface-soft);
+  border-radius: 14px;
+  box-shadow: none;
+}
+
+.desktop-list-scroll .daily-brief-banner > span:last-child {
+  min-width: 0;
+}
+
+/* 新手引导：窄列表里改成竖排三步，每步一行。 */
+.desktop-list-scroll .first-run-guide {
+  gap: 10px;
+  margin: 0;
+  padding: 12px;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: none;
+}
+
+.desktop-list-scroll .first-run-guide header > div span {
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.desktop-list-scroll .first-run-guide header > div strong {
+  font-size: 15px;
+}
+
+.desktop-list-scroll .first-run-steps {
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.desktop-list-scroll .first-run-step {
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  padding: 9px 10px;
+  background: var(--surface-solid);
+  border-color: var(--line);
+  border-radius: 11px;
+}
+
+.desktop-list-scroll .first-run-step b {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 50%;
+}
+
+.desktop-list-scroll .first-run-step.is-done {
+  background: var(--surface-solid);
+  border-color: var(--line);
+}
+
+.desktop-list-scroll .first-run-step.is-done b {
+  color: var(--on-accent, #fff);
+  background: var(--accent);
+  border-color: transparent;
+}
+
+.desktop-list-scroll .first-run-step > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.desktop-list-scroll .first-run-step strong {
+  font-size: 13px;
+}
+
+.desktop-list-scroll .first-run-step small {
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.desktop-list-scroll .first-run-step.is-done strong {
+  color: var(--text-soft);
+  text-decoration: line-through;
+  text-decoration-color: var(--line-strong);
+}
+
+/* 会话行：去掉旧的分隔线和左侧色条，改成圆角整行高亮。 */
+.desktop-list-scroll .contact-list .contact,
+.desktop-list-scroll .contact-list .group-conversation-row {
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  min-height: 64px;
+  margin: 0;
+  padding: 9px 10px;
+  background: transparent;
+  border: 0;
+  border-radius: 12px;
+  box-shadow: none;
+  transform: none;
+}
+
+.desktop-list-scroll .contact-list .contact + .contact {
+  margin-top: 0;
+}
+
+.desktop-list-scroll .contact-list .contact:hover {
+  background: var(--surface-soft);
+  box-shadow: none;
+}
+
+.desktop-list-scroll .contact-list .contact.is-active {
+  background: var(--accent-soft);
+  box-shadow: none;
+}
+
+.desktop-list-scroll .contact-list .contact > .avatar,
+.desktop-list-scroll .contact-list .group-avatar-stack {
+  width: 46px;
+  min-width: 46px;
+  height: 46px;
+  min-height: 46px;
+}
+
+.desktop-list-scroll .contact-name {
+  font-size: 14px;
+}
+
+.desktop-list-scroll .contact-subtitle {
+  font-size: 12px;
+}
+
+/* 群头像：成员少于四人时铺满方块，不再只占左上角一小格。 */
+.group-avatar-stack[data-group-avatar-count="1"] .avatar {
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
+  border-radius: 10px;
+}
+
+.group-avatar-stack[data-group-avatar-count="2"] .avatar {
+  grid-row: 1 / -1;
+}
+
+.group-avatar-stack[data-group-avatar-count="3"] .avatar:first-child {
+  grid-row: 1 / -1;
+}
+
+/* 大屏阅读宽度：主区很宽时，聊天记录、状态条和输入框收在居中的一栏里，不再横跨整个屏幕。
+   窄一些的窗口保持原来的留白（记录 48px、输入框 64px）。 */
+.desktop-shell > .chat .messages,
+.desktop-shell > .group-chat .group-messages {
+  padding-right: max(48px, calc((100% - 980px) / 2));
+  padding-left: max(48px, calc((100% - 980px) / 2));
+}
+
+.desktop-shell > .chat .chat-status-shelf,
+.desktop-shell > .chat .context-preview-panel {
+  margin-right: max(24px, calc((100% - 1028px) / 2));
+  margin-left: max(24px, calc((100% - 1028px) / 2));
+}
+
+.desktop-shell > .chat .composer,
+.desktop-shell > .group-chat .group-composer {
+  padding-right: max(64px, calc((100% - 980px) / 2 + 16px));
+  padding-left: max(64px, calc((100% - 980px) / 2 + 16px));
+}
+
+/* 输入框贴底：电脑上没有手机安全区，去掉输入框下面那条 16px 的灰色空隙。 */
+.desktop-shell > .chat .chat-composer-area > .composer,
+.desktop-shell > .group-chat .group-composer {
+  margin-bottom: 0;
 }

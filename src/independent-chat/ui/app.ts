@@ -2419,6 +2419,20 @@ function installMessageProfileOutsideCloser(): void {
   document.addEventListener('click', closeFromOutsideEvent, true);
 }
 
+// 小注释：列表和聊天同屏显示时（电脑、平板横屏），只高亮正在打开的那一个会话；
+// 手机上列表和聊天不同屏，保持原来的高亮方式。
+type OpenConversationKind = 'private' | 'group' | 'none' | 'any';
+
+function openConversationKind(): OpenConversationKind {
+  const mode = getViewportLayoutMode();
+  if (mode === 'desktop') {
+    if (state.activeView !== 'groups') return 'private';
+    return desktopGroupChatOpen ? 'group' : 'none';
+  }
+  if (mode === 'tabletLandscape') return mobileGroupChatOpen ? 'group' : mobileChatOpen ? 'private' : 'none';
+  return 'any';
+}
+
 function renderContacts(mode: 'contacts' | 'recent' = 'contacts'): string {
   const characters = privateChatContactCharacters(mode);
   if (characters.length === 0) {
@@ -2426,6 +2440,8 @@ function renderContacts(mode: 'contacts' | 'recent' = 'contacts'): string {
   }
   const speaker = privateChatIdentityCharacter();
   const directThreads = speaker ? characterDirectThreadsForActor(speaker.id, activeWorld().id) : [];
+  const openKind = openConversationKind();
+  const highlightPrivate = openKind === 'private' || openKind === 'any';
   return characters.map(character => {
     const directThread = speaker ? characterDirectPeerThread(speaker, character, directThreads) : undefined;
     const directMessages = directThread ? characterDirectMessagesFor(directThread.id) : [];
@@ -2446,7 +2462,7 @@ function renderContacts(mode: 'contacts' | 'recent' = 'contacts'): string {
     }
     const activityAt = directLatest?.createdAt ?? directThread?.updatedAt ?? latest?.createdAt;
     return `
-    <button class="contact conversation-row ${character.id === activeCharacter()?.id ? 'is-active' : ''}" data-character-id="${escapeHtml(character.id)}">
+    <button class="contact conversation-row ${highlightPrivate && character.id === activeCharacter()?.id ? 'is-active' : ''}" data-character-id="${escapeHtml(character.id)}">
       <span class="avatar"${avatarToneAttribute(character)}>${renderAvatar(character)}</span>
       <span class="contact-copy">
         <span class="contact-name">${escapeHtml(character.name)}</span>
@@ -2529,6 +2545,8 @@ function renderGroupConversationRows(): string {
       return `${chat.title} ${participantText}`.toLocaleLowerCase().includes(query);
     })
     .sort((left, right) => groupChatSortTime(right) - groupChatSortTime(left));
+  const openKind = openConversationKind();
+  const highlightGroup = openKind === 'group' || openKind === 'any';
   return chats.map(chat => {
     const latest = lastGroupMessageFor(chat);
     const participants = groupParticipants(chat);
@@ -2536,7 +2554,7 @@ function renderGroupConversationRows(): string {
       ? `${groupSpeakerName(latest)}：${compactText(latest.content, 48)}`
       : `${participants.length} 位成员，点开进入群聊`;
     return `
-      <button class="contact conversation-row group-conversation-row ${chat.id === state.activeGroupChatId ? 'is-active' : ''}" data-group-chat-id="${escapeHtml(chat.id)}">
+      <button class="contact conversation-row group-conversation-row ${highlightGroup && chat.id === state.activeGroupChatId ? 'is-active' : ''}" data-group-chat-id="${escapeHtml(chat.id)}">
         ${renderGroupAvatarStack(chat)}
         <span class="contact-copy">
           <span class="contact-name">${escapeHtml(chat.title)}</span>
@@ -3147,16 +3165,12 @@ function renderCharacterHeader(character?: CharacterProfile, backButton = false)
   `;
 }
 
-function renderDesktopViewControls(character?: CharacterProfile): string {
+// 小注释：电脑版分区切换交给左侧导航栏，头部只留当前角色的设置入口。
+function renderDesktopHeaderActions(character?: CharacterProfile): string {
+  if (!character) return '';
   return `
-    <nav class="view-tabs" aria-label="当前角色视图">
-      <button class="${state.activeView === 'chat' ? 'is-active' : ''}" data-view="chat">消息</button>
-      <button class="${state.activeView === 'world' ? 'is-active' : ''}" data-view="world">世界</button>
-      <button class="${state.activeView === 'moments' ? 'is-active' : ''}" data-view="moments">动态</button>
-    </nav>
     <div class="chat-header-actions">
-      ${character ? `<button class="icon-button" id="open-character-panel" aria-label="打开角色设置">${icon('settings')}</button>` : ''}
-      <button class="icon-button" id="open-settings-header" aria-label="打开设置">${icon('settings')}</button>
+      <button class="icon-button" id="open-character-panel" aria-label="打开角色设置" title="角色设置">${icon('settings')}</button>
     </div>
   `;
 }
@@ -3541,7 +3555,7 @@ function renderGroupHeader(chat?: GroupChatProfile, mobile = false): string {
   const subtitle = chat ? `${participants.length} 位成员` : '创建或管理群聊';
   return `
     <div class="chat-identity group-chat-identity">
-      <button class="header-back" ${mobile ? 'data-mobile-group-back' : 'data-group-list-back'} aria-label="返回">‹</button>
+      ${mobile ? '<button class="header-back" data-mobile-group-back aria-label="返回">‹</button>' : ''}
       ${chat ? renderGroupAvatarStack(chat) : '<span class="avatar group-avatar-fallback">群</span>'}
       <div>
         <strong>${escapeHtml(chat?.title ?? '群聊')}</strong>
@@ -3686,7 +3700,7 @@ function renderGroupChatPage(mobile = false): string {
         ${renderGroupHeader(chat, mobile)}
         ${mobile
           ? `<button class="icon-button character-gear-button" id="open-group-settings" data-open-group-settings aria-label="打开群聊设置">${icon('settings')}</button>`
-          : `<div class="chat-header-actions"><button class="icon-button" id="open-group-settings" data-open-group-settings aria-label="打开群聊设置">${icon('settings')}</button><button class="icon-button" id="open-settings-header" aria-label="打开设置">${icon('settings')}</button></div>`}
+          : `<div class="chat-header-actions"><button class="icon-button" id="open-group-settings" data-open-group-settings aria-label="打开群聊设置" title="群聊设置">${icon('settings')}</button></div>`}
       </header>
       <section class="group-chat-main">
         <div class="group-messages">${renderGroupMessages(chat)}</div>
@@ -3719,7 +3733,7 @@ function renderChatPane(character?: CharacterProfile, mobile = false): string {
     <main class="chat ${character ? 'has-status-shelf' : ''} ${mobile ? 'mobile-chat-detail' : ''}" style="${chatSurfaceStyle(state.chatFontScale, privateChatBackgroundImage(character))}">
       <header class="chat-header">
         ${renderCharacterHeader(character, mobile)}
-        ${mobile ? '' : renderDesktopViewControls(character)}
+        ${mobile ? '' : renderDesktopHeaderActions(character)}
         ${mobile && character ? `<button class="icon-button character-gear-button" id="open-character-panel" aria-label="打开角色设置">${icon('settings')}</button>` : ''}
       </header>
       ${renderChatStatusShelf(character)}
@@ -3898,7 +3912,6 @@ function renderMomentsPage(mobile = false): string {
     <main class="chat social-page moments-page ${mobile ? 'mobile-page' : ''}">
       <header class="chat-header page-heading moments-heading">
         <div><span class="eyebrow">全局动态</span><h2>动态</h2><p>你和角色分享的近况，都留在这里。</p></div>
-        ${mobile ? '' : renderDesktopViewControls(activeCharacter())}
         <button class="icon-button moments-help" id="open-moments-tutorial" type="button" aria-label="查看动态教程">?</button>
       </header>
       <section class="moments-scroll">
@@ -3973,7 +3986,6 @@ function renderEventsPage(mobile = false): string {
           <h2>事件设置</h2>
           <p>这里只调整日常片段的生成节奏。真正的 RP 从世界页片段列表进入，不把设置页做成管理看板。</p>
         </div>
-        ${mobile ? '' : renderDesktopViewControls(activeCharacter())}
       </header>
       <section class="events-scroll">
         <div class="events-column event-settings-page-column">
@@ -4470,7 +4482,6 @@ function renderTimelinePage(mobile = false): string {
           <h2>世界时间线</h2>
           <p>聊天、动态、事件和关系变化会在这里沉淀成可回顾的世界记录。</p>
         </div>
-        ${mobile ? '' : renderDesktopViewControls(activeCharacter())}
       </header>
       <section class="timeline-scroll">
         <div class="timeline-column">
@@ -6855,10 +6866,85 @@ function firstRunGuideState(compact = false): FirstRunGuideState {
   };
 }
 
-function renderDesktop(character?: CharacterProfile): string {
+// 大注释：电脑版三栏布局。
+// 最左是窄导航栏（消息/角色/世界/动态/设置，和手机底栏同一套入口），
+// 中间列表只在消息和角色两个分区出现，世界、动态、设置直接占满右侧主区。
+type DesktopListMode = 'messages' | 'contacts';
+let desktopListMode: DesktopListMode = 'messages';
+
+function desktopActiveNavId(): MobileSection {
+  if (settingsOpen) return 'settings';
+  if (state.activeView === 'world') return 'world';
+  if (state.activeView === 'moments') return 'moments';
+  return desktopListMode;
+}
+
+function desktopListPaneVisible(): boolean {
+  return !settingsOpen && (state.activeView === 'chat' || state.activeView === 'groups');
+}
+
+function renderDesktopRail(): string {
+  const activeId = desktopActiveNavId();
+  const navTarget = (id: MobileSection): string => {
+    if (id === 'settings') return 'id="open-settings"';
+    if (id === 'world') return 'data-view="world"';
+    if (id === 'moments') return 'data-view="moments"';
+    return `data-view="chat" data-desktop-list="${id}"`;
+  };
+  const navButton = ({ id, label, iconName }: typeof MAIN_NAV_ITEMS[number]): string => `
+    <button class="desktop-rail-button ${activeId === id ? 'is-active' : ''}" ${navTarget(id)} type="button" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"${activeId === id ? ' aria-current="page"' : ''}>
+      <span class="nav-icon">${icon(iconName)}</span>
+      <small>${escapeHtml(label)}</small>
+    </button>
+  `;
+  return `
+    <nav class="desktop-rail" aria-label="主导航">
+      <div class="desktop-rail-brand" aria-label="PalTavern" title="PalTavern">PT</div>
+      <div class="desktop-rail-items">
+        ${MAIN_NAV_ITEMS.filter(item => item.id !== 'settings').map(navButton).join('')}
+      </div>
+      <div class="desktop-rail-footer">
+        ${MAIN_NAV_ITEMS.filter(item => item.id === 'settings').map(navButton).join('')}
+      </div>
+    </nav>
+  `;
+}
+
+function renderDesktopListPane(): string {
   const worldOptions = state.worlds.map(world =>
     `<option value="${escapeHtml(world.id)}" ${world.id === activeWorld().id ? 'selected' : ''}>${escapeHtml(world.name)}</option>`,
   ).join('');
+  const contactsMode = desktopListMode === 'contacts';
+  const cardActions = `
+    <div class="desktop-list-card-actions">
+      <button class="primary" data-open-authoring type="button">写角色卡</button>
+      <label class="file-button card-import-button">${icon('import')}<span>导入角色卡</span><input class="card-import" type="file" accept="${CARD_IMPORT_ACCEPT}" /></label>
+    </div>
+  `;
+  return `
+    <aside class="sidebar desktop-list-pane" aria-label="${contactsMode ? '角色列表' : '会话列表'}">
+      <header class="desktop-list-header">
+        ${renderPrivateChatTargetSelector()}
+        ${contactsMode ? '' : `<button class="icon-button" data-open-group-create type="button" aria-label="新建群聊" title="新建群聊">${icon('add')}</button>`}
+      </header>
+      <div class="desktop-list-tools">
+        <label class="world-switcher"><span>当前世界</span><select id="world-select" aria-label="切换世界">${worldOptions}</select></label>
+        <label class="contact-search">${icon('search')}<input id="contact-search" value="${escapeHtml(contactQuery)}" placeholder="${contactsMode ? '搜索角色' : '搜索会话'}" /></label>
+        ${contactsMode ? cardActions : ''}
+      </div>
+      <div class="desktop-list-scroll">
+        ${contactsMode ? '' : renderDailyBriefBanner()}
+        ${contactsMode ? '' : renderFirstRunGuide(firstRunGuideState(true))}
+        <section class="contacts-section">
+          <div class="section-label">${contactsMode ? '全部角色' : '最近联系'}</div>
+          <div class="contact-list">${contactsMode ? renderContacts('contacts') : renderInboxConversations()}</div>
+        </section>
+      </div>
+    </aside>
+  `;
+}
+
+function renderDesktop(character?: CharacterProfile): string {
   const content = characterPanelOpen ? renderCharacterPanel(character)
     : settingsOpen ? renderDesktopSettingsPage(character)
     : state.activeView === 'moments'
@@ -6868,27 +6954,11 @@ function renderDesktop(character?: CharacterProfile): string {
     : state.activeView === 'world'
       ? renderWorldWorkbenchPage()
       : renderChatPane(character);
+  const listVisible = desktopListPaneVisible();
   return `
-    <div class="app-shell desktop-shell">
-      <aside class="sidebar">
-        <div class="brand-row">
-          <div class="brand"><h1>PalTavern</h1><span>和角色保持联系</span></div>
-          <div class="brand-actions">
-            <button class="icon-button" data-open-groups aria-label="新建群聊">${icon('add')}</button>
-            <button class="icon-button" id="open-settings" aria-label="打开设置">${icon('settings')}</button>
-          </div>
-        </div>
-        <label class="world-switcher"><span>当前世界</span><select id="world-select">${worldOptions}</select></label>
-        <label class="contact-search">${icon('search')}<input id="contact-search" value="${escapeHtml(contactQuery)}" placeholder="搜索角色" /></label>
-        ${renderPrivateChatTargetSelector()}
-        ${renderDailyBriefBanner()}
-        ${renderFirstRunGuide(firstRunGuideState(true))}
-        <div class="sidebar-actions">
-          <button class="primary compact-file-button" data-open-authoring>写角色卡</button>
-          <label class="file-button compact-file-button card-import-button">${icon('import')}<span>导入角色卡</span><input class="card-import" type="file" accept="${CARD_IMPORT_ACCEPT}" /></label>
-        </div>
-        <section class="contacts-section"><div class="section-label">最近联系</div><div class="contact-list">${renderInboxConversations()}</div></section>
-      </aside>
+    <div class="app-shell desktop-shell ${listVisible ? 'has-list-pane' : 'without-list-pane'}">
+      ${renderDesktopRail()}
+      ${listVisible ? renderDesktopListPane() : ''}
       ${content}
       ${renderGroupSettingsPanel(groupSettingsMode === 'edit' ? activeGroupChat() : undefined)}
     </div>
@@ -8567,7 +8637,6 @@ function bindUi(): void {
   };
   document.querySelector<HTMLButtonElement>('#open-settings')?.addEventListener('click', openSettings);
   document.querySelector<HTMLButtonElement>('#open-settings-bottom')?.addEventListener('click', openSettings);
-  document.querySelector<HTMLButtonElement>('#open-settings-header')?.addEventListener('click', openSettings);
   const openCharacterPanel = (page: CharacterPanelPage = 'worldbook') => {
     if (!activeCharacter()) return;
     characterPanelOpen = true;
@@ -8944,20 +9013,26 @@ function bindUi(): void {
     button.addEventListener('click', () => {
       captureVisibleDraftsFromDom();
       const fromView = state.activeView;
-      const nextView = button.dataset.view === 'moments'
+      const listMode = button.dataset.desktopList;
+      const leavingPage = settingsOpen || characterPanelOpen;
+      let nextView: typeof state.activeView = button.dataset.view === 'moments'
         ? 'moments'
         : button.dataset.view === 'groups'
           ? 'groups'
         : button.dataset.view === 'world'
           ? 'world'
           : 'chat';
+      // 小注释：导航栏里的“消息”在群聊中再点一次时留在当前群聊，不跳回私聊。
+      if (listMode === 'messages' && fromView === 'groups' && desktopGroupChatOpen) nextView = 'groups';
+      if (listMode === 'messages' || listMode === 'contacts') desktopListMode = listMode;
+      if (leavingPage) closeTransientOverlaysForPageChange();
       setActiveView(nextView);
       if (nextView === 'world') {
         activeWorldRpEventId = '';
         worldRpMessageEditId = '';
         worldRpMessageActionId = '';
       }
-      if (nextView === 'groups') desktopGroupChatOpen = false;
+      if (button.dataset.view === 'groups') desktopGroupChatOpen = false;
       if (nextView === 'moments') openMomentsTutorialIfNeeded();
       if (nextView !== 'moments') {
         momentComposerOpen = false;
@@ -8970,7 +9045,7 @@ function bindUi(): void {
         resetGroupSettingsState();
       }
       saveUiSessionSnapshot();
-      renderWithUiTransition(desktopViewTransition(fromView, nextView));
+      renderWithUiTransition(leavingPage ? 'detail-out' : desktopViewTransition(fromView, nextView));
     });
   });
   document.querySelectorAll<HTMLButtonElement>('[data-open-groups]').forEach(button => {

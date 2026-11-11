@@ -1821,9 +1821,7 @@ const mobileMomentComposerOpenBlock = (styleSource.split('.moment-compose-fab {'
 const keepMomentComposerVisibleBlock = uiSource
   .split('function keepMomentComposerVisible')[1]
   ?.split('function updateKeyboardOffset')[0] ?? '';
-const desktopViewControlsBlock = uiSource
-  .split('function renderDesktopViewControls')[1]
-  ?.split('function renderCharacterPanelTabs')[0] ?? '';
+const desktopRailBlock = functionBody(uiSource, 'renderDesktopRail');
 const renderWithUiTransitionBlock = transitionsSource
   .split('function renderWithUiTransition')[1]
   ?.split('function modelIsReady')[0] ?? '';
@@ -2490,7 +2488,7 @@ if (
 }
 if (
   !indexHtmlSource.includes('<title>PalTavern</title>')
-  || !uiSource.includes('<div class="brand"><h1>PalTavern</h1>')
+  || !uiSource.includes('<div class="desktop-rail-brand" aria-label="PalTavern" title="PalTavern">PT</div>')
   || !uiSource.includes('<span class="settings-kicker">PalTavern</span><h1>设置中心</h1>')
   || !uiSource.includes('<span class="eyebrow">PalTavern</span><h1>设置</h1>')
   || uiSource.includes('<div class="brand"><h1>Tavern Social</h1>')
@@ -2726,10 +2724,10 @@ if (
 // 大注释：世界工作台导航契约。主入口只暴露消息、角色、世界、动态、设置；事件和时间线只作为世界内部能力出现。
 if (
   !uiSource.includes("type MobileSection = 'messages' | 'contacts' | 'groups' | 'world' | 'moments' | 'settings'")
-  || !desktopViewControlsBlock.includes('data-view="world"')
-  || !desktopViewControlsBlock.includes('>世界<')
-  || desktopViewControlsBlock.includes('data-view="events"')
-  || desktopViewControlsBlock.includes('data-view="timeline"')
+  || !desktopRailBlock.includes('data-view="world"')
+  || !desktopRailBlock.includes('MAIN_NAV_ITEMS')
+  || desktopRailBlock.includes('data-view="events"')
+  || desktopRailBlock.includes('data-view="timeline"')
   || !mainNavItemsBlock.includes("id: 'messages', label: '消息'")
   || !mainNavItemsBlock.includes("id: 'contacts', label: '角色'")
   || !mainNavItemsBlock.includes("id: 'world', label: '世界'")
