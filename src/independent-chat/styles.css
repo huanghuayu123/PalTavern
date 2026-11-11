@@ -18196,3 +18196,10 @@ html[data-ui-transition]:not([data-ui-transition^="main-"]) .moment-compose-fab 
   }
 }
 
+
+/* 小注释：聊天背景当壁纸用：固定在聊天区域里，消息在上面滚动。
+   原来背景跟着内容一起滚并铺满全部记录，聊得越久图被拉得越大，几十条消息后就只剩模糊色块。 */
+.messages,
+.group-messages {
+  background-attachment: scroll, scroll;
+}
