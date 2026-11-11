@@ -284,3 +284,8 @@ html[data-compact-ui] {
 .world-insight-tabs > .segment-thumb {
   display: none;
 }
+
+/* 小注释：欢迎页的图标只在手机/平板新界面里显示，电脑版欢迎页保持原样。 */
+.welcome-cover-mark {
+  display: none;
+}

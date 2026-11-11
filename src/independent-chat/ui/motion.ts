@@ -57,7 +57,7 @@ const OVERLAY_SELECTOR = [
   '.world-bundle-import-overlay',
   '.event-composer-overlay',
   '.moments-tutorial-overlay',
-  '.group-settings-panel',
+  '.group-settings-overlay',
   '.moments-publisher.is-open',
   '.sticker-picker',
   '.message-profile-popover',
@@ -876,7 +876,7 @@ function fadeScrim(overlay: HTMLElement, show: boolean, duration: number, fill?:
 }
 
 function overlaySurface(overlay: HTMLElement): HTMLElement {
-  return overlay.querySelector<HTMLElement>('.action-sheet, [role="dialog"] > section, section[class*="dialog"], section[class*="window"], .app-dialog, .group-settings-sheet, .moments-tutorial-sheet, .world-gear-card')
+  return overlay.querySelector<HTMLElement>('.action-sheet, [role="dialog"] > section, section[class*="dialog"], section[class*="window"], .app-dialog, .group-settings-panel, .moments-tutorial-sheet, .world-gear-card')
     ?? overlay;
 }
 
@@ -1019,6 +1019,55 @@ export function closeOverlay(renderPage: () => void): void {
     }
     whenSettled(animations, MOTION_MS.exit + 40, () => dropLayer(clone));
   });
+}
+
+// ---------------------------------------------------------------- 欢迎页：封面溶解，首页浮上来
+
+/** 欢迎页点“进入”：封面轻轻放大淡出，标题往上飘走，首页同时从稍小、半透明的样子浮上来。 */
+export function dissolveCover(renderPage: () => void): void {
+  const cover = document.querySelector<HTMLElement>('.welcome-cover-overlay');
+  if (!cover || isMotionReduced()) {
+    renderPage();
+    return;
+  }
+  const box = boxOf(cover);
+  const clone = cover.cloneNode(true) as HTMLElement;
+  stripClone(clone);
+  clone.classList.add('pt-motion-clone');
+  Object.assign(clone.style, { top: 'auto', right: 'auto', bottom: 'auto', left: 'auto' });
+  Object.assign(clone.style, {
+    position: 'fixed', left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px`, height: `${box.height}px`,
+    margin: '0', pointerEvents: 'none', zIndex: '200',
+  });
+  renderPage();
+  document.body.appendChild(clone);
+  trackLayer(clone);
+  const duration = MOTION_MS.emphasized + 60;
+  const animations: Array<Animation | null> = [
+    animate(clone, [{ opacity: 1 }, { opacity: 1, offset: 0.2 }, { opacity: 0 }], { duration, easing: 'linear', fill: 'forwards' }),
+  ];
+  const brand = clone.querySelector<HTMLElement>('.welcome-cover-brand');
+  if (brand) {
+    animations.push(animate(brand, [
+      { transform: 'none' },
+      { transform: 'translateY(-36px) scale(1.06)' },
+    ], { duration, easing: MOTION_EASE.standard, fill: 'forwards' }));
+  }
+  const button = clone.querySelector<HTMLElement>('.welcome-cover-enter');
+  if (button) {
+    animations.push(animate(button, [
+      { transform: 'none', opacity: 1 },
+      { transform: 'translateY(24px)', opacity: 0 },
+    ], { duration: MOTION_MS.base, easing: MOTION_EASE.accelerate, fill: 'forwards' }));
+  }
+  const page = document.querySelector<HTMLElement>('.mobile-shell, .tablet-landscape-shell, .desktop-shell');
+  if (page) {
+    animate(page, [
+      { transform: 'scale(0.94)', opacity: 0.2 },
+      { transform: 'none', opacity: 1 },
+    ], { duration, easing: MOTION_EASE.decelerate });
+  }
+  whenSettled(animations, duration + 40, () => dropLayer(clone));
 }
 
 // ---------------------------------------------------------------- 发送：输入框里的字飞进气泡

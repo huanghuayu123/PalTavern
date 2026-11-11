@@ -104,6 +104,7 @@ import type { ParsedChatPart } from '../chat/format';
 import { applyAppearance } from './appearance';
 import {
   captureMorphs,
+  dissolveCover,
   fadeOutThen,
   installMotionTapTracking,
   playAppearanceSwitch,
@@ -736,6 +737,28 @@ let mobileListScrollRestore: MobileListScrollSnapshot | null = null;
 let scrollCharacterPanelToTopAfterRender = false;
 
 const SETTINGS_SECTIONS: SettingsSection[] = ['world', 'drafts', 'stickers', 'model', 'prompts', 'relationship', 'interactions', 'proactive', 'chat', 'appearance', 'notifications', 'data'];
+// 小注释：手机设置列表的分组、文字和左边彩色小图标；详情页顶栏的标题也从这里取。
+type SettingsMenuItem = { id: SettingsSection; label: string; description: string; icon: IconName; color: string };
+const SETTINGS_MENU: Array<{ group: string; items: SettingsMenuItem[] }> = [
+  { group: '内容管理', items: [
+    { id: 'world', label: '世界与角色', description: '空间、导入与导出', icon: 'world', color: '#3b82f6' },
+    { id: 'drafts', label: '写卡草稿', description: '创作、续写与管理', icon: 'edit', color: '#f59e0b' },
+    { id: 'stickers', label: '表情包', description: '角色、通用与用户图库', icon: 'sticker', color: '#ec4899' },
+  ] },
+  { group: '角色运行', items: [
+    { id: 'model', label: '模型连接', description: 'API 与自动预算', icon: 'cpu', color: '#6366f1' },
+    { id: 'prompts', label: '提示词预设', description: '酒馆预设导入与开关', icon: 'sliders', color: '#8b5cf6' },
+    { id: 'relationship', label: '关系状态', description: '好感度与关系摘要', icon: 'heart', color: '#ef4444' },
+    { id: 'interactions', label: '角色互动', description: '后台生活循环', icon: 'moments', color: '#22a55e' },
+    { id: 'proactive', label: '主动消息', description: '频率、安静时段与降频', icon: 'send', color: '#0ea5e9' },
+  ] },
+  { group: '应用', items: [
+    { id: 'chat', label: '聊天与人设', description: '短消息、长消息与 user 人设', icon: 'user', color: '#14a38b' },
+    { id: 'appearance', label: '外观', description: '主题色、深浅色与动效', icon: 'palette', color: '#f97316' },
+    { id: 'notifications', label: '通知', description: '权限、隐私与后台', icon: 'bell', color: '#f43f5e' },
+    { id: 'data', label: '数据与运行', description: '备份与操作记录', icon: 'database', color: '#64748b' },
+  ] },
+];
 const MOBILE_SECTIONS: MobileSection[] = ['messages', 'contacts', 'groups', 'world', 'moments', 'settings'];
 const MAIN_NAV_ITEMS: Array<{ id: MobileSection; label: string; iconName: IconName }> = [
   { id: 'messages', label: '消息', iconName: 'message' },
@@ -1526,6 +1549,15 @@ function closeMobileGroupListWithTransition(): void {
   desktopGroupChatOpen = false;
   resetGroupSettingsState();
   mobileSettingsDetail = false;
+  if (isCompactViewport()) {
+    // 小注释：整页直接缩回“新建群聊”那个按钮，动画交给动效引擎，不再等旧的关闭动画。
+    resetMobileGroupListClosing();
+    mobileSection = 'messages';
+    setActiveView('chat');
+    saveUiSessionSnapshot();
+    renderWithUiTransition('detail-out');
+    return;
+  }
   mobileGroupListClosing = true;
   render();
   window.clearTimeout(mobileGroupListCloseTimer);
@@ -2202,7 +2234,7 @@ function renderGroupListPage(mobile = false): string {
       </section>
       <section class="group-list-surface" aria-label="群聊列表">
         ${rows
-          ? `<div class="group-list-rows">${rows}</div>`
+          ? `<div class="group-list-rows${mobile ? ' mobile-conversation-list' : ''}">${rows}</div>`
           : `<div class="list-empty group-list-empty"><strong>${hasGroups ? '没有找到匹配的群聊' : '还没有群聊'}</strong><p>${hasGroups ? '换个关键词试试。' : '先创建一个群聊，再从列表点进去聊天。'}</p>${hasGroups ? '' : '<button class="primary" data-open-group-create type="button">创建群聊</button>'}</div>`}
       </section>
       ${mobile ? renderGroupSettingsPanel(groupSettingsMode === 'edit' ? activeGroupChat() : undefined) : ''}
@@ -2876,7 +2908,7 @@ function renderGroupChatPage(mobile = false): string {
       <header class="chat-header group-chat-header">
         ${renderGroupHeader(chat, mobile)}
         ${mobile
-          ? `<button class="icon-button character-gear-button" id="open-group-settings" data-open-group-settings aria-label="打开群聊设置">${icon('settings')}</button>`
+          ? `<button class="icon-button character-gear-button" id="open-group-settings" data-open-group-settings data-morph="group-gear" aria-label="打开群聊设置">${icon('settings')}</button>`
           : `<div class="chat-header-actions"><button class="icon-button" id="open-group-settings" data-open-group-settings aria-label="打开群聊设置" title="群聊设置">${icon('settings')}</button></div>`}
       </header>
       <section class="group-chat-main">
@@ -3316,34 +3348,18 @@ function openEventComposer(mode: 'auto' | 'manual' = 'auto'): void {
 }
 
 function renderSettingsItems(): string {
-  const groups: Array<[string, Array<[SettingsSection, string, string]>]> = [
-    ['内容管理', [
-      ['world', '世界与角色', '空间、导入与导出'],
-      ['drafts', '写卡草稿', '创作、续写与管理'],
-      ['stickers', '表情包', '角色、通用与用户图库'],
-    ]],
-    ['角色运行', [
-      ['model', '模型连接', 'API 与自动预算'],
-      ['prompts', '提示词预设', '酒馆预设导入与开关'],
-      ['relationship', '关系状态', '好感度与关系摘要'],
-      ['interactions', '角色互动', '后台生活循环'],
-      ['proactive', '主动消息', '频率、安静时段与降频'],
-    ]],
-    ['应用', [
-      ['chat', '聊天与人设', '短消息、长消息与 user 人设'],
-      ['appearance', '外观', '主题色、深浅色与动效'],
-      ['notifications', '通知', '权限、隐私与后台'],
-      ['data', '数据与运行', '备份与操作记录'],
-    ]],
-  ];
-  return groups.map(([group, items]) => `
+  // 小注释：每一行的标题带 data-morph，点进去时它会飞成详情页顶栏的标题。
+  return SETTINGS_MENU.map(({ group, items }) => `
     <div class="settings-menu-group">
       <h2>${group}</h2>
-      ${items.map(([id, label, description]) => `
-        <button class="settings-list-item ${activeSettingsSection === id ? 'is-active' : ''}" data-settings-section="${id}">
-          <span><strong>${label}</strong><small>${description}</small></span><b>›</b>
-        </button>
-      `).join('')}
+      <div class="settings-menu-cells">
+        ${items.map(item => `
+          <button class="settings-list-item ${activeSettingsSection === item.id ? 'is-active' : ''}" data-settings-section="${item.id}">
+            <span class="settings-list-icon" style="background-color:${item.color}" aria-hidden="true">${icon(item.icon)}</span>
+            <span class="settings-list-copy"><strong data-morph="settings-title:${item.id}">${item.label}</strong><small>${item.description}</small></span><b aria-hidden="true">›</b>
+          </button>
+        `).join('')}
+      </div>
     </div>
   `).join('');
 }
@@ -5237,21 +5253,29 @@ function renderDesktop(character?: CharacterProfile): string {
   `;
 }
 
+function settingsSectionLabel(section: SettingsSection): string {
+  for (const { items } of SETTINGS_MENU) {
+    const found = items.find(item => item.id === section);
+    if (found) return found.label;
+  }
+  return '设置';
+}
+
 function renderMobileSettings(character?: CharacterProfile): string {
   if (mobileSettingsDetail) {
     return `
-      <main class="mobile-page mobile-settings-detail">
+      <main class="mobile-page mobile-settings-detail" data-settings-detail="${activeSettingsSection}">
         <header class="mobile-topbar">
           <button class="header-back" data-settings-back aria-label="返回设置">‹</button>
-          <strong>设置</strong><span></span>
+          <strong data-morph="settings-title:${activeSettingsSection}">${escapeHtml(settingsSectionLabel(activeSettingsSection))}</strong><span></span>
         </header>
         <div class="mobile-settings-content">${renderSettingsContent(character)}</div>
       </main>
     `;
   }
   return `
-      <main class="mobile-page mobile-list-page">
-        <header class="mobile-page-header"><span class="eyebrow">PalTavern</span><h1>设置</h1><p>让这个世界按照你的方式运转。</p></header>
+      <main class="mobile-page mobile-list-page mobile-settings-home">
+        <header class="mobile-page-header"><span class="eyebrow">PalTavern</span><div class="mobile-title-row"><h1>设置</h1></div><p>让这个世界按照你的方式运转。</p></header>
       <section class="mobile-settings-list">${renderSettingsItems()}</section>
     </main>
   `;
@@ -6080,6 +6104,15 @@ function closeGroupSettingsPanel(renderTransition = true): void {
   window.clearTimeout(groupSettingsCloseTimer);
   groupSettingsCloseTimer = undefined;
   captureVisibleDraftsFromDom();
+  if (renderTransition && isCompactViewport()) {
+    // 小注释：手机上群设置整页缩回齿轮、创建面板落回底边，动画交给动效引擎。
+    groupSettingsOpen = false;
+    groupSettingsClosing = false;
+    groupSettingsMode = 'create';
+    saveUiSessionSnapshot({ captureDom: false });
+    renderWithUiTransition('overlay-out');
+    return;
+  }
   groupSettingsClosing = true;
   const finishClose = () => {
     groupSettingsCloseTimer = undefined;
@@ -6385,7 +6418,7 @@ function bindUi(): void {
   document.querySelector<HTMLButtonElement>('#enter-welcome-cover')?.addEventListener('click', () => {
     markWelcomeCoverSeen();
     welcomeCoverOpen = false;
-    render();
+    dissolveCover(render);
   });
   document.querySelector<HTMLButtonElement>('#dismiss-first-run-guide')?.addEventListener('click', () => {
     markFirstRunGuideDismissed();

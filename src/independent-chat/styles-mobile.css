@@ -5370,3 +5370,2438 @@ html[data-compact-ui] .world-gear-panel[open] .timeline-card {
   border-radius: 10px;
   box-shadow: none;
 }
+
+/* ---------- 11. 设置（分组列表 + 彩色小图标；详情页保持整页） ---------- */
+
+html[data-compact-ui] .mobile-list-page.mobile-settings-home {
+  background: var(--c-grouped);
+}
+
+html[data-compact-ui] .mobile-settings-list {
+  display: grid;
+  gap: 22px;
+  margin: 0;
+  padding: 6px 16px 28px;
+  background: transparent;
+}
+
+html[data-compact-ui] .mobile-list-page .mobile-page-header .eyebrow,
+html[data-compact-ui] .mobile-list-page .mobile-page-header > p {
+  display: none;
+}
+
+html[data-compact-ui] .settings-menu-group {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .settings-menu-group > h2 {
+  margin: 0;
+  padding: 0 4px;
+  color: var(--c-text-2);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+html[data-compact-ui] .settings-menu-cells {
+  overflow: hidden;
+  background: var(--c-cell);
+  border-radius: var(--radius-cell);
+}
+
+html[data-compact-ui] .mobile-settings-list .settings-list-item,
+html[data-compact-ui] .mobile-settings-list .settings-list-item.is-active {
+  position: relative;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  margin: 0;
+  padding: 8px 14px;
+  color: var(--c-text);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  transform: none;
+}
+
+html[data-compact-ui] .mobile-settings-list .settings-list-item::before {
+  display: none;
+}
+
+html[data-compact-ui] .mobile-settings-list .settings-list-item + .settings-list-item::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 56px;
+  height: 1px;
+  content: "";
+  background: var(--c-sep);
+}
+
+html[data-compact-ui] .mobile-settings-list .settings-list-item:active {
+  background: var(--c-press);
+}
+
+html[data-compact-ui] .settings-list-icon {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  margin: 0;
+  padding: 0;
+  place-items: center;
+  color: #ffffff;
+  border-radius: 8px;
+}
+
+html[data-compact-ui] .settings-list-icon .ui-icon {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2;
+}
+
+html[data-compact-ui] .settings-list-copy {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+html[data-compact-ui] .settings-list-copy strong {
+  justify-self: start;
+  color: var(--c-text);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+html[data-compact-ui] .settings-list-copy small {
+  overflow: hidden;
+  color: var(--c-text-2);
+  font-size: 12.5px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-compact-ui] .mobile-settings-list .settings-list-item > b {
+  color: var(--c-text-3);
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+/* 小注释：设置详情页：顶栏是返回 + 居中标题，下面浅灰底，每一块是白色圆角分组。 */
+html[data-compact-ui] .mobile-settings-detail {
+  background: var(--c-grouped);
+}
+
+html[data-compact-ui] .mobile-settings-detail > .mobile-topbar {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  margin: 0;
+  padding: 4px 52px;
+  padding-top: max(4px, env(safe-area-inset-top));
+  background: var(--c-bar);
+  border: 0;
+  border-bottom: 1px solid var(--c-sep);
+  box-shadow: none;
+}
+
+html[data-compact-ui] .mobile-settings-detail > .mobile-topbar .header-back {
+  position: absolute;
+  bottom: 6px;
+  left: 4px;
+}
+
+html[data-compact-ui] .mobile-settings-detail > .mobile-topbar strong {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--c-text);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-compact-ui] .mobile-settings-detail > .mobile-topbar > span {
+  display: none;
+}
+
+html[data-compact-ui] .mobile-settings-content {
+  margin: 0;
+  padding: 4px 0 32px;
+  padding-bottom: calc(32px + env(safe-area-inset-bottom));
+  background: transparent;
+}
+
+html[data-compact-ui] .mobile-settings-content .settings-card {
+  display: grid;
+  gap: 12px;
+  width: auto;
+  max-width: none;
+  margin: 0;
+  padding: 8px 16px 12px;
+  color: var(--c-text);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .mobile-settings-content .settings-card + .settings-card {
+  margin-top: 8px;
+}
+
+/* 小注释：每块设置的大标题已经在顶栏里了，这里只留一行灰色说明。第二块起保留小标题。 */
+html[data-compact-ui] .mobile-settings-content .settings-card:first-child > .settings-heading h2 {
+  display: none;
+}
+
+html[data-compact-ui] .mobile-settings-content .settings-heading {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0 4px;
+  border: 0;
+}
+
+html[data-compact-ui] .mobile-settings-content .settings-heading .settings-kicker {
+  display: none;
+}
+
+html[data-compact-ui] .mobile-settings-content .settings-heading h2 {
+  margin: 4px 0 0;
+  color: var(--c-text);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+html[data-compact-ui] .mobile-settings-content .settings-heading p {
+  margin: 0;
+  color: var(--c-text-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+html[data-compact-ui] .mobile-settings-content .settings-fold-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+
+html[data-compact-ui] .mobile-settings-content .settings-fold {
+  margin: 0;
+  overflow: hidden;
+  background: var(--c-cell);
+  border: 0;
+  border-radius: var(--radius-cell);
+  box-shadow: none;
+}
+
+html[data-compact-ui] .mobile-settings-content .settings-fold > summary {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 56px;
+  margin: 0;
+  padding: 8px 40px 8px 14px;
+  list-style: none;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+html[data-compact-ui] .mobile-settings-content .settings-fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+html[data-compact-ui] .mobile-settings-content .settings-fold > summary::after {
+  position: absolute;
+  top: 50%;
+  right: 16px;
+  width: 8px;
+  height: 8px;
+  margin-top: -6px;
+  content: "";
+  border-right: 2px solid var(--c-text-3);
+  border-bottom: 2px solid var(--c-text-3);
+  border-top: 0;
+  border-left: 0;
+  background: transparent;
+  transform: rotate(45deg);
+  transition: transform 200ms var(--ease-out);
+}
+
+html[data-compact-ui] .mobile-settings-content .settings-fold[open] > summary::after {
+  margin-top: -2px;
+  transform: rotate(-135deg);
+}
+
+html[data-compact-ui] .mobile-settings-content .settings-fold > summary:active {
+  background: var(--c-press);
+}
+
+html[data-compact-ui] .mobile-settings-content .settings-fold > summary > span {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+html[data-compact-ui] .mobile-settings-content .settings-fold > summary strong {
+  color: var(--c-text);
+  font-size: 16px;
+  font-weight: 500;
+}
+
+html[data-compact-ui] .mobile-settings-content .settings-fold > summary small {
+  overflow: hidden;
+  color: var(--c-text-2);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-compact-ui] .mobile-settings-content .settings-fold-body {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 4px 14px 16px;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--c-sep);
+  padding-top: 14px;
+}
+
+html[data-compact-ui] .mobile-settings-content .field > span,
+html[data-compact-ui] .mobile-settings-content .field > legend {
+  color: var(--c-text-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+html[data-compact-ui] .mobile-settings-content .field input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+html[data-compact-ui] .mobile-settings-content .field textarea,
+html[data-compact-ui] .mobile-settings-content .field select,
+html[data-compact-ui] .mobile-settings-content > .settings-card > .field select {
+  min-height: 44px;
+  color: var(--c-text);
+  font-size: 16px;
+  background-color: var(--c-fill-soft);
+  border: 1px solid var(--c-sep);
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .mobile-settings-content .field textarea {
+  min-height: 88px;
+  line-height: 1.5;
+}
+
+html[data-compact-ui] .mobile-settings-content .field input:focus,
+html[data-compact-ui] .mobile-settings-content .field textarea:focus,
+html[data-compact-ui] .mobile-settings-content .field select:focus {
+  background-color: var(--c-cell);
+  border-color: var(--accent);
+  box-shadow: none;
+  outline: none;
+}
+
+html[data-compact-ui] .mobile-settings-content .field-inline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+}
+
+html[data-compact-ui] .mobile-settings-content .field-inline > span {
+  color: var(--c-text);
+  font-size: 15px;
+  font-weight: 400;
+}
+
+html[data-compact-ui] .mobile-settings-content .field-inline input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+html[data-compact-ui] .mobile-settings-content .muted {
+  color: var(--c-text-3);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+html[data-compact-ui] .mobile-settings-content .settings-divider {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--c-sep);
+  border: 0;
+}
+
+html[data-compact-ui] .mobile-settings-content button.primary,
+html[data-compact-ui] .mobile-settings-content button.secondary,
+html[data-compact-ui] .mobile-settings-content button.danger,
+html[data-compact-ui] .mobile-settings-content .file-button {
+  min-height: 44px;
+  padding: 0 16px;
+  font-size: 15px;
+  font-weight: 600;
+  border: 0;
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .mobile-settings-content button.secondary,
+html[data-compact-ui] .mobile-settings-content .file-button.secondary-file,
+html[data-compact-ui] .mobile-settings-content .file-button {
+  color: var(--accent);
+  background: var(--c-cell);
+}
+
+html[data-compact-ui] .mobile-settings-content .settings-fold-body button.secondary,
+html[data-compact-ui] .mobile-settings-content .settings-fold-body .file-button {
+  background: var(--accent-soft);
+}
+
+html[data-compact-ui] .mobile-settings-content button.danger {
+  color: #e5484d;
+  background: var(--c-cell);
+}
+
+html[data-compact-ui] .mobile-settings-content .settings-fold-body button.danger {
+  background: rgba(229, 72, 77, 0.1);
+}
+
+html[data-compact-ui] .mobile-settings-content button.primary {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+
+html[data-compact-ui] .mobile-settings-content > .settings-card > button {
+  width: 100%;
+}
+
+/* 小注释：设置页里“管理哪位角色”的选择块、表情包分区、提示词条目、外观分组：都换成白色圆角分组，不再带主题色底。 */
+html[data-compact-ui] .mobile-settings-content .relationship-character-selector,
+html[data-compact-ui] .mobile-settings-content .sticker-character-selector,
+html[data-compact-ui] .mobile-settings-content .sticker-library,
+html[data-compact-ui] .mobile-settings-content .appearance-group {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 14px;
+  background: var(--c-cell);
+  border: 0;
+  border-radius: var(--radius-cell);
+  box-shadow: none;
+}
+
+html[data-compact-ui] .mobile-settings-content .settings-fold-body .relationship-character-selector {
+  padding: 0;
+  background: transparent;
+}
+
+html[data-compact-ui] .mobile-settings-content .relationship-character-preview,
+html[data-compact-ui] .mobile-settings-content .sticker-character-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .mobile-settings-content .relationship-character-preview .avatar,
+html[data-compact-ui] .mobile-settings-content .sticker-character-preview .avatar {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .mobile-settings-content .relationship-character-preview .avatar img,
+html[data-compact-ui] .mobile-settings-content .sticker-character-preview .avatar img {
+  border-radius: 50%;
+}
+
+html[data-compact-ui] .mobile-settings-content .relationship-character-preview small,
+html[data-compact-ui] .mobile-settings-content .sticker-character-preview small {
+  color: var(--c-text-3);
+  font-size: 12px;
+}
+
+html[data-compact-ui] .mobile-settings-content .sticker-settings-card > .settings-divider {
+  display: none;
+}
+
+html[data-compact-ui] .mobile-settings-content .sticker-library-heading strong {
+  color: var(--c-text);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+html[data-compact-ui] .mobile-settings-content .sticker-library-heading span {
+  color: var(--c-text-3);
+  font-size: 12px;
+}
+
+html[data-compact-ui] .mobile-settings-content .sticker-import-button {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  justify-self: start;
+  gap: 6px;
+  min-height: 36px;
+  height: 36px;
+  padding: 0 14px;
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+  background: var(--accent-soft);
+  border: 0;
+  border-radius: 18px;
+}
+
+html[data-compact-ui] .mobile-settings-content .sticker-import-button .ui-icon {
+  width: 16px;
+  height: 16px;
+}
+
+html[data-compact-ui] .mobile-settings-content .sticker-empty {
+  margin: 0;
+  padding: 14px;
+  color: var(--c-text-3);
+  font-size: 13px;
+  text-align: center;
+  background: var(--c-fill-soft);
+  border: 0;
+  border-radius: 10px;
+}
+
+html[data-compact-ui] .mobile-settings-content .appearance-group h3 {
+  margin: 0;
+  color: var(--c-text-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+html[data-compact-ui] .mobile-settings-content .prompt-preset-list,
+html[data-compact-ui] .mobile-settings-content .prompt-regex-list {
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+  background: var(--c-cell);
+  border-radius: var(--radius-cell);
+}
+
+html[data-compact-ui] .mobile-settings-content .prompt-preset-row,
+html[data-compact-ui] .mobile-settings-content .prompt-preset-row.is-enabled,
+html[data-compact-ui] .mobile-settings-content .prompt-regex-row,
+html[data-compact-ui] .mobile-settings-content .prompt-regex-row.is-enabled {
+  margin: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .mobile-settings-content .prompt-preset-row + .prompt-preset-row,
+html[data-compact-ui] .mobile-settings-content .prompt-regex-row + .prompt-regex-row {
+  border-top: 1px solid var(--c-sep);
+}
+
+html[data-compact-ui] .mobile-settings-content .prompt-preset-row-summary {
+  padding: 10px 14px;
+}
+
+html[data-compact-ui] .mobile-settings-content .prompt-preset-summary {
+  margin: 0;
+  padding: 0 4px;
+  background: transparent;
+  border: 0;
+}
+
+html[data-compact-ui] .mobile-settings-content .prompt-preset-summary strong {
+  color: var(--c-text);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+html[data-compact-ui] .mobile-settings-content .prompt-preset-summary span {
+  color: var(--c-text-3);
+  font-size: 12px;
+}
+
+html[data-compact-ui] .mobile-settings-content .prompt-regex-head h2,
+html[data-compact-ui] .mobile-settings-content > .settings-card > h2 {
+  margin: 8px 4px 0;
+  color: var(--c-text);
+  font-size: 17px;
+  font-weight: 600;
+}
+
+html[data-compact-ui] .mobile-settings-content .prompt-preset-compat {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0 14px;
+  overflow: hidden;
+  background: var(--c-cell);
+  border-radius: var(--radius-cell);
+}
+
+html[data-compact-ui] .mobile-settings-content .prompt-preset-compat p {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 10px 0;
+  font-size: 13px;
+}
+
+html[data-compact-ui] .mobile-settings-content .prompt-preset-compat p + p {
+  border-top: 1px solid var(--c-sep);
+}
+
+html[data-compact-ui] .mobile-settings-content .prompt-preset-compat strong {
+  color: var(--c-text);
+  font-weight: 500;
+}
+
+html[data-compact-ui] .mobile-settings-content .prompt-preset-compat span {
+  color: var(--c-text-2);
+}
+
+/* ---------- 12. 群聊（列表页、聊天气泡、群设置） ---------- */
+
+/* 小注释：群聊列表页：顶栏和设置子页一样（返回 + 居中标题 + 右侧“+”），列表行和消息页完全一致。 */
+html[data-compact-ui] .mobile-group-list-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--c-bg);
+  animation: none;
+}
+
+html[data-compact-ui] .mobile-group-list-page > .group-list-topbar {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  margin: 0;
+  padding: 4px 56px;
+  padding-top: max(4px, env(safe-area-inset-top));
+  background: var(--c-bar);
+  border: 0;
+  border-bottom: 1px solid var(--c-sep);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .mobile-group-list-page > .group-list-topbar .header-back {
+  position: absolute;
+  bottom: 6px;
+  left: 4px;
+}
+
+html[data-compact-ui] .mobile-group-list-page > .group-list-topbar > div {
+  display: block;
+  min-width: 0;
+  text-align: center;
+}
+
+html[data-compact-ui] .mobile-group-list-page > .group-list-topbar .eyebrow,
+html[data-compact-ui] .mobile-group-list-page > .group-list-topbar p {
+  display: none;
+}
+
+html[data-compact-ui] .mobile-group-list-page > .group-list-topbar h1 {
+  margin: 0;
+  color: var(--c-text);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+html[data-compact-ui] .mobile-group-list-page > .group-list-topbar .group-list-create {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: grid;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  place-items: center;
+  color: var(--accent);
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .mobile-group-list-page > .group-list-topbar .group-list-create:active {
+  background: var(--c-press);
+}
+
+html[data-compact-ui] .mobile-group-list-page > .group-list-topbar .group-list-create > span {
+  display: none;
+}
+
+html[data-compact-ui] .mobile-group-list-page > .group-list-topbar .group-list-create .ui-icon {
+  width: 24px;
+  height: 24px;
+}
+
+html[data-compact-ui] .mobile-group-list-page > .group-list-tools {
+  display: grid;
+  flex: none;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 16px 8px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .mobile-group-list-page .group-list-tools .world-switcher {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .mobile-group-list-page .group-list-tools .world-switcher > span {
+  flex: none;
+  color: var(--c-text-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+html[data-compact-ui] .mobile-group-list-page .group-list-tools .world-switcher select {
+  width: auto;
+  min-width: 0;
+  max-width: 70%;
+  height: 30px;
+  min-height: 30px;
+  padding: 0 28px 0 12px;
+  color: var(--c-text);
+  font-size: 13px;
+  font-weight: 600;
+  background-color: var(--c-fill-soft);
+  border: 1px solid var(--c-sep);
+  border-radius: 15px;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .mobile-group-list-page > .group-list-surface {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0 0 24px;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .mobile-group-list-page .group-list-empty {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  margin: 48px 24px;
+  padding: 0;
+  color: var(--c-text-2);
+  text-align: center;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .mobile-group-list-page .group-list-empty strong {
+  color: var(--c-text);
+  font-size: 17px;
+  font-weight: 600;
+}
+
+html[data-compact-ui] .mobile-group-list-page .group-list-empty p {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+html[data-compact-ui] .mobile-group-list-page .group-list-empty .primary {
+  min-height: 40px;
+  padding: 0 20px;
+  color: var(--on-accent);
+  font-size: 15px;
+  font-weight: 600;
+  background: var(--accent);
+  border: 0;
+  border-radius: 20px;
+  box-shadow: none;
+}
+
+/* 小注释：群聊顶栏的拼图头像和列表行一样裁成圆形，打开群聊时从列表飞上来不会变形。 */
+html[data-compact-ui] .mobile-chat-detail .chat-identity .group-avatar-stack {
+  position: relative;
+  display: grid;
+  flex: none;
+  grid-template-columns: 1fr 1fr;
+  grid-auto-rows: 1fr;
+  gap: 1px;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--c-sep);
+  border: 0;
+  border-radius: 50%;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .mobile-chat-detail .chat-identity .group-avatar-stack > .avatar {
+  position: static;
+  width: auto;
+  min-width: 0;
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  font-size: 8px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  transform: none;
+}
+
+html[data-compact-ui] .mobile-chat-detail .chat-identity .group-avatar-stack[data-group-avatar-count="1"] {
+  grid-template-columns: 1fr;
+}
+
+html[data-compact-ui] .mobile-chat-detail .chat-identity .group-avatar-stack[data-group-avatar-count="2"] > .avatar {
+  grid-row: span 2;
+}
+
+html[data-compact-ui] .mobile-chat-detail .chat-identity .group-avatar-stack[data-group-avatar-count="3"] > .avatar:first-child {
+  grid-row: span 2;
+}
+
+html[data-compact-ui] .mobile-chat-detail .chat-identity .group-avatar-stack > .group-avatar-fallback {
+  width: 100%;
+  height: 100%;
+  font-size: 14px;
+}
+
+/* 小注释：群聊消息：角色浅灰气泡在左、名字写在气泡顶部；自己的主题色气泡在右，不显示“我”的头像和名字。 */
+html[data-compact-ui] .mobile-group-chat .group-chat-main {
+  min-height: 0;
+  background: transparent;
+}
+
+html[data-compact-ui] .mobile-group-chat .group-messages {
+  gap: 6px;
+  padding: 12px 10px 16px;
+}
+
+html[data-compact-ui] .mobile-group-chat .group-message {
+  grid-template-columns: 32px minmax(0, auto);
+  gap: 8px;
+  max-width: 86%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .mobile-group-chat .group-message.is-character {
+  align-self: flex-start;
+}
+
+html[data-compact-ui] .mobile-group-chat .group-message.is-user {
+  grid-template-columns: minmax(0, auto);
+  align-self: flex-end;
+  max-width: 78%;
+}
+
+html[data-compact-ui] .mobile-group-chat .group-message.is-actions-open-above {
+  margin-top: 56px;
+}
+
+html[data-compact-ui] .mobile-group-chat .group-message-avatar {
+  display: grid;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  margin: 0 0 1px;
+  padding: 0;
+  place-items: center;
+  overflow: hidden;
+  font-size: 13px;
+  border: 0;
+  border-radius: 50%;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .mobile-group-chat .group-message-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+html[data-compact-ui] .mobile-group-chat .group-message.is-user .group-message-avatar {
+  display: none;
+}
+
+html[data-compact-ui] .mobile-group-chat .group-message-body {
+  gap: 1px;
+  padding: 7px 13px 8px;
+  color: var(--bubble-in-text);
+  background: var(--bubble-in);
+  border: 0;
+  border-radius: 18px;
+  border-bottom-left-radius: 6px;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .mobile-group-chat .group-message.is-user .group-message-body {
+  grid-column: 1;
+  color: var(--bubble-out-text);
+  background: var(--user-bubble-bg);
+  border-radius: 18px;
+  border-bottom-right-radius: 6px;
+}
+
+html[data-compact-ui] .mobile-group-chat .group-message.is-authored-character .group-message-body {
+  background: var(--accent-soft);
+  border: 0;
+}
+
+html[data-compact-ui] .mobile-group-chat .group-message-body header {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+}
+
+html[data-compact-ui] .mobile-group-chat .group-message.is-user .group-message-body header {
+  display: none;
+}
+
+html[data-compact-ui] .mobile-group-chat .group-message-body header strong {
+  overflow: hidden;
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-compact-ui] .mobile-group-chat .group-message-body header small {
+  flex: none;
+  color: var(--c-text-3);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+html[data-compact-ui] .mobile-group-chat .group-message-body p {
+  margin: 0;
+  font-size: 16px;
+  font-size: calc(16px * var(--chat-font-scale, 1));
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+html[data-compact-ui] .mobile-group-chat .group-message-actions {
+  gap: 0;
+  padding: 4px;
+  background: #2a2c30;
+  border: 0;
+  border-radius: 14px;
+  box-shadow: var(--c-shadow-float);
+}
+
+html[data-compact-ui] .mobile-group-chat .group-message-actions button {
+  min-width: 56px;
+  min-height: 40px;
+  padding: 0 12px;
+  color: #f1f2f4;
+  font-size: 13px;
+  font-weight: 500;
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+}
+
+html[data-compact-ui] .mobile-group-chat .group-message-actions button + button {
+  border-left: 0;
+}
+
+html[data-compact-ui] .mobile-group-chat .group-message-actions button:active {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+html[data-compact-ui] .mobile-group-chat .group-message-actions button[data-delete-group-message] {
+  color: #ff6b6b;
+}
+
+html[data-compact-ui] .mobile-group-chat .group-recalled-message,
+html[data-compact-ui] .mobile-group-chat .group-generation-hint {
+  align-self: center;
+  margin: 8px 0;
+  padding: 0;
+  color: var(--c-text-3);
+  font-size: 12px;
+  text-align: center;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+/* 小注释：群聊输入栏不在私聊那个输入区外壳里，这里单独补上半透明底和顶部细线。 */
+html[data-compact-ui] .mobile-group-chat .group-composer {
+  position: relative;
+  z-index: 3;
+  background: var(--c-bar);
+  border-top: 1px solid var(--c-sep);
+}
+
+/* 小注释：群设置。改设置是一整页（浅灰底 + 白色分组），新建群聊是从底部升起的面板；
+   保存和取消固定在最下面一条，不用滚到中间去找。 */
+html[data-compact-ui] .group-settings-overlay {
+  z-index: 140;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+html[data-compact-ui] .group-settings-backdrop {
+  background: var(--c-scrim);
+}
+
+html[data-compact-ui] .group-settings-panel,
+html[data-compact-ui] .group-settings-panel.is-entering,
+html[data-compact-ui] .group-settings-panel.is-exiting,
+html[data-compact-ui] .group-settings-panel[data-group-settings-mode="create"],
+html[data-compact-ui] .group-settings-panel[data-group-settings-mode="create"].is-entering,
+html[data-compact-ui] .group-settings-panel[data-group-settings-mode="create"].is-exiting,
+html[data-compact-ui][data-ui-transition="overlay-in"] .group-settings-panel[data-group-settings-mode="create"] {
+  animation: none;
+  will-change: auto;
+}
+
+html[data-compact-ui] .group-settings-panel {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0 16px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  color: var(--c-text);
+  background: var(--c-grouped);
+  border: 0;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .group-settings-panel[data-group-settings-mode="edit"] {
+  align-self: stretch;
+  height: 100%;
+  height: 100dvh;
+  max-height: none;
+  border-radius: 0;
+}
+
+html[data-compact-ui] .group-settings-panel[data-group-settings-mode="create"] {
+  max-height: 88%;
+  max-height: calc(100dvh - 48px);
+  background: var(--c-sheet);
+  border-radius: 14px 14px 0 0;
+  box-shadow: var(--c-shadow-float);
+}
+
+html[data-compact-ui] .group-settings-panel > .group-settings-header {
+  position: -webkit-sticky;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  margin: 0 -16px;
+  padding: 4px 56px;
+  padding-top: max(4px, env(safe-area-inset-top));
+  background: var(--c-bar);
+  border: 0;
+  border-bottom: 1px solid var(--c-sep);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+}
+
+html[data-compact-ui] .group-settings-panel[data-group-settings-mode="create"] > .group-settings-header {
+  padding-top: 14px;
+  background: var(--c-sheet);
+  border-bottom: 0;
+}
+
+/* 小注释：底部面板顶上的小横条，提示可以往下收。 */
+html[data-compact-ui] .group-settings-panel[data-group-settings-mode="create"] > .group-settings-header::before {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  width: 36px;
+  height: 5px;
+  margin-left: -18px;
+  content: "";
+  background: var(--c-sep-strong);
+  border-radius: 3px;
+}
+
+html[data-compact-ui] .group-settings-panel > .group-settings-header > div {
+  display: block;
+  min-width: 0;
+  text-align: center;
+}
+
+html[data-compact-ui] .group-settings-panel > .group-settings-header .settings-kicker {
+  display: none;
+}
+
+html[data-compact-ui] .group-settings-panel > .group-settings-header h2 {
+  margin: 0;
+  overflow: hidden;
+  color: var(--c-text);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-compact-ui] .group-settings-panel > .group-settings-header > .icon-button {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: grid;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0 0 2px;
+  place-items: center;
+  color: var(--c-text-2);
+  font-size: 20px;
+  line-height: 1;
+  background: var(--c-fill);
+  border: 0;
+  border-radius: 50%;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .group-settings-panel > .group-settings-header > .icon-button:active {
+  background: var(--c-press);
+}
+
+/* 小注释：每一块都是白色圆角分组，不加边框和阴影。 */
+html[data-compact-ui] .group-settings-panel > .field,
+html[data-compact-ui] .group-settings-panel > .group-speaker-switch,
+html[data-compact-ui] .group-settings-panel > .chat-background-control,
+html[data-compact-ui] .group-settings-panel > .group-settings-section {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 14px;
+  background: var(--c-cell);
+  border: 0;
+  border-radius: var(--radius-cell);
+  box-shadow: none;
+}
+
+html[data-compact-ui] .group-settings-panel[data-group-settings-mode="create"] > .field,
+html[data-compact-ui] .group-settings-panel[data-group-settings-mode="create"] > .group-settings-section {
+  background: var(--c-sheet-cell);
+}
+
+html[data-compact-ui] .group-settings-panel > .group-settings-header + * {
+  margin-top: 4px;
+}
+
+html[data-compact-ui] .group-settings-panel .field {
+  gap: 6px;
+}
+
+html[data-compact-ui] .group-settings-panel .field > span {
+  color: var(--c-text-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+html[data-compact-ui] .group-settings-panel .field input,
+html[data-compact-ui] .group-settings-panel .field select {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  color: var(--c-text);
+  font-size: 16px;
+  background-color: var(--c-fill-soft);
+  border: 1px solid var(--c-sep);
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .group-settings-panel .field > small {
+  color: var(--c-text-3);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+html[data-compact-ui] .group-settings-panel .mobile-section-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+}
+
+html[data-compact-ui] .group-settings-panel .mobile-section-label strong {
+  flex: none;
+  color: var(--c-text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+html[data-compact-ui] .group-settings-panel .mobile-section-label span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--c-text-3);
+  font-size: 12px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-compact-ui] .group-settings-panel .muted {
+  margin: 0;
+  color: var(--c-text-3);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* 小注释：发言身份是一行只读信息：左边标题，右边当前身份，下面一行说明。 */
+html[data-compact-ui] .group-settings-panel > .group-speaker-switch {
+  grid-template-columns: minmax(0, 1fr) auto;
+  justify-self: stretch;
+  width: auto;
+  max-width: none;
+  gap: 2px 12px;
+  align-items: center;
+}
+
+html[data-compact-ui] .group-settings-panel .group-speaker-switch > span {
+  color: var(--c-text);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+html[data-compact-ui] .group-settings-panel .group-speaker-switch > strong {
+  color: var(--c-text-2);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+html[data-compact-ui] .group-settings-panel .group-speaker-switch > small {
+  grid-column: 1 / -1;
+  color: var(--c-text-3);
+  font-size: 12px;
+}
+
+html[data-compact-ui] .group-settings-panel .chat-background-preview {
+  min-height: 88px;
+  background-color: var(--c-fill-soft);
+  border: 0;
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .group-settings-panel .chat-background-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0;
+}
+
+/* 小注释：群成员是一列带勾选框的行：头像、名字，勾选框在最右边。 */
+html[data-compact-ui] .group-settings-panel .group-participant-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  margin: 0 -14px -12px;
+}
+
+html[data-compact-ui] .group-settings-panel .group-participant-option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  margin: 0;
+  padding: 8px 14px;
+  color: var(--c-text);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .group-settings-panel .group-participant-option + .group-participant-option::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 62px;
+  height: 1px;
+  content: "";
+  background: var(--c-sep);
+}
+
+html[data-compact-ui] .group-settings-panel .group-participant-option:active {
+  background: var(--c-press);
+}
+
+html[data-compact-ui] .group-settings-panel .group-participant-option input {
+  flex: none;
+  order: 3;
+  width: 22px;
+  height: 22px;
+  margin: 0 0 0 auto;
+  accent-color: var(--accent);
+}
+
+html[data-compact-ui] .group-settings-panel .group-participant-option .avatar {
+  flex: none;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  margin: 0;
+  font-size: 14px;
+  border: 0;
+  border-radius: 50%;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .group-settings-panel .group-participant-option .avatar img {
+  border-radius: 50%;
+}
+
+html[data-compact-ui] .group-settings-panel .group-participant-option strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 16px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 小注释：开关行：左边标题和说明，右边开关。耗 token 的那项只把说明字染成提醒色。 */
+html[data-compact-ui] .group-settings-panel .group-reply-toggle,
+html[data-compact-ui] .group-settings-panel .group-reply-toggle.group-expensive-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 -14px;
+  padding: 10px 14px 2px;
+  color: var(--c-text);
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--c-sep);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .group-settings-panel .group-reply-toggle > span:first-child {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 2px;
+  min-width: 0;
+}
+
+html[data-compact-ui] .group-settings-panel .group-reply-toggle strong {
+  color: var(--c-text);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+html[data-compact-ui] .group-settings-panel .group-reply-toggle small {
+  color: var(--c-text-3);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+html[data-compact-ui] .group-settings-panel .group-expensive-toggle small {
+  color: #d97706;
+}
+
+html[data-compact-ui] .group-settings-panel .group-reply-toggle .switch-control {
+  flex: none;
+}
+
+/* 小注释：按钮：主按钮主题色实心，其它按钮浅底主题色字；危险操作用红字。 */
+html[data-compact-ui] .group-settings-panel .primary,
+html[data-compact-ui] .group-settings-panel .secondary,
+html[data-compact-ui] .group-settings-panel .danger,
+html[data-compact-ui] .group-settings-panel .file-button.secondary-file {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 14px;
+  font-size: 15px;
+  font-weight: 600;
+  border: 0;
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .group-settings-panel .primary {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+
+html[data-compact-ui] .group-settings-panel .secondary,
+html[data-compact-ui] .group-settings-panel .file-button.secondary-file {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+html[data-compact-ui] .group-settings-panel .danger {
+  color: #e5484d;
+  background: rgba(229, 72, 77, 0.1);
+}
+
+html[data-compact-ui] .group-settings-panel .primary:disabled,
+html[data-compact-ui] .group-settings-panel .secondary:disabled,
+html[data-compact-ui] .group-settings-panel .danger:disabled {
+  color: var(--c-text-3);
+  background: var(--c-fill-soft);
+  opacity: 1;
+}
+
+html[data-compact-ui] .group-settings-panel .primary:active,
+html[data-compact-ui] .group-settings-panel .secondary:active,
+html[data-compact-ui] .group-settings-panel .danger:active,
+html[data-compact-ui] .group-settings-panel .file-button.secondary-file:active {
+  opacity: 0.8;
+}
+
+html[data-compact-ui] .group-settings-panel .group-generation-panel,
+html[data-compact-ui] .group-settings-panel .group-danger-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 4px 0 0;
+}
+
+html[data-compact-ui] .group-settings-panel .group-member-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+}
+
+html[data-compact-ui] .group-settings-panel .group-member-actions .secondary {
+  width: auto;
+  min-height: 34px;
+  padding: 0 14px;
+  font-size: 14px;
+  border-radius: 17px;
+}
+
+/* 小注释：取消 / 保存挪到最后，并贴在页面底边。 */
+html[data-compact-ui] .group-settings-panel > .group-settings-actions {
+  position: -webkit-sticky;
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 1fr 1.6fr;
+  gap: 10px;
+  order: 10;
+  margin: 4px -16px 0;
+  padding: 10px 16px;
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
+  background: var(--c-bar);
+  border: 0;
+  border-top: 1px solid var(--c-sep);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+}
+
+html[data-compact-ui] .group-settings-panel[data-group-settings-mode="create"] > .group-settings-actions {
+  background: var(--c-sheet);
+}
+
+html[data-compact-ui] .group-settings-panel > .group-settings-actions .secondary {
+  color: var(--c-text);
+  background: var(--c-fill);
+}
+
+/* ---------- 13. 欢迎页（只留图标、标题、一句话和进入按钮） ---------- */
+
+html[data-compact-ui] .welcome-cover-overlay {
+  padding: 0;
+  color: var(--c-text);
+  background: var(--c-bg);
+}
+
+html[data-compact-ui] .welcome-cover-screen {
+  width: 100%;
+  min-height: 100%;
+  min-height: 100dvh;
+  padding: 24px 24px 0;
+  padding-top: max(24px, env(safe-area-inset-top));
+}
+
+html[data-compact-ui] .welcome-cover-ambient {
+  display: none;
+}
+
+html[data-compact-ui] .welcome-cover-brand {
+  justify-items: center;
+  gap: 0;
+  max-width: 320px;
+  margin-top: -64px;
+  animation: none;
+}
+
+html[data-compact-ui] .welcome-cover-mark {
+  display: grid;
+  width: 76px;
+  height: 76px;
+  margin: 0 0 22px;
+  place-items: center;
+  color: var(--on-accent);
+  background: var(--accent);
+  border-radius: 22px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12);
+}
+
+html[data-compact-ui] .welcome-cover-mark .ui-icon {
+  width: 38px;
+  height: 38px;
+  stroke-width: 1.8;
+}
+
+html[data-compact-ui] .welcome-cover-brand h1 {
+  margin: 0 0 8px;
+  color: var(--c-text);
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+html[data-compact-ui] .welcome-cover-brand p {
+  margin: 0;
+  color: var(--c-text-2);
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+html[data-compact-ui] .welcome-cover-enter {
+  right: 24px;
+  bottom: 32px;
+  bottom: max(32px, calc(env(safe-area-inset-bottom) + 16px));
+  left: 24px;
+  width: auto;
+  min-height: 50px;
+  padding: 0 22px;
+  color: var(--on-accent);
+  font-size: 17px;
+  font-weight: 600;
+  background: var(--accent);
+  border: 0;
+  border-radius: 14px;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .welcome-cover-enter:active {
+  opacity: 0.85;
+}
+
+/* ---------- 14. 新手引导（连接模型、陪伴时间、聊天方式、动态教程）：统一成底部面板 ---------- */
+
+html[data-compact-ui] .model-onboarding-overlay,
+html[data-compact-ui] .time-mode-onboarding-overlay,
+html[data-compact-ui] .reply-mode-onboarding-overlay {
+  align-items: end;
+  padding: 0;
+  background: var(--c-scrim);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+html[data-compact-ui] .model-onboarding-window,
+html[data-compact-ui] .time-mode-onboarding-window,
+html[data-compact-ui] .reply-mode-onboarding-window {
+  position: relative;
+  width: 100%;
+  max-width: none;
+  max-height: 92%;
+  max-height: calc(100dvh - max(28px, env(safe-area-inset-top)));
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  color: var(--c-text);
+  background: var(--c-sheet);
+  border: 0;
+  border-radius: 14px 14px 0 0;
+  box-shadow: var(--c-shadow-float);
+  animation: none;
+}
+
+/* 小注释：面板顶上的小横条。 */
+html[data-compact-ui] .model-onboarding-window::before,
+html[data-compact-ui] .time-mode-onboarding-window::before,
+html[data-compact-ui] .reply-mode-onboarding-window::before {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  width: 36px;
+  height: 5px;
+  margin-left: -18px;
+  content: "";
+  background: var(--c-sep-strong);
+  border-radius: 3px;
+}
+
+/* 小注释：标题区居中：图标方块、小字标签、大标题、一句说明。 */
+html[data-compact-ui] .model-onboarding-header,
+html[data-compact-ui] .time-mode-onboarding-header,
+html[data-compact-ui] .reply-mode-onboarding-header {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  margin: 0;
+  padding: 26px 20px 14px;
+  text-align: center;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .model-onboarding-mark,
+html[data-compact-ui] .time-mode-mark,
+html[data-compact-ui] .reply-mode-mark {
+  display: grid;
+  flex: none;
+  width: 48px;
+  height: 48px;
+  margin: 0;
+  place-items: center;
+  color: var(--on-accent);
+  background: var(--accent);
+  border: 0;
+  border-radius: 14px;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .model-onboarding-mark .ui-icon,
+html[data-compact-ui] .time-mode-mark .ui-icon,
+html[data-compact-ui] .reply-mode-mark .ui-icon {
+  width: 24px;
+  height: 24px;
+}
+
+html[data-compact-ui] .model-onboarding-header > div:last-child,
+html[data-compact-ui] .time-mode-onboarding-header > div:last-child,
+html[data-compact-ui] .reply-mode-onboarding-header > div:last-child {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+html[data-compact-ui] .model-onboarding-step,
+html[data-compact-ui] .time-mode-onboarding-header > div:last-child > span,
+html[data-compact-ui] .reply-mode-onboarding-header > div:last-child > span {
+  display: block;
+  margin: 0;
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+html[data-compact-ui] .model-onboarding-header h1,
+html[data-compact-ui] .time-mode-onboarding-header h1,
+html[data-compact-ui] .reply-mode-onboarding-header h1 {
+  margin: 0;
+  color: var(--c-text);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: 0;
+}
+
+html[data-compact-ui] .model-onboarding-header p,
+html[data-compact-ui] .time-mode-onboarding-header p,
+html[data-compact-ui] .reply-mode-onboarding-header p {
+  max-width: 320px;
+  margin: 2px 0 0;
+  color: var(--c-text-2);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+/* 小注释：表单内容：白色圆角分组，输入框是浅灰块。 */
+html[data-compact-ui] .model-onboarding-form,
+html[data-compact-ui] .time-mode-onboarding-body {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 4px 16px 14px;
+}
+
+html[data-compact-ui] .model-onboarding-form {
+  padding: 14px;
+  margin: 4px 16px 14px;
+  background: var(--c-sheet-cell);
+  border-radius: var(--radius-cell);
+}
+
+html[data-compact-ui] .model-onboarding-form .field,
+html[data-compact-ui] .time-mode-onboarding-body .field {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+html[data-compact-ui] .model-onboarding-form .field > span,
+html[data-compact-ui] .time-mode-onboarding-body .field > span {
+  color: var(--c-text-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+html[data-compact-ui] .model-onboarding-form .field input,
+html[data-compact-ui] .model-onboarding-form .field select,
+html[data-compact-ui] .time-mode-onboarding-body .field input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  color: var(--c-text);
+  font-size: 16px;
+  background-color: var(--c-fill-soft);
+  border: 1px solid var(--c-sep);
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .model-onboarding-model-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  align-items: end;
+}
+
+html[data-compact-ui] .model-onboarding-model-row > .field {
+  grid-column: 1 / -1;
+}
+
+html[data-compact-ui] .model-onboarding-form .secondary {
+  min-height: 42px;
+  margin: 0;
+  padding: 0 12px;
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 600;
+  background: var(--accent-soft);
+  border: 0;
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .model-onboarding-form .secondary:disabled {
+  color: var(--c-text-3);
+  background: var(--c-fill-soft);
+  opacity: 1;
+}
+
+html[data-compact-ui] .model-onboarding-status,
+html[data-compact-ui] .model-onboarding-status.is-error {
+  margin: 0;
+  padding: 0;
+  color: var(--c-text-3);
+  font-size: 12.5px;
+  line-height: 1.5;
+  background: transparent;
+  border: 0;
+}
+
+html[data-compact-ui] .model-onboarding-status.is-error {
+  color: #e5484d;
+}
+
+/* 小注释：底部按钮条贴在面板底边。 */
+html[data-compact-ui] .model-onboarding-actions,
+html[data-compact-ui] .time-mode-onboarding-actions {
+  position: -webkit-sticky;
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 16px;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+  background: var(--c-sheet);
+  border: 0;
+  border-top: 1px solid var(--c-sep);
+}
+
+html[data-compact-ui] .model-onboarding-actions {
+  grid-template-columns: 1fr 1.6fr;
+}
+
+html[data-compact-ui] .model-onboarding-actions button,
+html[data-compact-ui] .time-mode-onboarding-actions button {
+  width: 100%;
+  min-height: 48px;
+  margin: 0;
+  padding: 0 14px;
+  font-size: 16px;
+  font-weight: 600;
+  border: 0;
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .model-onboarding-actions .primary,
+html[data-compact-ui] .time-mode-onboarding-actions .primary {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+
+html[data-compact-ui] .model-onboarding-actions .secondary {
+  color: var(--c-text);
+  background: var(--c-fill);
+}
+
+/* 小注释：陪伴时间：两个选项是同一个白色分组里的两行单选；虚拟时钟是下面一块。
+   这套样式在设置里的“陪伴时间”也一起用。 */
+html[data-compact-ui] .time-mode-settings {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--c-sheet-cell);
+  border: 0;
+  border-radius: var(--radius-cell);
+}
+
+html[data-compact-ui] .time-mode-settings .time-mode-option,
+html[data-compact-ui] .time-mode-settings .time-mode-option.is-active {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0;
+  padding: 13px 14px;
+  color: var(--c-text);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .time-mode-settings .time-mode-option + .time-mode-option::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 46px;
+  height: 1px;
+  content: "";
+  background: var(--c-sep);
+}
+
+html[data-compact-ui] .time-mode-settings .time-mode-option:active {
+  background: var(--c-press);
+}
+
+html[data-compact-ui] .time-mode-settings .time-mode-option input {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin: 1px 0 0;
+  accent-color: var(--accent);
+}
+
+html[data-compact-ui] .time-mode-settings .time-mode-option span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+html[data-compact-ui] .time-mode-settings .time-mode-option strong {
+  font-size: 15.5px;
+  font-weight: 500;
+}
+
+html[data-compact-ui] .time-mode-settings .time-mode-option small {
+  color: var(--c-text-2);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+html[data-compact-ui] .virtual-clock-control {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  margin: 0;
+  padding: 14px;
+  background: var(--c-sheet-cell);
+  border: 0;
+  border-radius: var(--radius-cell);
+  box-shadow: none;
+}
+
+html[data-compact-ui] .virtual-clock-control.is-disabled {
+  opacity: 0.5;
+}
+
+html[data-compact-ui] .virtual-clock-readout {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 0;
+  text-align: center;
+  background: transparent;
+  border: 0;
+}
+
+html[data-compact-ui] .virtual-clock-readout strong {
+  color: var(--c-text);
+  font-size: 34px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+html[data-compact-ui] .virtual-clock-readout span {
+  color: var(--c-text-3);
+  font-size: 12px;
+}
+
+html[data-compact-ui] .virtual-clock-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+html[data-compact-ui] .virtual-clock-range {
+  width: 100%;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+/* 小注释：聊天方式：两个大选项行，点了直接生效。 */
+html[data-compact-ui] .reply-mode-onboarding-options {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 4px 16px 20px;
+  padding-bottom: max(20px, calc(env(safe-area-inset-bottom) + 12px));
+}
+
+html[data-compact-ui] .reply-mode-onboarding-options .reply-mode-choice {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  min-height: 0;
+  margin: 0;
+  padding: 14px 40px 14px 16px;
+  color: var(--c-text);
+  text-align: left;
+  background: var(--c-sheet-cell);
+  border: 0;
+  border-radius: var(--radius-cell);
+  box-shadow: none;
+}
+
+html[data-compact-ui] .reply-mode-onboarding-options .reply-mode-choice::after {
+  position: absolute;
+  top: 50%;
+  right: 16px;
+  width: 8px;
+  height: 8px;
+  margin-top: -5px;
+  content: "";
+  border-top: 2px solid var(--c-text-3);
+  border-right: 2px solid var(--c-text-3);
+  transform: rotate(45deg);
+}
+
+html[data-compact-ui] .reply-mode-onboarding-options .reply-mode-choice:active {
+  background: var(--c-press);
+}
+
+html[data-compact-ui] .reply-mode-onboarding-options .reply-mode-choice strong {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+html[data-compact-ui] .reply-mode-onboarding-options .reply-mode-choice span {
+  color: var(--c-text-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* 小注释：动态教程：同样的底部面板，三步说明放进一个白色分组。 */
+html[data-compact-ui] .moments-tutorial-overlay {
+  align-items: end;
+  padding: 0;
+  place-items: end stretch;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+html[data-compact-ui] .moments-tutorial-backdrop {
+  background: var(--c-scrim);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+html[data-compact-ui] .moments-tutorial-sheet {
+  gap: 14px;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 26px 16px 16px;
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  color: var(--c-text);
+  background: var(--c-sheet);
+  border: 0;
+  border-radius: 14px 14px 0 0;
+  box-shadow: var(--c-shadow-float);
+  animation: none;
+}
+
+html[data-compact-ui] .moments-tutorial-sheet .tutorial-handle {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  display: block;
+  width: 36px;
+  height: 5px;
+  margin: 0 0 0 -18px;
+  background: var(--c-sep-strong);
+  border-radius: 3px;
+}
+
+html[data-compact-ui] .moments-tutorial-sheet .moments-tutorial-close {
+  top: 14px;
+  right: 12px;
+  display: grid;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0 0 2px;
+  place-items: center;
+  color: var(--c-text-2);
+  font-size: 20px;
+  line-height: 1;
+  background: var(--c-fill);
+  border: 0;
+  border-radius: 50%;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .moments-tutorial-sheet .tutorial-label {
+  margin: 0 4px;
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+html[data-compact-ui] .moments-tutorial-sheet h2 {
+  margin: -8px 44px 0 4px;
+  color: var(--c-text);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+html[data-compact-ui] .moments-tutorial-sheet .tutorial-steps {
+  gap: 0;
+  padding: 2px 14px;
+  background: var(--c-sheet-cell);
+  border-radius: var(--radius-cell);
+}
+
+html[data-compact-ui] .moments-tutorial-sheet .tutorial-steps > div {
+  position: relative;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px 0;
+}
+
+html[data-compact-ui] .moments-tutorial-sheet .tutorial-steps > div + div::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 40px;
+  height: 1px;
+  content: "";
+  background: var(--c-sep);
+}
+
+html[data-compact-ui] .moments-tutorial-sheet .tutorial-steps b {
+  width: 28px;
+  height: 28px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  background: var(--accent-soft);
+  border-radius: 50%;
+}
+
+html[data-compact-ui] .moments-tutorial-sheet .tutorial-steps strong {
+  color: var(--c-text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+html[data-compact-ui] .moments-tutorial-sheet .tutorial-steps small {
+  color: var(--c-text-2);
+  font-size: 13px;
+}
+
+html[data-compact-ui] .moments-tutorial-sheet > .primary {
+  min-height: 48px;
+  margin: 0;
+  color: var(--on-accent);
+  font-size: 16px;
+  font-weight: 600;
+  background: var(--accent);
+  border: 0;
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+/* ---------- 15. 导入类弹窗（角色卡识别、世界包导入、表情包备注）：同样的底部面板 ---------- */
+
+html[data-compact-ui] .card-recognition-overlay,
+html[data-compact-ui] .sticker-import-overlay {
+  align-items: end;
+  padding: 0;
+  place-items: end stretch;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+html[data-compact-ui] .card-recognition-backdrop,
+html[data-compact-ui] .sticker-import-backdrop {
+  background: var(--c-scrim);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+html[data-compact-ui] .card-recognition-dialog,
+html[data-compact-ui] .sticker-import-dialog {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: none;
+  max-height: 92%;
+  max-height: calc(100dvh - max(28px, env(safe-area-inset-top)));
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  color: var(--c-text);
+  background: var(--c-sheet);
+  border: 0;
+  border-radius: 14px 14px 0 0;
+  box-shadow: var(--c-shadow-float);
+}
+
+html[data-compact-ui] .card-recognition-dialog::before,
+html[data-compact-ui] .sticker-import-dialog::before {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  z-index: 1;
+  width: 36px;
+  height: 5px;
+  margin-left: -18px;
+  content: "";
+  background: var(--c-sep-strong);
+  border-radius: 3px;
+}
+
+html[data-compact-ui] .card-recognition-dialog > header,
+html[data-compact-ui] .sticker-import-dialog > header {
+  flex: none;
+  margin: 0;
+  padding: 24px 20px 12px;
+  background: transparent;
+  border: 0;
+}
+
+html[data-compact-ui] .card-recognition-dialog > header span,
+html[data-compact-ui] .sticker-import-dialog > header span {
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+html[data-compact-ui] .card-recognition-dialog > header h2,
+html[data-compact-ui] .sticker-import-dialog > header h2 {
+  margin: 4px 0 6px;
+  color: var(--c-text);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: 0;
+}
+
+html[data-compact-ui] .card-recognition-dialog > header p,
+html[data-compact-ui] .sticker-import-dialog > header p {
+  margin: 0;
+  color: var(--c-text-2);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+html[data-compact-ui] .card-recognition-dialog .card-import-diagnostics {
+  flex: none;
+  margin: 0 16px 10px;
+}
+
+/* 小注释：可选的条目放进一个白色分组，每行左边勾选框，行间细线。 */
+html[data-compact-ui] .card-recognition-list {
+  display: block;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0 16px 14px;
+  padding: 0;
+  overflow-y: auto;
+  background: var(--c-sheet-cell);
+  border-radius: var(--radius-cell);
+}
+
+html[data-compact-ui] .card-recognition-item {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0;
+  padding: 12px 14px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+html[data-compact-ui] .card-recognition-item + .card-recognition-item::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 48px;
+  height: 1px;
+  content: "";
+  background: var(--c-sep);
+}
+
+html[data-compact-ui] .card-recognition-item:active {
+  background: var(--c-press);
+}
+
+html[data-compact-ui] .card-recognition-item input {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin: 1px 0 0;
+  accent-color: var(--accent);
+}
+
+html[data-compact-ui] .card-recognition-item strong {
+  color: var(--c-text);
+  font-size: 15.5px;
+  font-weight: 600;
+}
+
+html[data-compact-ui] .card-recognition-item small {
+  color: var(--c-text-3);
+  font-size: 12px;
+}
+
+html[data-compact-ui] .card-recognition-item em {
+  color: var(--c-text-2);
+  font-size: 13px;
+}
+
+html[data-compact-ui] .sticker-import-list {
+  flex: 1 1 auto;
+  gap: 10px;
+  min-height: 0;
+  max-height: none;
+  margin: 0;
+  padding: 0 16px 14px;
+}
+
+html[data-compact-ui] .sticker-import-item {
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 12px;
+  margin: 0;
+  padding: 12px;
+  background: var(--c-sheet-cell);
+  border: 0;
+  border-radius: var(--radius-cell);
+}
+
+html[data-compact-ui] .sticker-import-item img {
+  width: 72px;
+  height: 72px;
+  background: var(--c-fill-soft);
+  border-radius: 12px;
+}
+
+html[data-compact-ui] .sticker-import-item > div {
+  gap: 8px;
+}
+
+html[data-compact-ui] .sticker-import-item .field {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+html[data-compact-ui] .sticker-import-item .field > span {
+  color: var(--c-text-2);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+html[data-compact-ui] .sticker-import-item input,
+html[data-compact-ui] .sticker-import-item textarea {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 12px;
+  color: var(--c-text);
+  font-size: 16px;
+  line-height: 1.4;
+  background: var(--c-fill-soft);
+  border: 1px solid var(--c-sep);
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .sticker-import-item textarea {
+  min-height: 64px;
+  resize: none;
+}
+
+/* 小注释：底部按钮条：取消在左，主按钮在右；角色卡识别有三个按钮，两个次按钮一排，主按钮占满一行。 */
+html[data-compact-ui] .card-recognition-dialog > footer,
+html[data-compact-ui] .sticker-import-dialog > footer {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 16px;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+  background: var(--c-sheet);
+  border: 0;
+  border-top: 1px solid var(--c-sep);
+}
+
+html[data-compact-ui] .card-recognition-dialog > footer > button,
+html[data-compact-ui] .sticker-import-dialog > footer > button {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+html[data-compact-ui] .card-recognition-dialog > footer > .primary,
+html[data-compact-ui] .sticker-import-dialog > footer > .primary {
+  flex-grow: 1.6;
+}
+
+html[data-compact-ui] .card-recognition-dialog > footer > button:nth-child(3) {
+  flex-basis: 100%;
+}
+
+html[data-compact-ui] .card-recognition-dialog > footer button,
+html[data-compact-ui] .sticker-import-dialog > footer button {
+  width: 100%;
+  min-height: 46px;
+  margin: 0;
+  padding: 0 12px;
+  font-size: 15.5px;
+  font-weight: 600;
+  border: 0;
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .card-recognition-dialog > footer .primary,
+html[data-compact-ui] .sticker-import-dialog > footer .primary {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+
+html[data-compact-ui] .card-recognition-dialog > footer .secondary,
+html[data-compact-ui] .sticker-import-dialog > footer .secondary {
+  color: var(--c-text);
+  background: var(--c-fill);
+}

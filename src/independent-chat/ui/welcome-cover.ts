@@ -2,6 +2,8 @@
  * 大注释：Welcome cover module.
  * Controls first-run welcome cover rendering, dismissal, and seen-state marking.
  */
+import { icon } from './icons';
+
 type WelcomeCoverStorage = {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
@@ -45,6 +47,7 @@ export function renderWelcomeCover(): string {
           <span></span>
         </div>
         <div class="welcome-cover-brand">
+          <span class="welcome-cover-mark" aria-hidden="true">${icon('message')}</span>
           <h1 id="welcome-cover-title">PalTavern</h1>
           <p>让角色成为会主动联系你的联系人</p>
         </div>
