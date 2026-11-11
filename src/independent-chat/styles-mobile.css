@@ -2070,3 +2070,533 @@ html[data-compact-ui] .app-dialog footer .secondary {
 html[data-compact-ui] .swipe-quote-indicator {
   pointer-events: none;
 }
+
+/* ---------- 8. 角色状态页 / 角色设置页（浅灰底 + 白色圆角分组） ---------- */
+
+html[data-compact-ui] .character-panel {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+  margin: 0;
+  padding: 0 0 24px;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  overflow-y: auto;
+  color: var(--c-text);
+  background: var(--c-grouped);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .character-panel-header {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  min-height: 52px;
+  margin: 0;
+  padding: 4px 8px 4px 4px;
+  padding-top: max(4px, env(safe-area-inset-top));
+  background: var(--c-bar);
+  border: 0;
+  border-bottom: 1px solid var(--c-sep);
+  box-shadow: none;
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+}
+
+html[data-compact-ui] .character-panel-header > div {
+  position: absolute;
+  left: 56px;
+  right: 56px;
+  display: grid;
+  justify-items: center;
+  gap: 0;
+  text-align: center;
+  pointer-events: none;
+}
+
+html[data-compact-ui] .character-panel-header .settings-kicker {
+  margin: 0;
+  color: var(--c-text-2);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+html[data-compact-ui] .character-panel-header h2 {
+  margin: 0;
+  color: var(--c-text);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+/* 小注释：分段控件。灰底里一块白色滑块，切换时滑块由动效引擎滑过去。 */
+html[data-compact-ui] .character-panel-tabs {
+  position: relative;
+  top: auto;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  margin: 12px 16px 4px;
+  padding: 2px;
+  background: var(--c-fill);
+  border: 0;
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .character-panel-tabs > .segment-thumb {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  display: block;
+  width: calc((100% - 4px) / 2);
+  background: var(--c-cell);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  transform: translateX(calc(100% * var(--segment-index, 0)));
+}
+
+html[data-compact-ui] .character-panel-tabs button,
+html[data-compact-ui] .character-panel-tabs button.is-active {
+  position: relative;
+  z-index: 1;
+  min-height: 32px;
+  padding: 0;
+  color: var(--c-text-2);
+  font-size: 14px;
+  font-weight: 600;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .character-panel-tabs button.is-active {
+  color: var(--c-text);
+}
+
+@media (prefers-color-scheme: dark) {
+  html[data-compact-ui] .character-panel-tabs > .segment-thumb {
+    background: #3a3c41;
+    box-shadow: none;
+  }
+}
+
+html[data-compact-ui] .character-panel-page {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 12px 16px 8px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+/* 小注释：状态页顶部：居中的大头像、此刻的状态和一句摘要。聊天顶栏的头像点开后飞到这里。 */
+html[data-compact-ui] .character-status-hero,
+html[data-compact-ui] .character-panel-identity {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  gap: 6px;
+  margin: 4px 0 2px;
+  padding: 0;
+  text-align: center;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .character-panel .character-panel-avatar {
+  width: 84px;
+  min-width: 84px;
+  max-width: 84px;
+  height: 84px;
+  min-height: 84px;
+  max-height: 84px;
+  margin: 0 0 4px;
+  font-size: 30px;
+  border: 0;
+  border-radius: 50%;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .character-panel .character-panel-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+html[data-compact-ui] .character-panel-identity-copy {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+html[data-compact-ui] .character-panel-identity-copy .settings-kicker {
+  display: none;
+}
+
+html[data-compact-ui] .character-status-hero h3 {
+  margin: 0;
+  color: var(--c-text);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+html[data-compact-ui] .character-status-hero p,
+html[data-compact-ui] .character-panel-identity-copy p {
+  max-width: 320px;
+  margin: 0;
+  color: var(--c-text-2);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+html[data-compact-ui] .character-panel-identity-copy strong {
+  color: var(--c-text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+html[data-compact-ui] .character-panel .avatar-upload {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  margin-top: 2px;
+  padding: 0 12px;
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+  background: var(--accent-soft);
+  border: 0;
+  border-radius: 16px;
+}
+
+html[data-compact-ui] .character-panel .avatar-upload .ui-icon {
+  width: 15px;
+  height: 15px;
+}
+
+/* 小注释：三个数字并排放在一个白色分组里，中间用细线隔开。 */
+html[data-compact-ui] .character-status-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  margin: 0;
+  padding: 12px 0;
+  background: var(--c-cell);
+  border: 0;
+  border-radius: var(--radius-cell);
+  box-shadow: none;
+}
+
+html[data-compact-ui] .character-status-metrics > span {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  min-width: 0;
+  padding: 0 8px;
+  text-align: center;
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--c-sep);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .character-status-metrics > span:first-child {
+  border-left: 0;
+}
+
+html[data-compact-ui] .character-status-metrics strong {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--c-text);
+  font-size: 16px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-compact-ui] .character-status-metrics small {
+  color: var(--c-text-2);
+  font-size: 12px;
+}
+
+html[data-compact-ui] .character-status-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+html[data-compact-ui] .character-status-block {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 12px 14px;
+  background: var(--c-cell);
+  border: 0;
+  border-radius: var(--radius-cell);
+  box-shadow: none;
+}
+
+html[data-compact-ui] .character-status-block h3 {
+  margin: 0;
+  color: var(--c-text-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+html[data-compact-ui] .character-status-block p,
+html[data-compact-ui] .character-status-block li {
+  margin: 0;
+  color: var(--c-text);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+html[data-compact-ui] .character-status-block p.muted {
+  color: var(--c-text-3);
+  font-size: 12px;
+}
+
+html[data-compact-ui] .character-status-block ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0 0 0 18px;
+}
+
+html[data-compact-ui] .character-status-footer {
+  display: grid;
+  gap: 8px;
+  margin: 4px 0 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+}
+
+html[data-compact-ui] .character-status-footer .muted {
+  margin: 0 0 2px;
+  color: var(--c-text-3);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* 小注释：页面里的按钮统一成两种：主按钮（主题色实心）和次按钮（白底主题色字）。 */
+html[data-compact-ui] .character-panel .primary,
+html[data-compact-ui] .character-panel .secondary,
+html[data-compact-ui] .character-panel .danger,
+html[data-compact-ui] .character-panel .file-button.secondary-file {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 48px;
+  margin: 0;
+  padding: 0 16px;
+  font-size: 15px;
+  font-weight: 600;
+  border: 0;
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .character-panel .primary {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+
+html[data-compact-ui] .character-panel .secondary,
+html[data-compact-ui] .character-panel .file-button.secondary-file {
+  color: var(--accent);
+  background: var(--c-cell);
+}
+
+html[data-compact-ui] .character-panel .danger {
+  color: var(--danger);
+  background: var(--c-cell);
+}
+
+html[data-compact-ui] .character-panel .secondary:disabled {
+  color: var(--c-text-3);
+  opacity: 1;
+}
+
+html[data-compact-ui] .character-panel .primary:active,
+html[data-compact-ui] .character-panel .secondary:active,
+html[data-compact-ui] .character-panel .danger:active {
+  opacity: 0.8;
+}
+
+/* 小注释：表单：小灰字标题在外，输入框是白色圆角块。 */
+html[data-compact-ui] .character-panel .field {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .character-panel .field > span {
+  margin: 0 4px;
+  color: var(--c-text-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+html[data-compact-ui] .character-panel .field input,
+html[data-compact-ui] .character-panel .field textarea,
+html[data-compact-ui] .character-panel .field select {
+  width: 100%;
+  min-height: 46px;
+  padding: 11px 14px;
+  color: var(--c-text);
+  font-size: 16px;
+  line-height: 1.5;
+  background: var(--c-cell);
+  border: 1px solid transparent;
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .character-panel .field textarea {
+  min-height: 96px;
+  max-height: 220px;
+  resize: vertical;
+}
+
+html[data-compact-ui] .character-panel .field input:focus,
+html[data-compact-ui] .character-panel .field textarea:focus,
+html[data-compact-ui] .character-panel .field select:focus {
+  border-color: var(--accent);
+  outline: 0;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .character-panel-page > p.muted {
+  margin: -6px 4px 0;
+  color: var(--c-text-3);
+  font-size: 12px;
+}
+
+/* 小注释：“编辑角色世界书”是一行可点的列表项：彩色图标方块 + 标题说明 + 右箭头。 */
+html[data-compact-ui] .character-panel .character-worldbook-jump {
+  position: relative;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  justify-content: stretch;
+  min-height: 60px;
+  padding: 10px 36px 10px 12px;
+  color: var(--c-text);
+  text-align: left;
+  background: var(--c-cell);
+}
+
+html[data-compact-ui] .character-panel .character-worldbook-jump::after {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  width: 8px;
+  height: 8px;
+  margin-top: -5px;
+  content: "";
+  border-top: 2px solid var(--c-text-3);
+  border-right: 2px solid var(--c-text-3);
+  transform: rotate(45deg);
+}
+
+html[data-compact-ui] .character-panel .character-worldbook-jump > .ui-icon {
+  width: 32px;
+  height: 32px;
+  padding: 6px;
+  color: #ffffff;
+  background: #3f8cd8;
+  border-radius: 8px;
+}
+
+html[data-compact-ui] .character-panel .character-worldbook-jump strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+html[data-compact-ui] .character-panel .character-worldbook-jump small {
+  display: block;
+  color: var(--c-text-2);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+html[data-compact-ui] .character-panel .chat-background-control {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 12px;
+  background: var(--c-cell);
+  border: 0;
+  border-radius: var(--radius-cell);
+}
+
+html[data-compact-ui] .character-panel .chat-background-control .mobile-section-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 2px;
+}
+
+html[data-compact-ui] .character-panel .chat-background-control .mobile-section-label strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+html[data-compact-ui] .character-panel .chat-background-control .mobile-section-label span {
+  color: var(--c-text-3);
+  font-size: 12px;
+}
+
+html[data-compact-ui] .character-panel .chat-background-preview {
+  min-height: 96px;
+  background-color: var(--c-fill-soft);
+  border: 0;
+  border-radius: 10px;
+}
+
+html[data-compact-ui] .character-panel .chat-background-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+html[data-compact-ui] .character-panel .chat-background-actions .secondary,
+html[data-compact-ui] .character-panel .chat-background-actions .file-button.secondary-file {
+  min-height: 40px;
+  background: var(--c-fill-soft);
+}
+
+html[data-compact-ui] .character-panel-danger-actions {
+  margin: 8px 0 0;
+  padding: 0;
+  border: 0;
+}

@@ -68,7 +68,7 @@ const OVERLAY_SELECTOR = [
 ].join(',');
 // 小注释：复制出来的旧画面里，只保留样式要用到的 data 属性，其余事件钩子全部去掉，避免被脚本误选。
 const CLONE_KEEP_DATA = new Set(['data-avatar-tone', 'data-group-settings-mode', 'data-group-avatar-count', 'data-swatch']);
-const SCROLL_CONTAINERS = '.messages, .group-messages, .world-workbench-scroll, .moments-scroll, .mobile-settings-content, .character-panel, .mobile-list-page, .settings-content, .desktop-list-scroll, .tablet-landscape-list-scroll, .mobile-page';
+const SCROLL_CONTAINERS = '.messages, .group-messages, .world-workbench-scroll, .moments-scroll, .mobile-settings-content, .character-panel, .character-panel-page, .mobile-list-page, .settings-content, .desktop-list-scroll, .tablet-landscape-list-scroll, .mobile-page';
 
 const liveAnimations = new Set<Animation>();
 const animationListeners = new Map<Animation, Array<() => void>>();

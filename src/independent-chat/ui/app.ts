@@ -2621,8 +2621,10 @@ function renderDesktopHeaderActions(character?: CharacterProfile): string {
 }
 
 function renderCharacterPanelTabs(): string {
+  const activeIndex = characterPanelPage === 'status' ? 0 : 1;
   return `
     <nav class="character-panel-tabs" aria-label="角色面板">
+      <span class="segment-thumb" data-morph="indicator:character-panel-tabs" style="--segment-index:${activeIndex};--segment-count:2" aria-hidden="true"></span>
       <button class="${characterPanelPage === 'status' ? 'is-active' : ''}" type="button" data-character-panel-page="status">状态</button>
       <button class="${characterPanelPage === 'worldbook' ? 'is-active' : ''}" type="button" data-character-panel-page="worldbook">设置</button>
     </nav>
@@ -2634,9 +2636,9 @@ function renderCharacterSettingsPage(character: CharacterProfile): string {
   const worldBookEntryCount = characterWorldBookEntryDrafts(character).length;
   const replyStrategyGenerating = replyStrategyGeneratingCharacterId === character.id;
   return `
-    <section class="character-panel-page">
+    <section class="character-panel-page character-settings-page" data-motion-scope="segment">
       <div class="character-panel-identity">
-        <span class="avatar character-panel-avatar">${renderAvatar(character)}</span>
+        <span class="avatar character-panel-avatar" data-morph="avatar:char:${escapeHtml(character.id)}" data-morph-scale="uniform">${renderAvatar(character)}</span>
         <div class="character-panel-identity-copy">
           <strong>头像与卡名</strong>
           <p class="muted">这里改的是当前角色卡本身，不会新建重复角色。</p>
@@ -6755,8 +6757,11 @@ function bindUi(): void {
     button.addEventListener('click', () => {
       const nextPage = button.dataset.characterPanelPage;
       preserveScrollForNextRender();
+      const fromPage = characterPanelPage;
       characterPanelPage = nextPage === 'status' || nextPage === 'worldbook-editor' ? nextPage : 'worldbook';
-      renderWithUiTransition('detail-in');
+      if (fromPage === characterPanelPage) return;
+      // 小注释：“状态 / 设置”是同一页里的分段切换：下面的内容左右推移，滑块跟着滑过去。
+      renderWithUiTransition(characterPanelPage === 'status' ? 'segment-back' : 'segment-forward');
     });
   });
   document.querySelector<HTMLButtonElement>('#jump-character-worldbook')?.addEventListener('click', () => {

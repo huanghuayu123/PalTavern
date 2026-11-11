@@ -198,9 +198,9 @@ export function renderCharacterStatusPage(character: CharacterProfile): string {
   const status = characterStatusFor(character);
   const updated = status.updatedAt ? new Date(status.updatedAt).toLocaleString() : '尚未保存';
   return `
-    <section class="character-panel-page character-status-page">
+    <section class="character-panel-page character-status-page" data-motion-scope="segment">
       <div class="character-status-hero">
-        <span class="avatar character-panel-avatar">${renderAvatar(character)}</span>
+        <span class="avatar character-panel-avatar" data-morph="avatar:char:${escapeHtml(character.id)}" data-morph-scale="uniform">${renderAvatar(character)}</span>
         <div class="character-panel-identity-copy">
           <span class="settings-kicker">角色状态</span>
           <h3>${escapeHtml(status.mood)}</h3>

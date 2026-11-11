@@ -3,7 +3,7 @@
  * app.ts 里约 70 处导航都通过 renderWithUiTransition(kind, renderPage) 走到这里，接口保持不变；
  * 具体怎么动交给 motion.ts 的“一镜到底”引擎：
  * - detail-in / detail-out：被点的那一行或按钮长成整页，返回时缩回原处；
- * - main-*：同级标签之间横向推移；world-*：世界页分段内容横向推移；
+ * - main-*：同级标签之间横向推移；world-*、segment-*：页面里分段控件下面的内容横向推移；
  * - overlay-in / overlay-out：浮层从被点的位置长出来，关闭时缩回去；
  * - quiet：直接渲染。
  * 所有转场都先立刻渲染新画面再播动画，不会因为等动画而拖住输入、清掉草稿。
@@ -19,7 +19,7 @@ import {
   type MotionSource,
 } from './motion';
 
-export type UiTransitionKind = 'main-forward' | 'main-back' | 'world-forward' | 'world-back' | 'detail-in' | 'detail-out' | 'overlay-in' | 'overlay-out' | 'quiet';
+export type UiTransitionKind = 'main-forward' | 'main-back' | 'world-forward' | 'world-back' | 'segment-forward' | 'segment-back' | 'detail-in' | 'detail-out' | 'overlay-in' | 'overlay-out' | 'quiet';
 
 export type MainSectionTransitionId = 'messages' | 'contacts' | 'groups' | 'world' | 'moments' | 'settings';
 export type DesktopViewTransitionId = 'chat' | 'groups' | 'world' | 'moments';
@@ -27,6 +27,8 @@ export type DesktopViewTransitionId = 'chat' | 'groups' | 'world' | 'moments';
 const UI_MAIN_NAV_ORDER: MainSectionTransitionId[] = ['messages', 'contacts', 'groups', 'world', 'moments', 'settings'];
 const UI_DESKTOP_VIEW_ORDER: DesktopViewTransitionId[] = ['chat', 'groups', 'world', 'moments'];
 const WORLD_INSIGHT_SCOPE = '.world-insight-transition-frame';
+// 小注释：页面里分段控件下面那块内容（例如角色页的“状态 / 设置”）。
+const SEGMENT_SCOPE = '[data-motion-scope="segment"]';
 
 let pendingSource: MotionSource | null = null;
 
@@ -79,6 +81,10 @@ export function renderWithUiTransition(kind: UiTransitionKind, renderPage: () =>
   }
   if (kind === 'world-forward' || kind === 'world-back') {
     switchAxis(renderPage, kind === 'world-forward' ? 1 : -1, WORLD_INSIGHT_SCOPE);
+    return;
+  }
+  if (kind === 'segment-forward' || kind === 'segment-back') {
+    switchAxis(renderPage, kind === 'segment-forward' ? 1 : -1, SEGMENT_SCOPE);
     return;
   }
   switchAxis(renderPage, kind === 'main-forward' ? 1 : -1);
