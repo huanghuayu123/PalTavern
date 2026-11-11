@@ -16791,6 +16791,42 @@ html[data-ui-transition]:not([data-ui-transition^="main-"]) .moment-compose-fab 
   }
 }
 
+/* 大注释：底部导航选中态打磨。
+   选中格还是整格上浮 10px（方形贴边的设计不变），但上浮后下面不再露出一条页面底色：
+   用同色的实心阴影把格子向下补齐，看起来像从底栏里抬起来的一格；
+   顶边加一道 2px 主色线，再在上方压一点很淡的投影，选中层次更清楚。
+   第一条 box-shadow 是给旧版 WebView 的兜底（不认识 color-mix 时整条会被丢弃）。 */
+@media (max-width: 980px), (hover: none), (pointer: coarse) {
+  .bottom-nav button.is-active {
+    box-shadow:
+      0 10px 0 0 var(--accent-soft),
+      inset 0 2px 0 0 var(--accent),
+      0 -8px 16px -12px rgba(8, 60, 55, 0.45);
+    box-shadow:
+      0 10px 0 0 color-mix(in srgb, var(--accent) 14%, var(--surface-solid)),
+      inset 0 2px 0 0 var(--accent),
+      0 -8px 16px -12px rgba(8, 60, 55, 0.45);
+  }
+}
+
+/* 小注释：底栏行高 64px、底栏本身 60px，原来居中放会在最底下漏出 2px 背景色；贴底放就没有这条缝了。 */
+.mobile-shell > .bottom-nav {
+  align-self: end;
+}
+
+@media (max-width: 980px) and (prefers-color-scheme: dark), (hover: none) and (prefers-color-scheme: dark), (pointer: coarse) and (prefers-color-scheme: dark) {
+  .bottom-nav button.is-active {
+    box-shadow:
+      0 10px 0 0 var(--accent-soft),
+      inset 0 2px 0 0 var(--accent),
+      0 -8px 18px -12px rgba(0, 0, 0, 0.7);
+    box-shadow:
+      0 10px 0 0 color-mix(in srgb, var(--accent) 14%, var(--surface-solid)),
+      inset 0 2px 0 0 var(--accent),
+      0 -8px 18px -12px rgba(0, 0, 0, 0.7);
+  }
+}
+
 .moments-scroll,
 .events-scroll,
 .timeline-scroll,
