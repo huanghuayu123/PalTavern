@@ -126,7 +126,7 @@ export function renderChatStatusShelf(character?: CharacterProfile): string {
         <span class="chat-status-arrow" aria-hidden="true">${isOpen ? '⌃' : '⌄'}</span>
       </button>
       ${isOpen ? `
-        <div class="chat-status-expanded">
+        <div class="chat-status-expanded" data-morph="status-expanded:${escapeHtml(character.id)}" data-motion-enter="reveal" data-motion-exit="collapse">
           <div class="chat-status-metrics">
             <span><small>现在</small><strong>${escapeHtml(status.mood || '近况安静')}</strong></span>
             <span><small>关系</small><strong>${escapeHtml(relationshipStageLabel(status.relationshipStage))}</strong></span>

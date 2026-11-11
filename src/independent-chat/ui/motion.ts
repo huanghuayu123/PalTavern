@@ -28,8 +28,9 @@ export type MotionBox = { left: number; top: number; width: number; height: numb
 export type MotionSource = MotionBox & { key: string };
 export type AxisDirection = 1 | -1;
 
-type MorphEntry = MotionBox & { scale: 'free' | 'uniform' };
-export type MorphCapture = { layout: string; entries: Map<string, MorphEntry> };
+type MorphEntry = MotionBox & { scale: 'free' | 'uniform' | 'none' };
+type ExitEntry = { key: string; element: HTMLElement; box: MotionBox; kind: string; origin: string };
+export type MorphCapture = { layout: string; entries: Map<string, MorphEntry>; exits: ExitEntry[] };
 
 const SHELL_SELECTOR = '.mobile-shell, .tablet-landscape-shell, .desktop-shell';
 const PAGE_SELECTORS = [
@@ -390,16 +391,115 @@ export function takeTapSource(maxAgeMs = 1200): MotionSource | null {
 /** 渲染前记录所有 data-morph 元素的位置。 */
 export function captureMorphs(): MorphCapture {
   const entries = new Map<string, MorphEntry>();
-  if (typeof document === 'undefined' || isMotionReduced()) return { layout: '', entries };
+  const exits: ExitEntry[] = [];
+  if (typeof document === 'undefined' || isMotionReduced()) return { layout: '', entries, exits };
   document.querySelectorAll<HTMLElement>('[data-morph]').forEach(element => {
     const key = element.dataset.morph;
     if (!key || entries.has(key) || element.closest('.pt-motion-clone')) return;
     const box = boxOf(element);
     if (!onScreen(box)) return;
-    entries.set(key, { ...box, scale: element.dataset.morphScale === 'uniform' ? 'uniform' : 'free' });
+    const scaleMode = element.dataset.morphScale;
+    entries.set(key, { ...box, scale: scaleMode === 'uniform' || scaleMode === 'none' ? scaleMode : 'free' });
+    // 小注释：带 data-motion-exit 的小元素（菜单、引用条、面板）重画后如果没了，要演一段收回；先记住它本身。
+    if (element.dataset.motionExit) {
+      exits.push({ key, element, box: boxOf(element, true), kind: element.dataset.motionExit, origin: element.dataset.motionOrigin ?? 'center' });
+    }
   });
-  lastCapture = { layout: layoutSignature(), entries };
+  lastCapture = { layout: layoutSignature(), entries, exits };
   return lastCapture;
+}
+
+/** 小元素出现：pop 从一点弹出，rise 从下方升起，fade 淡入，reveal 从上往下展开。 */
+function playEnter(element: HTMLElement, kind: string): void {
+  const origin = element.dataset.motionOrigin ?? 'center';
+  if (kind === 'pop') {
+    animate(element, [
+      { transformOrigin: origin, transform: 'scale(0.86)', opacity: 0 },
+      { transformOrigin: origin, transform: 'none', opacity: 1 },
+    ], { duration: MOTION_MS.fast + 40, easing: MOTION_EASE.decelerate });
+  } else if (kind === 'rise') {
+    animate(element, [
+      { transform: 'translateY(12px)', opacity: 0 },
+      { transform: 'none', opacity: 1 },
+    ], { duration: MOTION_MS.base - 40, easing: MOTION_EASE.decelerate });
+  } else if (kind === 'reveal') {
+    animate(element, [
+      { clipPath: 'inset(0 0 100% 0)', opacity: 0.2 },
+      { clipPath: 'inset(0 0 0 0)', opacity: 1 },
+    ], { duration: MOTION_MS.base - 20, easing: MOTION_EASE.standard });
+  } else {
+    animate(element, [{ opacity: 0 }, { opacity: 1 }], { duration: MOTION_MS.fast, easing: 'linear' });
+  }
+}
+
+/**
+ * 小元素消失：把旧元素复制一份放回原处再收走。
+ * 复制品外面套一层和原来一样的祖先类名（display: contents，不占位置），原来的样式规则照样生效。
+ */
+function playExit(entry: ExitEntry): void {
+  let wrapper: HTMLElement | null = null;
+  let innermost: HTMLElement | null = null;
+  for (let parent = entry.element.parentElement; parent && parent !== document.body && parent !== document.documentElement; parent = parent.parentElement) {
+    const shell = parent.cloneNode(false) as HTMLElement;
+    shell.removeAttribute('id');
+    Array.from(shell.attributes).forEach(attribute => {
+      if (attribute.name.startsWith('data-') && !CLONE_KEEP_DATA.has(attribute.name)) shell.removeAttribute(attribute.name);
+    });
+    shell.removeAttribute('style');
+    shell.style.display = 'contents';
+    if (wrapper) shell.appendChild(wrapper);
+    else innermost = shell;
+    wrapper = shell;
+  }
+  const clone = entry.element.cloneNode(true) as HTMLElement;
+  stripClone(clone);
+  Object.assign(clone.style, { top: 'auto', right: 'auto', bottom: 'auto', left: 'auto' });
+  Object.assign(clone.style, {
+    position: 'fixed', left: `${entry.box.left}px`, top: `${entry.box.top}px`, width: `${entry.box.width}px`, height: `${entry.box.height}px`,
+    margin: '0', pointerEvents: 'none', zIndex: '70', transform: 'none', animation: 'none', transition: 'none',
+  });
+  const layer = wrapper ?? clone;
+  if (innermost) innermost.appendChild(clone);
+  if (wrapper) wrapper.classList.add('pt-motion-clone');
+  else clone.classList.add('pt-motion-clone');
+  layer.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(layer);
+  trackLayer(layer);
+  let keyframes: Keyframe[];
+  if (entry.kind === 'pop') {
+    keyframes = [
+      { transformOrigin: entry.origin, transform: 'none', opacity: 1 },
+      { transformOrigin: entry.origin, transform: 'scale(0.9)', opacity: 0 },
+    ];
+  } else if (entry.kind === 'sink') {
+    keyframes = [{ transform: 'none', opacity: 1 }, { transform: 'translateY(12px)', opacity: 0 }];
+  } else if (entry.kind === 'collapse') {
+    keyframes = [{ clipPath: 'inset(0 0 0 0)', opacity: 1 }, { clipPath: 'inset(0 0 100% 0)', opacity: 0.2 }];
+  } else {
+    keyframes = [{ opacity: 1 }, { opacity: 0 }];
+  }
+  const exit = animate(clone, keyframes, { duration: MOTION_MS.fast, easing: MOTION_EASE.accelerate, fill: 'forwards' });
+  whenSettled([exit], MOTION_MS.fast, () => dropLayer(layer));
+}
+
+/** 切换回复版本等“同一个位置换内容”：新内容从一侧滑进来。渲染前调用，渲染后自动播放。 */
+let pendingSlide: { key: string; selector: string; direction: AxisDirection } | null = null;
+
+export function prepareContentSlide(key: string, selector: string, direction: AxisDirection): void {
+  pendingSlide = isMotionReduced() ? null : { key, selector, direction };
+}
+
+function playContentSlide(): void {
+  const slide = pendingSlide;
+  pendingSlide = null;
+  if (!slide) return;
+  const host = findByKey(slide.key);
+  const target = host && (host.matches(slide.selector) ? host : host.querySelector<HTMLElement>(slide.selector));
+  if (!target) return;
+  animate(target, [
+    { transform: `translateX(${18 * slide.direction}px)`, opacity: 0 },
+    { transform: 'none', opacity: 1 },
+  ], { duration: MOTION_MS.base - 40, easing: MOTION_EASE.decelerate });
 }
 
 /**
@@ -409,7 +509,10 @@ export function captureMorphs(): MorphCapture {
 export function playMorphs(capture: MorphCapture, options: { duration?: number; enterPrefixes?: string[] } = {}): void {
   morphAnimations.clear();
   holdLanding();
-  if (!capture.entries.size || capture.layout !== layoutSignature() || isMotionReduced()) return;
+  if (capture.layout !== layoutSignature() || isMotionReduced()) {
+    pendingSlide = null;
+    return;
+  }
   const duration = options.duration ?? MOTION_MS.base;
   const moved = new Map<HTMLElement, { dx: number; dy: number }>();
   const seen = new Set<string>();
@@ -422,6 +525,20 @@ export function playMorphs(capture: MorphCapture, options: { duration?: number; 
     const to = boxOf(element);
     if (!onScreen(to)) return;
     if (!from) {
+      // 小注释：从另一个元素的位置过来（比如引用条从被引用的那条消息处飞过来）：只平移不缩放，边走边显现。
+      const sourceKey = element.dataset.motionFrom;
+      const source = sourceKey ? capture.entries.get(sourceKey) : undefined;
+      if (source) {
+        animate(element, [
+          { transform: `translate(${(source.left - to.left).toFixed(1)}px, ${(source.top + source.height / 2 - (to.top + to.height / 2)).toFixed(1)}px)`, opacity: 0.15 },
+          { transform: 'none', opacity: 1 },
+        ], { duration: MOTION_MS.base, easing: MOTION_EASE.standard });
+        return;
+      }
+      if (element.dataset.motionEnter) {
+        playEnter(element, element.dataset.motionEnter);
+        return;
+      }
       const prefix = key.split(':')[0];
       if (options.enterPrefixes?.includes(prefix) && prefixesBefore.has(prefix)) {
         animate(element, [
@@ -443,7 +560,10 @@ export function playMorphs(capture: MorphCapture, options: { duration?: number; 
     const dy = from.top - to.top - parentShift.dy;
     let sx = to.width > 0 ? from.width / to.width : 1;
     let sy = to.height > 0 ? from.height / to.height : 1;
-    if (from.scale === 'uniform') {
+    if (from.scale === 'none') {
+      sx = 1;
+      sy = 1;
+    } else if (from.scale === 'uniform') {
       // 小注释：等比缩放取宽高两个比例的中间值，前后形状稍有出入时也不会被压窄或拉宽。
       const uniform = Math.sqrt(sx * sy);
       sx = uniform;
@@ -457,6 +577,10 @@ export function playMorphs(capture: MorphCapture, options: { duration?: number; 
     ], { duration, easing: MOTION_EASE.standard });
     if (animation) morphAnimations.set(element, animation);
   });
+  capture.exits.forEach(entry => {
+    if (!seen.has(entry.key) && onScreen(entry.box)) playExit(entry);
+  });
+  playContentSlide();
 }
 
 function morphTransform(from: MotionBox, to: MotionBox, shiftX: number, shiftY: number, uniform: boolean): string {

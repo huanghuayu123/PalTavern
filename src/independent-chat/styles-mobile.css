@@ -17,6 +17,7 @@ html[data-compact-ui] {
   --c-cell: #ffffff;
   --c-bar: rgba(255, 255, 255, 0.94);
   --c-sheet: #f2f3f5;
+  --c-sheet-cell: #ffffff;
   --c-fill: rgba(118, 122, 130, 0.12);
   --c-fill-soft: rgba(118, 122, 130, 0.07);
   --c-press: rgba(0, 0, 0, 0.05);
@@ -54,7 +55,8 @@ html[data-compact-ui] {
     --c-grouped: #0f1012;
     --c-cell: #1c1d20;
     --c-bar: rgba(22, 23, 26, 0.94);
-    --c-sheet: #1c1d20;
+    --c-sheet: #17181b;
+    --c-sheet-cell: #26272b;
     --c-fill: rgba(150, 155, 165, 0.18);
     --c-fill-soft: rgba(150, 155, 165, 0.1);
     --c-press: rgba(255, 255, 255, 0.06);
@@ -842,7 +844,7 @@ html[data-compact-ui] .action-sheet-item.file-button {
   padding: 12px 14px;
   color: var(--c-text);
   text-align: left;
-  background: var(--c-cell);
+  background: var(--c-sheet-cell);
   border: 0;
   border-radius: var(--radius-cell);
   box-shadow: none;
@@ -894,7 +896,7 @@ html[data-compact-ui] .action-sheet-cancel {
   color: var(--c-text);
   font-size: 16px;
   font-weight: 600;
-  background: var(--c-cell);
+  background: var(--c-sheet-cell);
   border: 0;
   border-radius: var(--radius-cell);
 }
@@ -1573,4 +1575,498 @@ html[data-compact-ui] .mobile-chat-detail .character-intro-card {
   border: 0;
   border-radius: var(--radius-cell);
   box-shadow: none;
+}
+
+/* ---------- 7. 私聊里的临时元素：长按菜单、贴纸面板、处理消息、修改消息、关系小卡片 ---------- */
+
+/* 小注释：这些元素的出现和消失都交给动效引擎，旧样式里自带的入场动画在手机上关掉，免得叠在一起。 */
+html[data-compact-ui] .chat-status-expanded,
+html[data-compact-ui] .message-edit-dialog,
+html[data-compact-ui] .message-choice-dialog,
+html[data-compact-ui] .app-dialog,
+html[data-compact-ui] .sticker-import-dialog,
+html[data-compact-ui] .card-recognition-dialog {
+  animation: none;
+}
+
+html[data-compact-ui] .mobile-chat-detail .message.actions-open-above,
+html[data-compact-ui] .mobile-chat-detail .message.actions-open-below {
+  transform: none;
+}
+
+/* 小注释：长按菜单是一条深色横条，图标在上、文字在下，从气泡角上弹出来。 */
+html[data-compact-ui] .mobile-chat-detail .message-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 2px;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  bottom: calc(100% + 8px);
+  padding: 4px;
+  overflow: visible;
+  color: #f1f2f4;
+  background: #2a2c30;
+  border: 0;
+  border-radius: 14px;
+  box-shadow: var(--c-shadow-float);
+}
+
+html[data-compact-ui] .mobile-chat-detail .message-actions button {
+  display: grid;
+  gap: 3px;
+  justify-items: center;
+  align-content: center;
+  width: 54px;
+  min-width: 54px;
+  height: 52px;
+  min-height: 52px;
+  padding: 0;
+  color: #f1f2f4;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.1;
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+}
+
+html[data-compact-ui] .mobile-chat-detail .message-actions button + button {
+  border-left: 0;
+}
+
+html[data-compact-ui] .mobile-chat-detail .message-actions button span {
+  font-size: 17px;
+  line-height: 1;
+}
+
+@media (prefers-color-scheme: dark) {
+  html[data-compact-ui] .mobile-chat-detail .message-actions {
+    background: #3a3c41;
+  }
+}
+
+/* 小注释：贴纸面板贴在输入栏上方，左右留一点边，内容多了在面板里滚动。 */
+html[data-compact-ui] .mobile-chat-detail .sticker-picker {
+  position: absolute;
+  right: 8px;
+  bottom: calc(100% + 6px);
+  left: 8px;
+  z-index: 20;
+  width: auto;
+  max-height: 340px;
+  max-height: min(340px, 50vh);
+  padding: 12px 12px 6px;
+  overflow-y: auto;
+  background: var(--c-cell);
+  border: 1px solid var(--c-sep);
+  border-radius: 18px;
+  box-shadow: var(--c-shadow-float);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+html[data-compact-ui] .sticker-picker-title {
+  margin: 0 2px 10px;
+}
+
+html[data-compact-ui] .sticker-picker-title strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+html[data-compact-ui] .sticker-picker-title span,
+html[data-compact-ui] .sticker-group-label span {
+  color: var(--c-text-3);
+  font-size: 12px;
+}
+
+html[data-compact-ui] .sticker-group-label {
+  margin: 0 2px 8px;
+}
+
+html[data-compact-ui] .sticker-group-label strong {
+  color: var(--c-text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+html[data-compact-ui] .sticker-picker-group + .sticker-picker-group {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--c-sep);
+}
+
+html[data-compact-ui] .sticker-picker-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  max-height: none;
+  overflow: visible;
+}
+
+html[data-compact-ui] .sticker-picker-grid button {
+  height: 76px;
+  padding: 6px;
+  background: var(--c-fill-soft);
+  border: 0;
+  border-radius: 12px;
+  transition: transform 120ms var(--ease-out);
+}
+
+html[data-compact-ui] .sticker-picker-grid button:active {
+  transform: scale(0.92);
+}
+
+html[data-compact-ui] .sticker-picker .muted {
+  margin: 2px 2px 8px;
+  color: var(--c-text-3);
+  font-size: 13px;
+}
+
+/* 小注释：“处理这条消息”和“修改这条消息”都是临时选择，做成从底部升起的面板。 */
+html[data-compact-ui] .message-choice-overlay,
+html[data-compact-ui] .message-edit-overlay {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: stretch;
+  padding: 0;
+}
+
+html[data-compact-ui] .message-choice-backdrop,
+html[data-compact-ui] .message-edit-backdrop {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--c-scrim);
+  border: 0;
+  border-radius: 0;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+html[data-compact-ui] .message-choice-dialog,
+html[data-compact-ui] .message-edit-dialog {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 16px 12px 12px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  color: var(--c-text);
+  background: var(--c-sheet);
+  border: 0;
+  border-radius: 20px 20px 0 0;
+  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.12);
+  transform: none;
+}
+
+html[data-compact-ui] .message-choice-dialog h2 {
+  margin: 0;
+  color: var(--c-text);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: center;
+}
+
+html[data-compact-ui] .message-choice-dialog p {
+  margin: 0 8px 6px;
+  color: var(--c-text-2);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+html[data-compact-ui] .message-choice-dialog button {
+  width: 100%;
+  min-height: 52px;
+  margin: 0;
+  padding: 0 16px;
+  color: var(--c-text);
+  font-size: 16px;
+  font-weight: 600;
+  background: var(--c-sheet-cell);
+  border: 0;
+  border-radius: var(--radius-cell);
+  box-shadow: none;
+}
+
+html[data-compact-ui] .message-choice-dialog button.danger {
+  color: var(--danger);
+}
+
+html[data-compact-ui] .message-choice-dialog .plain-button {
+  margin-top: 4px;
+}
+
+html[data-compact-ui] .message-choice-dialog button:active {
+  background: var(--c-fill);
+}
+
+html[data-compact-ui] .message-edit-dialog > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 4px 4px;
+  padding: 0;
+  border: 0;
+}
+
+html[data-compact-ui] .message-edit-dialog > header span {
+  color: var(--c-text-2);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+html[data-compact-ui] .message-edit-dialog > header h2 {
+  margin: 2px 0 4px;
+  color: var(--c-text);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+html[data-compact-ui] .message-edit-dialog > header p {
+  margin: 0;
+  color: var(--c-text-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+html[data-compact-ui] .message-edit-dialog > header .icon-button {
+  display: grid;
+  flex: none;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  place-items: center;
+  color: var(--c-text-2);
+  font-size: 18px;
+  background: var(--c-fill);
+  border: 0;
+  border-radius: 50%;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .message-edit-dialog .field {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+html[data-compact-ui] .message-edit-dialog .field > span {
+  margin: 0 4px;
+  color: var(--c-text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+html[data-compact-ui] .message-edit-dialog textarea {
+  width: 100%;
+  min-height: 120px;
+  max-height: 40vh;
+  padding: 12px 14px;
+  color: var(--c-text);
+  font-size: 16px;
+  line-height: 1.5;
+  background: var(--c-sheet-cell);
+  border: 1px solid var(--c-sep);
+  border-radius: var(--radius-cell);
+  box-shadow: none;
+  resize: none;
+}
+
+html[data-compact-ui] .message-edit-dialog textarea:focus {
+  border-color: var(--accent);
+  outline: 0;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .message-edit-dialog > footer {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 8px;
+  margin: 4px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+html[data-compact-ui] .message-edit-dialog > footer button {
+  min-height: 50px;
+  font-size: 16px;
+  font-weight: 600;
+  border: 0;
+  border-radius: var(--radius-cell);
+  box-shadow: none;
+}
+
+html[data-compact-ui] .message-edit-dialog > footer .secondary {
+  color: var(--c-text);
+  background: var(--c-sheet-cell);
+}
+
+html[data-compact-ui] .message-edit-dialog > footer .primary {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+
+/* 小注释：点角色头像弹出的关系小卡片。 */
+html[data-compact-ui] .message-profile-popover {
+  width: 280px;
+  padding: 14px;
+  color: var(--c-text);
+  background: var(--c-cell);
+  border: 1px solid var(--c-sep);
+  border-radius: 18px;
+  box-shadow: var(--c-shadow-float);
+}
+
+html[data-compact-ui] .message-profile-popover header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+}
+
+html[data-compact-ui] .message-profile-popover .avatar {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+
+html[data-compact-ui] .message-profile-popover header strong {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+html[data-compact-ui] .message-profile-popover header small {
+  color: var(--c-text-2);
+  font-size: 12px;
+}
+
+html[data-compact-ui] .message-profile-popover dl {
+  display: grid;
+  gap: 0;
+  margin: 0 0 12px;
+}
+
+html[data-compact-ui] .message-profile-popover dl > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  border-top: 1px solid var(--c-sep);
+}
+
+html[data-compact-ui] .message-profile-popover dt {
+  color: var(--c-text-2);
+  font-size: 13px;
+}
+
+html[data-compact-ui] .message-profile-popover dd {
+  margin: 0;
+  color: var(--c-text);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: right;
+}
+
+html[data-compact-ui] .message-profile-popover .message-profile-status {
+  width: 100%;
+  min-height: 40px;
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+  background: var(--accent-soft);
+  border: 0;
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+/* 小注释：通用确认框：居中的小卡片，从点的那个按钮处放大出来。 */
+html[data-compact-ui] .app-dialog-overlay {
+  padding: 24px;
+}
+
+html[data-compact-ui] .app-dialog-backdrop {
+  background: var(--c-scrim);
+}
+
+html[data-compact-ui] .app-dialog {
+  gap: 14px;
+  width: 100%;
+  max-width: 320px;
+  padding: 20px 16px 14px;
+  color: var(--c-text);
+  text-align: center;
+  background: var(--c-cell);
+  border: 0;
+  border-radius: 18px;
+  box-shadow: var(--c-shadow-float);
+}
+
+html[data-compact-ui] .app-dialog h2 {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+html[data-compact-ui] .app-dialog header p,
+html[data-compact-ui] .app-dialog header div {
+  color: var(--c-text-2);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+html[data-compact-ui] .app-dialog input,
+html[data-compact-ui] .app-dialog textarea {
+  text-align: left;
+  font-size: 16px;
+  background: var(--c-fill-soft);
+  border: 1px solid var(--c-sep);
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .app-dialog footer {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  gap: 8px;
+}
+
+html[data-compact-ui] .app-dialog footer button {
+  min-height: 46px;
+  font-size: 16px;
+  font-weight: 600;
+  border: 0;
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+html[data-compact-ui] .app-dialog footer .secondary {
+  color: var(--c-text);
+  background: var(--c-fill);
+}
+
+/* 小注释：滑动引用的小箭头平时是透明的，但会盖住旁边的“‹ ›”版本按钮；它只是提示，不接收点击。 */
+html[data-compact-ui] .swipe-quote-indicator {
+  pointer-events: none;
 }

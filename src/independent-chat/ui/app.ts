@@ -109,6 +109,7 @@ import {
   playAppearanceSwitch,
   playMorphs,
   playSendFlight,
+  prepareContentSlide,
   prepareSendFlight,
 } from './motion';
 import {
@@ -2024,7 +2025,8 @@ function renderMessageProfilePopover(character?: CharacterProfile): string {
   if (!character || messageProfileCharacterId !== character.id) return '';
   const affinity = Math.max(0, Math.round(character.relationship.affinity));
   const left = Math.max(12, Math.min(messageProfileAnchor?.left ?? 18, window.innerWidth - 292));
-  const top = Math.max(76, Math.min(messageProfileAnchor?.top ?? 96, window.innerHeight - 240));
+  // 小注释：卡片高约 280px，靠近屏幕底部时往上挪，别被输入栏挡住。
+  const top = Math.max(76, Math.min(messageProfileAnchor?.top ?? 96, window.innerHeight - 300));
   return `
     <button class="message-profile-backdrop" id="close-message-profile-popover" data-close-message-profile type="button" aria-label="关闭关系概览"></button>
     <aside class="message-profile-popover" style="left: ${left}px; top: ${top}px" role="dialog" aria-label="关系概览">
@@ -2519,13 +2521,13 @@ function renderMessages(character?: CharacterProfile): string {
     if (message.impactRevokedAt) {
       return `
         ${showTime ? `<div class="message-time">${formatConversationTime(message.createdAt)}</div>` : ''}
-        <div class="recalled-message">${message.role === 'user' ? '你' : escapeHtml(character.name)}的一条消息影响已撤销</div>
+        <div class="recalled-message" data-morph="recall:${escapeHtml(message.id)}" data-motion-enter="fade">${message.role === 'user' ? '你' : escapeHtml(character.name)}的一条消息影响已撤销</div>
       `;
     }
     if (message.recalledAt) {
       return `
         ${showTime ? `<div class="message-time">${formatConversationTime(message.createdAt)}</div>` : ''}
-        <div class="recalled-message">${message.role === 'user' ? '你' : escapeHtml(character.name)}撤回了一条消息</div>
+        <div class="recalled-message" data-morph="recall:${escapeHtml(message.id)}" data-motion-enter="fade">${message.role === 'user' ? '你' : escapeHtml(character.name)}撤回了一条消息</div>
       `;
     }
     return `
@@ -2545,7 +2547,7 @@ function renderMessages(character?: CharacterProfile): string {
       ${message.autoReason ? `<small class="message-reason">${escapeHtml(message.autoReason)}</small>` : ''}
       ${memoryHint ? `<small class="message-memory-hint">${escapeHtml(memoryHint)}</small>` : ''}
       ${messageActionId === message.id && !message.recalledAt ? `
-        <div class="message-actions open-above" role="menu">
+        <div class="message-actions open-above" role="menu" data-morph="menu:msg:${escapeHtml(message.id)}" data-motion-enter="pop" data-motion-exit="pop" data-motion-origin="${message.role === 'user' ? 'right bottom' : 'left bottom'}">
           ${message.role === 'user' ? `<button type="button" data-edit-message="${escapeHtml(message.id)}"><span>✎</span>修改</button>` : ''}
           ${message.role === 'assistant' ? `<button type="button" data-regenerate-message="${escapeHtml(message.id)}"><span>↻</span>重生</button>` : ''}
           <button type="button" data-delete-message-menu="${escapeHtml(message.id)}"><span>⌫</span>删除</button>
@@ -2592,13 +2594,12 @@ function renderStickerPicker(character?: CharacterProfile): string {
         ? `<div class="sticker-picker-grid">${stickers.map(sticker => `
             <button type="button" data-send-sticker="${escapeHtml(sticker.id)}" title="${escapeHtml(sticker.name)}">
               <img src="${escapeHtml(displayImageUrl(sticker.dataUrl))}" alt="${escapeHtml(sticker.name)}" />
-              </button>
-            </div>
+            </button>
           `).join('')}</div>`
         : '<p class="muted">暂无</p>'}
     </section>`;
   return `
-    <div class="sticker-picker">
+    <div class="sticker-picker" data-morph="sticker-picker" data-motion-enter="rise" data-motion-exit="sink">
       <div class="sticker-picker-title"><strong>发送表情包</strong><span>${userStickers.length + commonStickers.length}/96</span></div>
       ${renderGroup('我的表情包', userStickers)}
       ${renderGroup('通用表情包', commonStickers)}
@@ -2907,12 +2908,12 @@ function renderChatPane(character?: CharacterProfile, mobile = false): string {
       </header>
       ${renderChatStatusShelf(character)}
       ${renderContextPreviewPanel(character)}
-      <section class="messages">${renderMessages(character)}</section>
+      <section class="messages" data-morph="chat-messages:private" data-morph-scale="none">${renderMessages(character)}</section>
       <div class="chat-composer-area">
         ${renderPrivateChatEventSuggestionCard(character, directSpeaker)}
         ${renderStickerPicker(directSpeaker ? undefined : character)}
         ${quoted ? `
-          <div class="composer-quote">
+          <div class="composer-quote" data-morph="composer-quote" data-motion-from="msg:${escapeHtml(quoted.id)}" data-motion-enter="rise" data-motion-exit="sink">
             <div><strong>引用消息</strong><span>${escapeHtml(compactText(quoted.content, 120))}</span></div>
             <button id="cancel-quote" type="button" aria-label="取消引用">×</button>
           </div>
@@ -9443,12 +9444,16 @@ function bindUi(): void {
   });
   document.querySelectorAll<HTMLButtonElement>('[data-message-variant-prev]').forEach(button => {
     button.addEventListener('click', () => {
-      if (selectMessageVariant(button.dataset.messageVariantPrev ?? '', -1)) render();
+      const messageId = button.dataset.messageVariantPrev ?? '';
+      prepareContentSlide(`msg:${messageId}`, '.message-copy', -1);
+      if (selectMessageVariant(messageId, -1)) render();
     });
   });
   document.querySelectorAll<HTMLButtonElement>('[data-message-variant-next]').forEach(button => {
     button.addEventListener('click', () => {
-      if (selectMessageVariant(button.dataset.messageVariantNext ?? '', 1)) render();
+      const messageId = button.dataset.messageVariantNext ?? '';
+      prepareContentSlide(`msg:${messageId}`, '.message-copy', 1);
+      if (selectMessageVariant(messageId, 1)) render();
     });
   });
   document.querySelectorAll<HTMLButtonElement>('[data-message-profile-character]').forEach(button => {
@@ -9508,12 +9513,15 @@ function bindUi(): void {
   });
   document.querySelector<HTMLButtonElement>('#confirm-recall-message')?.addEventListener('click', () => {
     const messageId = messageDeleteChoiceId;
-    if (recallMessage(messageId)) {
-      if (quotedMessageId === messageId) quotedMessageId = '';
-      setStatusText('消息已撤回，聊天中保留痕迹。');
-    }
-    messageDeleteChoiceId = '';
-    renderWithUiTransition('overlay-out');
+    // 小注释：撤回也先让气泡淡出，再换成“撤回了一条消息”的小字。
+    fadeOutThen([messageRowFor(messageId)], () => {
+      if (recallMessage(messageId)) {
+        if (quotedMessageId === messageId) quotedMessageId = '';
+        setStatusText('消息已撤回，聊天中保留痕迹。');
+      }
+      messageDeleteChoiceId = '';
+      renderWithUiTransition('overlay-out');
+    });
   });
   document.querySelectorAll<HTMLElement>('[data-message-id]').forEach(message => {
     let longPressTimer: ReturnType<typeof setTimeout> | undefined;
