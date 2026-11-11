@@ -46,10 +46,20 @@ Do not treat this as a pure view file. It is view plus UI controller plus transi
 
 `src/independent-chat/ui/transitions.ts`
 
-- Owns browser-level View Transition API support and CSS fallback markers.
+- Maps each transition kind to a call into the motion engine `ui/motion.ts` (detail grow/shrink, same-axis push, overlay grow/shrink).
 - Exports transition direction helpers for main mobile sections and desktop view switches.
-- Exports `renderWithUiTransition(kind, renderPage)` so the module can run transitions without importing the whole UI shell.
+- Exports `renderWithUiTransition(kind, renderPage)` so the module can run transitions without importing the whole UI shell. The new screen always renders immediately; motion plays afterwards.
 - Do not call this module for background scheduler refreshes or input-idle renders.
+
+`src/independent-chat/ui/motion.ts`
+
+- The motion engine: shared-element flights (`data-morph`), page grow/shrink, same-axis push, overlay grow/shrink, list reflow, send flight and theme spread. See the Motion Engine section of `docs/AI_HANDOFF.md`.
+- Uses Web Animations only, on `transform`, `opacity` and `clip-path`. Motion layers are `pointer-events: none` and `aria-hidden`.
+- Falls back to a short cross-fade when the user picks Reduced motion or the system asks for reduced motion.
+
+`src/independent-chat/ui/appearance.ts`
+
+- Applies accent, light/dark/system and motion level to `<html>` and rewrites the color-scheme and reduced-motion media queries in place.
 
 `src/independent-chat/ui/icons.ts`
 

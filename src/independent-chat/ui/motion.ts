@@ -1423,3 +1423,6 @@ export function playAppearanceSwitch(trigger: HTMLElement | null, apply: () => v
   const fade = animate(old.layer, [{ opacity: 1 }, { opacity: 0 }], { duration: 360, easing: MOTION_EASE.standard, fill: 'forwards' });
   whenSettled([fade], 360, () => dropLayer(old.layer));
 }
+
+/** 纯计算部分（位置插值、飞行位移、裁剪框、并排判断），不碰页面，测试直接调用。 */
+export const motionMath = { lerpBox, flyTransform, insetFor, morphTransform, unionBox, isBesidePage, isRowSource };

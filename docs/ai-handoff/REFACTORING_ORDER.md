@@ -24,7 +24,7 @@ Start with helpers that are easiest to move without changing markup.
 Candidate files:
 
 - `src/independent-chat/ui/session.ts`: scroll, focus, draft, and UI session snapshot helpers.
-- `src/independent-chat/ui/transitions.ts`: `UiTransitionKind`, `renderWithUiTransition`, and fallback transition helpers. First slice completed: transition mechanics now live here, while `app.ts` keeps a thin wrapper for existing call sites.
+- `src/independent-chat/ui/transitions.ts`: `UiTransitionKind` and `renderWithUiTransition`, mapped onto the motion engine in `ui/motion.ts`. Completed: `app.ts` keeps a thin wrapper for existing call sites.
 - `src/independent-chat/ui/icons.ts`: icon names and icon rendering. Completed: shared icon paths now live here.
 - `src/independent-chat/ui/chat-surface.ts`: avatar rendering and chat background helpers. Completed first slice: shared avatar tones, user initials, chat background controls, image reading, and chat surface style now live here.
 - `src/independent-chat/ui/model-settings.ts`: model-provider UI helpers. Completed: provider normalization, API URL selection, and provider option rendering now live here.

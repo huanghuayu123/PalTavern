@@ -6042,7 +6042,6 @@ function closeMomentComposerWithTransition(renderTransition: boolean, dropMotion
 
 function closeWorldGearPanel(renderTransition = true): void {
   if (!worldGearPanelOpen && !worldGearPanelClosing) return;
-  document.querySelectorAll('.pt-action-expand-layer').forEach(element => element.remove());
   window.clearTimeout(worldGearPanelCloseTimer);
   worldGearPanelCloseTimer = undefined;
   captureVisibleDraftsFromDom();
@@ -7868,7 +7867,6 @@ function bindUi(): void {
     render();
   });
   const toggleWorldGearPanel = (trigger: HTMLElement): void => {
-    document.querySelectorAll('.pt-action-expand-layer').forEach(element => element.remove());
     const nextOpen = !(worldGearPanelOpen || worldGearPanelClosing);
     if (!nextOpen) {
       closeWorldGearPanel(true);

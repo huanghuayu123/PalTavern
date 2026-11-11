@@ -10,7 +10,7 @@ const DARK_FEATURE = /\(\s*prefers-color-scheme\s*:\s*dark\s*\)/i;
 const REDUCED_MOTION_FEATURE = /\(\s*prefers-reduced-motion\s*:\s*reduce\s*\)/i;
 
 type MediaSwitch = { rule: CSSMediaRule; original: string[] };
-type MediaSwitchMode = 'system' | 'on' | 'off';
+export type MediaSwitchMode = 'system' | 'on' | 'off';
 
 let darkRules: MediaSwitch[] | null = null;
 let reducedMotionRules: MediaSwitch[] = [];
@@ -51,13 +51,17 @@ function collectMediaSwitches(): boolean {
   return true;
 }
 
-function switchMedia(entry: MediaSwitch, feature: RegExp, mode: MediaSwitchMode): void {
-  const next = entry.original.map(query => {
-    if (mode === 'system' || !feature.test(query)) return query;
-    // 小注释：打开时把这一项条件换成恒成立的 (min-width: 0px)，关闭时整条换成 not all。
-    return mode === 'on' ? query.replace(feature, '(min-width: 0px)') : 'not all';
-  });
-  const text = next.join(', ');
+/** 纯计算：按开关状态改写一条媒体查询列表。打开时把这一项条件换成恒成立的 (min-width: 0px)，关闭时整条换成 not all。 */
+export function rewriteMediaText(original: string[], feature: 'dark' | 'reduced-motion', mode: MediaSwitchMode): string {
+  const pattern = feature === 'dark' ? DARK_FEATURE : REDUCED_MOTION_FEATURE;
+  return original.map(query => {
+    if (mode === 'system' || !pattern.test(query)) return query;
+    return mode === 'on' ? query.replace(pattern, '(min-width: 0px)') : 'not all';
+  }).join(', ');
+}
+
+function switchMedia(entry: MediaSwitch, feature: 'dark' | 'reduced-motion', mode: MediaSwitchMode): void {
+  const text = rewriteMediaText(entry.original, feature, mode);
   if (entry.rule.media.mediaText !== text) entry.rule.media.mediaText = text;
 }
 
@@ -97,7 +101,7 @@ export function applyAppearance(settings: AppearanceSettings): void {
     return;
   }
   const darkMode: MediaSwitchMode = settings.colorScheme === 'system' ? 'system' : settings.colorScheme === 'dark' ? 'on' : 'off';
-  (darkRules ?? []).forEach(entry => switchMedia(entry, DARK_FEATURE, darkMode));
-  reducedMotionRules.forEach(entry => switchMedia(entry, REDUCED_MOTION_FEATURE, settings.motion === 'reduced' ? 'on' : 'system'));
+  (darkRules ?? []).forEach(entry => switchMedia(entry, 'dark', darkMode));
+  reducedMotionRules.forEach(entry => switchMedia(entry, 'reduced-motion', settings.motion === 'reduced' ? 'on' : 'system'));
   appliedMediaKey = mediaKey;
 }

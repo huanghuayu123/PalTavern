@@ -1585,6 +1585,12 @@ const transitionsPath = path.join(process.cwd(), 'src/independent-chat/ui/transi
 const transitionsSource = fs.existsSync(transitionsPath)
   ? fs.readFileSync(transitionsPath, 'utf8')
   : '';
+const motionPath = path.join(process.cwd(), 'src/independent-chat/ui/motion.ts');
+const motionSource = fs.existsSync(motionPath)
+  ? fs.readFileSync(motionPath, 'utf8')
+  : '';
+const appearanceStyleSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/styles-appearance.css'), 'utf8');
+const mobileStyleSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/styles-mobile.css'), 'utf8');
 const iconsPath = path.join(process.cwd(), 'src/independent-chat/ui/icons.ts');
 const iconsSource = fs.existsSync(iconsPath)
   ? fs.readFileSync(iconsPath, 'utf8')
@@ -1815,12 +1821,7 @@ const mobileMomentComposerOpenBlock = (styleSource.split('.moment-compose-fab {'
   ?.split('}')[0] ?? '';
 const keepMomentComposerVisibleBlock = functionBody(uiSource, 'keepMomentComposerVisible');
 const desktopRailBlock = functionBody(uiSource, 'renderDesktopRail');
-const renderWithUiTransitionBlock = transitionsSource
-  .split('function renderWithUiTransition')[1]
-  ?.split('function modelIsReady')[0] ?? '';
-const startStaggeredUiTransitionBlock = transitionsSource
-  .split('function startStaggeredUiTransition')[1]
-  ?.split('function overlayExitTargets')[0] ?? '';
+const renderWithUiTransitionBlock = functionBody(transitionsSource, 'renderWithUiTransition');
 const renderWhenChatInputIdleBlock = uiSource
   .split('export function renderWhenChatInputIdle')[1]
   ?.split('function bindUi')[0] ?? '';
@@ -1887,7 +1888,14 @@ const scrollMessagesToBottomBlock = functionBody(uiSource, 'scrollMessagesToBott
 const renderBlock = uiSource
   .split('export function render(): void')[1]
   ?.split('export function renderWhenChatInputIdle')[0] ?? '';
-const setRevealMaskBlock = functionBody(transitionsSource, 'setRevealMask');
+const enterDetailBlock = functionBody(motionSource, 'enterDetail');
+const exitDetailBlock = functionBody(motionSource, 'exitDetail');
+const switchAxisBlock = functionBody(motionSource, 'switchAxis');
+const openOverlayBlock = functionBody(motionSource, 'openOverlay');
+const closeOverlayBlock = functionBody(motionSource, 'closeOverlay');
+const quickFadeBlock = functionBody(motionSource, 'quickFade');
+const settlePageMotionBlock = functionBody(motionSource, 'settlePageMotion');
+const cloneShellBlock = functionBody(motionSource, 'cloneShell');
 const renderSettingsContentBlock = functionBody(uiSource, 'renderSettingsContent');
 const renderDesktopSettingsPageBlock = uiSource
   .split('function renderDesktopSettingsPage')[1]
@@ -2293,8 +2301,8 @@ if (
 }
 if (
   renderMomentsPageBlock.indexOf('<section class="moments-scroll">') < 0
-  || renderMomentsPageBlock.indexOf('${renderMomentComposerLauncher()}') < 0
-  || renderMomentsPageBlock.indexOf('${renderMomentComposerLauncher()}') < renderMomentsPageBlock.indexOf('</section>')
+  || renderMomentsPageBlock.indexOf('${renderMomentComposerLauncher(mobile)}') < 0
+  || renderMomentsPageBlock.indexOf('${renderMomentComposerLauncher(mobile)}') < renderMomentsPageBlock.lastIndexOf('</section>')
 ) {
   throw new Error('Moment compose FAB should render outside the animated moments scroll container to avoid fixed-position drift during tab transitions.');
 }
@@ -2473,7 +2481,7 @@ if (
   !indexHtmlSource.includes('<title>PalTavern</title>')
   || !uiSource.includes('<div class="desktop-rail-brand" aria-label="PalTavern" title="PalTavern">PT</div>')
   || !uiSource.includes('<span class="settings-kicker">PalTavern</span><h1>设置中心</h1>')
-  || !uiSource.includes('<span class="eyebrow">PalTavern</span><h1>设置</h1>')
+  || !uiSource.includes('<span class="eyebrow">PalTavern</span><div class="mobile-title-row"><h1>设置</h1></div>')
   || uiSource.includes('<div class="brand"><h1>Tavern Social</h1>')
 ) {
   throw new Error('Visible app shell branding should use PalTavern instead of Tavern Social.');
@@ -2504,7 +2512,7 @@ if (
   throw new Error('Settings data panel should expose a force restart button that reloads the app without touching existing content data.');
 }
 if (
-  !uiSource.includes("type SettingsSection = 'world' | 'drafts' | 'stickers' | 'model' | 'prompts' | 'relationship' | 'interactions' | 'proactive' | 'chat' | 'notifications' | 'data'")
+  !uiSource.includes("type SettingsSection = 'world' | 'drafts' | 'stickers' | 'model' | 'prompts' | 'relationship' | 'interactions' | 'proactive' | 'chat' | 'appearance' | 'notifications' | 'data'")
   || !uiSource.includes("['interactions',")
   || !uiSource.includes('id="world-interaction-high-simulation"')
   || !uiSource.includes('id="refresh-character-plan"')
@@ -2736,9 +2744,9 @@ if (
   throw new Error('Mobile bottom navigation should lock five equal slots and centered icon/label alignment.');
 }
 if (
-  !transitionsSource.includes("export type UiTransitionKind = 'main-forward' | 'main-back' | 'world-forward' | 'world-back' | 'detail-in' | 'detail-out' | 'overlay-in' | 'overlay-out' | 'quiet'")
-  || !transitionsSource.includes('startViewTransition')
-  || !transitionsSource.includes("setAttribute('data-ui-transition'")
+  !transitionsSource.includes("export type UiTransitionKind = 'main-forward' | 'main-back' | 'world-forward' | 'world-back' | 'segment-forward' | 'segment-back' | 'detail-in' | 'detail-out' | 'overlay-in' | 'overlay-out' | 'quiet'")
+  || !transitionsSource.includes("from './motion'")
+  || transitionsSource.includes("setAttribute('data-ui-transition'")
   || uiSource.includes('function startViewTransitionRender')
   || uiSource.includes("setAttribute('data-ui-transition'")
   || !uiSource.includes("from './transitions'")
@@ -2765,21 +2773,19 @@ if (
 ) {
   throw new Error('Chat renders should settle scroll before paint so overlays, long press menus, and sends never flash from top to bottom.');
 }
-const startStaggeredRenderIndex = startStaggeredUiTransitionBlock.indexOf('renderPage();');
-const startStaggeredTimerIndex = startStaggeredUiTransitionBlock.indexOf('window.setTimeout');
+const switchAxisCloneIndex = switchAxisBlock.indexOf('const old = cloneShell();');
+const switchAxisRenderIndex = switchAxisBlock.indexOf('renderPage();');
 if (
-  startStaggeredRenderIndex < 0
-  || startStaggeredTimerIndex < 0
-  || startStaggeredRenderIndex < startStaggeredTimerIndex
-  || !transitionsSource.includes('function currentPageTransitionTargets')
-  || !startStaggeredUiTransitionBlock.includes("currentPageTransitionTargets().forEach(element => element.classList.add('is-exiting'))")
-  || !startStaggeredUiTransitionBlock.includes("setTransitionPhase('exit');")
-  || !startStaggeredUiTransitionBlock.includes("window.setTimeout(() => {\n    setTransitionPhase('enter');\n    renderPage();")
-  || transitionsSource.includes('function createTransitionExitLayer')
-  || transitionsSource.includes('function animateTransitionExitLayer')
+  switchAxisCloneIndex < 0
+  || switchAxisRenderIndex < 0
+  || switchAxisCloneIndex > switchAxisRenderIndex
+  || switchAxisBlock.includes('setTimeout')
+  || transitionsSource.includes('setTimeout')
   || styleSource.includes('.pt-transition-exit-layer')
+  || styleSource.includes('[data-ui-transition')
+  || styleSource.includes('.ui-fallback-transition')
 ) {
-  throw new Error('Main page transitions should use the real current page for a short reference-style slide-fade out, not a cloned exit layer.');
+  throw new Error('Same-level page switches should copy the old page, render the new one at once, and never wait on a timer before rendering.');
 }
 const groupRevealPrepareIndex = groupChatRowOpenBlock.indexOf('prepareChatRevealFromElement(button);');
 const groupRevealRenderIndex = groupChatRowOpenBlock.indexOf("renderWithUiTransition('detail-in')");
@@ -2787,64 +2793,50 @@ if (
   groupRevealPrepareIndex < 0
   || groupRevealRenderIndex < 0
   || groupRevealPrepareIndex > groupRevealRenderIndex
-  || !transitionsSource.includes('dataset.groupChatId')
-  || !transitionsSource.includes('data-group-chat-id')
-  || transitionsSource.includes("!detail.classList.contains('mobile-group-chat')")
+  || !motionSource.includes('if (data.groupChatId) return `row:group:${data.groupChatId}`;')
+  || !motionSource.includes('[data-group-chat-id="')
 ) {
   throw new Error('Group chat rows should seed the same anchored detail reveal as private chats, including mobile back reveal.');
 }
+const pageMotionBlocks = [enterDetailBlock, exitDetailBlock, switchAxisBlock];
 if (
-  !transitionsSource.includes('UI_ENTER_MS = 160')
-  || !transitionsSource.includes('UI_EXIT_MS = 80')
-  || !transitionsSource.includes('CHAT_REVEAL_ENTER_MS = 420')
-  || !transitionsSource.includes('CHAT_REVEAL_EXIT_MS = 280')
-  || !transitionsSource.includes('playChatRippleEnter')
-  || !transitionsSource.includes('playChatRippleExit')
-  || !transitionsSource.includes('nextAnimationFrame')
-  || !transitionsSource.includes('window.requestAnimationFrame')
-  || !transitionsSource.includes('window.setTimeout(() => callback(Date.now()), 16)')
-  || !transitionsSource.includes('radial-gradient(circle at')
-  || !transitionsSource.includes('data-character-id')
-  || !styleSource.includes('--fade-dur: 260ms')
-  || !styleSource.includes('--fade-out-dur: 220ms')
-  || !styleSource.includes('--block-gap: 24ms')
-  || !styleSource.includes('@keyframes referencePageEnter')
-  || !styleSource.includes('@keyframes referencePageExit')
-  || !styleSource.includes('.ui-fallback-transition[data-ui-transition-phase="enter"][data-ui-transition^="main-"] .mobile-page:not(.is-exiting) > *:not(.bottom-nav):not(.moment-compose-fab)')
-  || !styleSource.includes('.ui-fallback-transition[data-ui-transition-phase="enter"][data-ui-transition^="main-"] .moments-page:not(.is-exiting) > *:not(.bottom-nav):not(.moments-publisher)')
-  || !styleSource.includes('.ui-fallback-transition[data-ui-transition-phase="exit"][data-ui-transition^="main-"] .is-exiting.mobile-page > *:not(.bottom-nav):not(.moment-compose-fab)')
-  || styleSource.includes('paltavern-page-enter-forward')
-  || styleSource.includes('--ui-transition-duration')
-  || styleSource.includes('::view-transition-old(root)')
-  || !styleSource.includes('@keyframes slideUpIn')
-  || !styleSource.includes('@keyframes slideDownOut')
-  || styleSource.includes('.pt-transition-exit-layer')
-  || !styleSource.includes('.bottom-nav button:active')
-  || !styleSource.includes('transform: translateY(3px) scale(0.975)')
-  || !styleSource.includes('.pt-chat-reveal-layer')
-  || !styleSource.includes('.pt-chat-reveal-snapshot')
-  || !transitionsSource.includes('let activeRevealCancel')
-  || !transitionsSource.includes('cancelActiveChatReveal()')
-  || !transitionsSource.includes('chatRevealAnimating = false')
+  !motionSource.includes('fast: 160')
+  || !motionSource.includes('base: 280')
+  || !motionSource.includes('emphasized: 380')
+  || !motionSource.includes("document.documentElement.getAttribute('data-motion') === 'reduced'")
+  || !motionSource.includes("matchMedia('(prefers-reduced-motion: reduce)')")
+  || pageMotionBlocks.some(block => {
+    const settleIndex = block.indexOf('settlePageMotion();');
+    const reducedIndex = block.indexOf('if (isMotionReduced()) {\n    quickFade(renderPage);\n    return;\n  }');
+    return settleIndex < 0 || reducedIndex < 0 || settleIndex > reducedIndex;
+  })
+  || quickFadeBlock.indexOf('renderPage();') < 0
+  || quickFadeBlock.indexOf('renderPage();') > quickFadeBlock.indexOf('animate(')
+  || !openOverlayBlock.includes('renderPage();\n  if (isMotionReduced()) return;')
+  || !closeOverlayBlock.includes('if (!overlays.length || isMotionReduced()) {\n    renderPage();\n    return;\n  }')
+  || !settlePageMotionBlock.includes('animation.finish();')
+  || !settlePageMotionBlock.includes('dropLayer(layer)')
+  || !settlePageMotionBlock.includes('[data-motion-lifted]')
+  || !cloneShellBlock.includes("clone.style.pointerEvents = 'none';")
+  || !motionSource.includes("root.setAttribute('aria-hidden', 'true');")
+  || !appearanceStyleSource.includes('.pt-motion-clone {\n  pointer-events: none !important;')
+  || !appearanceStyleSource.includes('.pt-motion-ghost {\n  pointer-events: none;')
 ) {
-  throw new Error('Current motion should replicate the reference APK and let a back gesture take over an unfinished chat reveal.');
+  throw new Error('Motion should render at once, fall back to a short fade when reduced, finish interrupted motion without leftovers, and keep motion layers non-interactive.');
 }
 if (
-  !styleSource.includes('html[data-ui-transition]:not([data-ui-transition^="main-"]) .moment-compose-fab')
-  || !styleSource.includes('transition: none !important;')
-  || !styleSource.includes('transform: none !important;')
-  || !styleSource.includes('will-change: auto;')
+  !uiSource.includes('<span class="bottom-nav-indicator" data-morph="indicator:bottom-nav" aria-hidden="true"></span>')
+  || !mobileStyleSource.includes('html[data-compact-ui] .bottom-nav-indicator')
 ) {
-  throw new Error('Moment compose FAB should stay visually pinned during tab transition motion.');
+  throw new Error('The phone bottom navigation should mark the active tab with a sliding indicator pill.');
 }
+const motionKeyframeBlocks = motionSource.match(/animate\([^,]+, \[[\s\S]*?\], \{/g) ?? [];
 if (
-  !setRevealMaskBlock.includes('maskImage')
-  || !setRevealMaskBlock.includes('radial-gradient(circle at')
-  || setRevealMaskBlock.includes('--reveal-size')
+  motionKeyframeBlocks.length < 20
+  || motionKeyframeBlocks.some(block => /\b(width|height|left|top|maskImage)\s*:/.test(block))
   || styleSource.includes('will-change: width, height, opacity')
-  || !styleSource.includes('will-change: opacity, mask-image, -webkit-mask-image')
 ) {
-  throw new Error('Chat avatar reveal should animate a mask radius instead of width/height layout on every frame.');
+  throw new Error('Motion should only animate transform, opacity and clip-path, never layout boxes, so long chats stay smooth on old phones.');
 }
 if (
   !iconsSource.includes('export type IconName')

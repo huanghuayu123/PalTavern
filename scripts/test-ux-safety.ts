@@ -323,14 +323,13 @@ if (
   throw new Error('Private chat identity selector should use a polished custom dropdown menu instead of the native select popup.');
 }
 
+const motionEngineSource = fs.readFileSync(path.join(process.cwd(), 'src/independent-chat/ui/motion.ts'), 'utf8');
 if (
-  !styleSource.includes('@keyframes characterPanelWholeIn')
-  || !styleSource.includes('@keyframes characterPanelWholeOut')
-  || !styleSource.includes('.ui-fallback-transition[data-ui-transition="detail-in"] .character-panel.character-page')
-  || !styleSource.includes('.ui-fallback-transition[data-ui-transition="detail-in"] .character-panel.character-page > *')
-  || !styleSource.includes('animation: characterPanelWholeIn 180ms')
+  !motionEngineSource.includes("'.mobile-shell > .character-panel',")
+  || !motionEngineSource.includes("'.desktop-shell > .character-page',")
   || !styleSource.includes('.character-panel.character-page {\n  animation: none;')
-  || !styleSource.includes('animation: none !important;')
+  || styleSource.includes('@keyframes characterPanelWholeIn')
+  || styleSource.includes('[data-ui-transition')
 ) {
   throw new Error('Character settings panel should animate as one shell instead of staggering its inner content after opening.');
 }

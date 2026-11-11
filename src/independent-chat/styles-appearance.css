@@ -255,6 +255,7 @@ html[data-compact-ui] {
 /* ---------- 动效图层 ---------- */
 
 .pt-motion-clone {
+  pointer-events: none !important;
   overflow: hidden;
   contain: layout paint;
   will-change: transform, opacity, clip-path;
