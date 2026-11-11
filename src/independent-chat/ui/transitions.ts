@@ -95,5 +95,7 @@ export function renderWithUiTransition(kind: UiTransitionKind, renderPage: () =>
     switchAxis(renderPage, kind === 'segment-forward' ? 1 : -1, SEGMENT_SCOPE);
     return;
   }
-  switchAxis(renderPage, kind === 'main-forward' ? 1 : -1);
+  // 小注释：电脑版的主导航是左边竖排的一列，切换时内容上下推；手机和平板仍然左右推。
+  const axis = document.querySelector('.desktop-shell') ? 'y' : 'x';
+  switchAxis(renderPage, kind === 'main-forward' ? 1 : -1, undefined, axis);
 }

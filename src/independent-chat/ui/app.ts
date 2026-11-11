@@ -6104,8 +6104,8 @@ function closeGroupSettingsPanel(renderTransition = true): void {
   window.clearTimeout(groupSettingsCloseTimer);
   groupSettingsCloseTimer = undefined;
   captureVisibleDraftsFromDom();
-  if (renderTransition && isCompactViewport()) {
-    // 小注释：手机上群设置整页缩回齿轮、创建面板落回底边，动画交给动效引擎。
+  if (renderTransition) {
+    // 小注释：群设置收回齿轮（手机上是整页，电脑上是右侧抽屉），创建面板落回底边，动画都交给动效引擎。
     groupSettingsOpen = false;
     groupSettingsClosing = false;
     groupSettingsMode = 'create';
@@ -6380,8 +6380,8 @@ function bindUi(): void {
     window.setTimeout(keepMomentComposerVisible, 80);
   });
   const closeMomentComposer = () => {
-    // 小注释：手机上面板直接由动效引擎沉回底部，不再等旧的下坠动画。
-    closeMomentComposerWithTransition(true, !isCompactViewport());
+    // 小注释：面板直接交给动效引擎：手机上沉回底部，电脑上缩回发布按钮，不再等旧的下坠动画。
+    closeMomentComposerWithTransition(true);
   };
   document.querySelector<HTMLButtonElement>('#close-moment-composer')?.addEventListener('click', closeMomentComposer);
   document.querySelector<HTMLButtonElement>('#close-moment-composer-backdrop')?.addEventListener('click', closeMomentComposer);
@@ -6989,20 +6989,24 @@ function bindUi(): void {
   });
   document.querySelector<HTMLButtonElement>('#close-settings')?.addEventListener('click', () => {
     settingsOpen = false;
-    render();
+    renderWithUiTransition('detail-out');
   });
   document.querySelector<HTMLButtonElement>('#close-settings-backdrop')?.addEventListener('click', () => {
     settingsOpen = false;
-    render();
+    renderWithUiTransition('detail-out');
   });
   document.querySelectorAll<HTMLButtonElement>('[data-settings-section]').forEach(button => {
     button.addEventListener('click', () => {
       const section = button.dataset.settingsSection as SettingsSection | undefined;
+      // 小注释：电脑版设置左边菜单、右边内容；点当前这一项不用动，点别的只换右边内容区。
+      if (!isCompactViewport() && section === activeSettingsSection) return;
       preserveScrollForNextRender();
       if (section) activeSettingsSection = section;
       if (isCompactViewport()) {
         mobileSettingsDetail = true;
         pushMobileHistory('settings-detail');
+      } else {
+        prepareDetailScope('.desktop-settings-page .settings-content');
       }
       renderWithUiTransition('detail-in');
     });
@@ -7138,7 +7142,7 @@ function bindUi(): void {
       return;
     }
     if (event.key === 'Escape' && momentComposerOpen) {
-      closeMomentComposerWithTransition(true, !isCompactViewport());
+      closeMomentComposerWithTransition(true);
       return;
     }
     if (event.key === 'Escape' && groupSettingsOpen) {

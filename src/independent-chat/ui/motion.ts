@@ -30,7 +30,7 @@ export type AxisDirection = 1 | -1;
 
 type MorphEntry = MotionBox & { scale: 'free' | 'uniform' | 'none' };
 type ExitEntry = { key: string; element: HTMLElement; box: MotionBox; kind: string; origin: string };
-export type MorphCapture = { layout: string; entries: Map<string, MorphEntry>; exits: ExitEntry[] };
+export type MorphCapture = { layout: string; entries: Map<string, MorphEntry>; exits: ExitEntry[]; selections: Map<string, MotionBox> };
 
 const SHELL_SELECTOR = '.mobile-shell, .tablet-landscape-shell, .desktop-shell';
 const PAGE_SELECTORS = [
@@ -392,7 +392,8 @@ export function takeTapSource(maxAgeMs = 1200): MotionSource | null {
 export function captureMorphs(): MorphCapture {
   const entries = new Map<string, MorphEntry>();
   const exits: ExitEntry[] = [];
-  if (typeof document === 'undefined' || isMotionReduced()) return { layout: '', entries, exits };
+  const selections = new Map<string, MotionBox>();
+  if (typeof document === 'undefined' || isMotionReduced()) return { layout: '', entries, exits, selections };
   document.querySelectorAll<HTMLElement>('[data-morph]').forEach(element => {
     const key = element.dataset.morph;
     if (!key || entries.has(key) || element.closest('.pt-motion-clone')) return;
@@ -405,7 +406,12 @@ export function captureMorphs(): MorphCapture {
       exits.push({ key, element, box: boxOf(element, true), kind: element.dataset.motionExit, origin: element.dataset.motionOrigin ?? 'center' });
     }
   });
-  lastCapture = { layout: layoutSignature(), entries, exits };
+  SELECTION_GROUPS.forEach(group => {
+    const active = Array.from(document.querySelectorAll<HTMLElement>(`${group} .is-active`))
+      .find(element => !element.closest('.pt-motion-clone'));
+    if (active && onScreen(boxOf(active))) selections.set(group, boxOf(active, true));
+  });
+  lastCapture = { layout: layoutSignature(), entries, exits, selections };
   return lastCapture;
 }
 
@@ -433,13 +439,13 @@ function playEnter(element: HTMLElement, kind: string): void {
 }
 
 /**
- * 小元素消失：把旧元素复制一份放回原处再收走。
+ * 把一个元素复制一份，钉在屏幕上的指定位置，用来做飞行或收回。
  * 复制品外面套一层和原来一样的祖先类名（display: contents，不占位置），原来的样式规则照样生效。
  */
-function playExit(entry: ExitEntry): void {
+function floatingCopy(element: HTMLElement, box: MotionBox, zIndex: string): { layer: HTMLElement; copy: HTMLElement } {
   let wrapper: HTMLElement | null = null;
   let innermost: HTMLElement | null = null;
-  for (let parent = entry.element.parentElement; parent && parent !== document.body && parent !== document.documentElement; parent = parent.parentElement) {
+  for (let parent = element.parentElement; parent && parent !== document.body && parent !== document.documentElement; parent = parent.parentElement) {
     const shell = parent.cloneNode(false) as HTMLElement;
     shell.removeAttribute('id');
     Array.from(shell.attributes).forEach(attribute => {
@@ -451,20 +457,28 @@ function playExit(entry: ExitEntry): void {
     else innermost = shell;
     wrapper = shell;
   }
-  const clone = entry.element.cloneNode(true) as HTMLElement;
-  stripClone(clone);
-  Object.assign(clone.style, { top: 'auto', right: 'auto', bottom: 'auto', left: 'auto' });
-  Object.assign(clone.style, {
-    position: 'fixed', left: `${entry.box.left}px`, top: `${entry.box.top}px`, width: `${entry.box.width}px`, height: `${entry.box.height}px`,
-    margin: '0', pointerEvents: 'none', zIndex: '70', transform: 'none', animation: 'none', transition: 'none',
+  const copy = element.cloneNode(true) as HTMLElement;
+  stripClone(copy);
+  Object.assign(copy.style, { top: 'auto', right: 'auto', bottom: 'auto', left: 'auto' });
+  Object.assign(copy.style, {
+    position: 'fixed', left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px`, height: `${box.height}px`,
+    margin: '0', pointerEvents: 'none', zIndex, transform: 'none', animation: 'none', transition: 'none',
   });
-  const layer = wrapper ?? clone;
-  if (innermost) innermost.appendChild(clone);
+  const layer = wrapper ?? copy;
+  if (innermost) innermost.appendChild(copy);
   if (wrapper) wrapper.classList.add('pt-motion-clone');
-  else clone.classList.add('pt-motion-clone');
+  else copy.classList.add('pt-motion-clone');
   layer.setAttribute('aria-hidden', 'true');
   document.body.appendChild(layer);
   trackLayer(layer);
+  return { layer, copy };
+}
+
+/**
+ * 小元素消失：把旧元素复制一份放回原处再收走。
+ */
+function playExit(entry: ExitEntry): void {
+  const { layer, copy: clone } = floatingCopy(entry.element, entry.box, '70');
   let keyframes: Keyframe[];
   if (entry.kind === 'pop') {
     keyframes = [
@@ -581,6 +595,67 @@ export function playMorphs(capture: MorphCapture, options: { duration?: number; 
     if (!seen.has(entry.key) && onScreen(entry.box)) playExit(entry);
   });
   playContentSlide();
+  playSelectionSlides(capture);
+}
+
+/**
+ * 电脑版左侧导航、设置菜单的选中底色：换选中项时，底色从旧的那一项滑到新的那一项。
+ * 滑动的底色垫在按钮文字下面；新选中项自己的底色和左侧小竖条先藏着，滑到位再换回来。
+ */
+const SELECTION_GROUPS = ['.desktop-rail', '.desktop-settings-page .settings-nav'];
+
+function playSelectionSlides(capture: MorphCapture): void {
+  capture.selections.forEach((fromBox, group) => {
+    const container = Array.from(document.querySelectorAll<HTMLElement>(group)).find(element => !element.closest('.pt-motion-clone'));
+    const active = container?.querySelector<HTMLElement>('.is-active');
+    if (!container || !active) return;
+    const toBox = boxOf(active, true);
+    if (!onScreen(toBox) || (Math.abs(toBox.top - fromBox.top) < 1 && Math.abs(toBox.left - fromBox.left) < 1)) return;
+    const style = window.getComputedStyle(active);
+    const color = style.backgroundColor;
+    if (!color || color === 'transparent' || color === 'rgba(0, 0, 0, 0)') return;
+    const duration = MOTION_MS.base;
+    const easing = MOTION_EASE.standard;
+    const ghost = document.createElement('div');
+    ghost.className = 'pt-motion-clone';
+    ghost.setAttribute('aria-hidden', 'true');
+    Object.assign(ghost.style, {
+      position: 'fixed', left: `${toBox.left}px`, top: `${toBox.top}px`, width: `${toBox.width}px`, height: `${toBox.height}px`,
+      margin: '0', padding: '0', border: '0', pointerEvents: 'none', zIndex: '0',
+      background: color, borderRadius: style.borderRadius, contain: 'none', overflow: 'visible',
+    });
+    // 小注释：左侧那条主题色小竖条也一起滑。
+    const bar = window.getComputedStyle(active, '::before');
+    if (bar.content && bar.content !== 'none' && bar.position === 'absolute') {
+      const line = document.createElement('div');
+      Object.assign(line.style, {
+        position: 'absolute', left: bar.left, top: bar.top, bottom: bar.bottom, width: bar.width,
+        background: bar.backgroundColor, borderRadius: bar.borderRadius,
+      });
+      ghost.appendChild(line);
+    }
+    // 小注释：同一组里的按钮临时抬高一层，滑动的底色就垫在它们下面，不会盖住图标和文字。
+    const siblings = Array.from(container.querySelectorAll<HTMLElement>('button'));
+    const lifted = siblings.map(element => [element, element.style.zIndex] as const);
+    siblings.forEach(element => { element.style.zIndex = '1'; });
+    container.appendChild(ghost);
+    trackLayer(ghost);
+    const slide = animate(ghost, [
+      { transform: `translate(${(fromBox.left - toBox.left).toFixed(1)}px, ${(fromBox.top - toBox.top).toFixed(1)}px)` },
+      { transform: 'none' },
+    ], { duration, easing });
+    const hideOwn = animate(active, [{ backgroundColor: 'transparent' }, { backgroundColor: 'transparent' }], { duration });
+    let hideBar: Animation | null = null;
+    try {
+      hideBar = animate(active, [{ opacity: 0 }, { opacity: 0 }], { duration, pseudoElement: '::before' } as KeyframeAnimationOptions);
+    } catch {
+      hideBar = null;
+    }
+    whenSettled([slide, hideOwn, hideBar], duration, () => {
+      dropLayer(ghost);
+      lifted.forEach(([element, zIndex]) => { element.style.zIndex = zIndex; });
+    });
+  });
 }
 
 function morphTransform(from: MotionBox, to: MotionBox, shiftX: number, shiftY: number, uniform: boolean): string {
@@ -667,6 +742,8 @@ export function enterDetail(renderPage: () => void, source: MotionSource | null,
     quickFade(renderPage);
     return;
   }
+  // 小注释：先记下旧页面里有哪些共享元素，用来判断“点的就是当前已经打开的那一个”。
+  const oldPageKeys = morphKeysIn(detailPage(scopeSelector));
   const old = cloneShell();
   renderPage();
   const page = detailPage(scopeSelector);
@@ -676,6 +753,10 @@ export function enterDetail(renderPage: () => void, source: MotionSource | null,
   }
   const pageBox = boxOf(page);
   const from = source && onScreen(source) ? source : null;
+  if (from && isBesidePage(from, pageBox)) {
+    swapBeside(old, page, pageBox, from, oldPageKeys);
+    return;
+  }
   detailStack.push({ key: from?.key ?? '', box: from ?? pageBox });
   if (detailStack.length > 12) detailStack.shift();
 
@@ -732,6 +813,73 @@ export function enterDetail(renderPage: () => void, source: MotionSource | null,
   });
 }
 
+function morphKeysIn(container: HTMLElement | null): Set<string> {
+  const keys = new Set<string>();
+  container?.querySelectorAll<HTMLElement>('[data-morph]').forEach(element => {
+    if (element.dataset.morph) keys.add(element.dataset.morph);
+  });
+  return keys;
+}
+
+/** 来源在页面旁边（电脑、平板横屏：左边列表、右边详情；设置左边菜单、右边内容）。 */
+function isBesidePage(source: MotionBox, page: MotionBox): boolean {
+  return source.left + source.width <= page.left + 1 || source.left >= page.left + page.width - 1;
+}
+
+/**
+ * 列表和详情并排时：列表不动，右边原地换内容（新内容轻轻浮上来盖住旧的），
+ * 被点那一行里的头像和名字直接飞进详情顶栏。点的就是已经打开的那一个时什么都不演。
+ */
+function swapBeside(old: ShellClone, page: HTMLElement, pageBox: MotionBox, from: MotionSource, oldPageKeys: Set<string>): void {
+  const row = from.key ? findByKey(from.key) : null;
+  const rowKeys = Array.from(morphKeysIn(row));
+  if (rowKeys.some(key => oldPageKeys.has(key))) {
+    dropLayer(old.layer);
+    return;
+  }
+  const shell = document.querySelector<HTMLElement>(SHELL_SELECTOR);
+  (shell ?? document.body).appendChild(old.layer);
+  applyLiveState(old.layer, old.live);
+  trackLayer(old.layer);
+  old.layer.style.zIndex = '1';
+  old.layer.style.clipPath = insetFor({ ...pageBox, radius: 0 }, old.box);
+  liftAbove(page, 2);
+  const duration = MOTION_MS.base + 40;
+  const animations: Array<Animation | null> = [];
+  // 小注释：先量好落点再让页面动起来，页面的位移不会算进落点里。
+  if (row) {
+    rowKeys.forEach(key => {
+      const selector = `[data-morph="${key.replace(/"/g, '\\"')}"]`;
+      const start = row.matches(selector) ? row : row.querySelector<HTMLElement>(selector);
+      const target = page.querySelector<HTMLElement>(selector);
+      if (!start || !target || start === row) return;
+      const startBox = boxOf(start);
+      const targetBox = boxOf(target);
+      if (!onScreen(startBox) || !onScreen(targetBox) || startBox.width <= 0 || targetBox.width <= 0) return;
+      const { layer, copy } = floatingCopy(start, startBox, '70');
+      // 小注释：按高度算缩放：列表里名字那一格往往比字本身宽，按宽度算会把字缩得太小。
+      const scale = startBox.height > 0 ? targetBox.height / startBox.height : 1;
+      const end = `translate(${(targetBox.left - startBox.left).toFixed(1)}px, ${(targetBox.top - startBox.top).toFixed(1)}px) scale(${scale.toFixed(4)})`;
+      // 小注释：复制品一路不透明地飞到位，真的那一份到终点前一直藏着，落地时直接交接，不会闪一下。
+      animations.push(animate(copy, [
+        { transformOrigin: '0 0', transform: 'none' },
+        { transformOrigin: '0 0', transform: end },
+      ], { duration, easing: MOTION_EASE.standard, fill: 'forwards' }));
+      animations.push(animate(target, [{ opacity: 0 }, { opacity: 0 }], { duration }));
+      whenSettled(animations, duration, () => dropLayer(layer));
+    });
+  }
+  animations.push(animate(page, [
+    { transform: 'translateY(10px)', opacity: 0 },
+    { opacity: 1, offset: 0.7 },
+    { transform: 'none', opacity: 1 },
+  ], { duration, easing: MOTION_EASE.decelerate }));
+  whenSettled(animations, duration, () => {
+    dropLayer(old.layer);
+    restoreLifted(page);
+  });
+}
+
 /** 退出详情：当前页面缩回当初点开它的那一行；那一行不在屏幕上时，就向右退出。 */
 export function exitDetail(renderPage: () => void, scopeSelector?: string): void {
   settlePageMotion();
@@ -752,6 +900,7 @@ export function exitDetail(renderPage: () => void, scopeSelector?: string): void
   const targetBox = target ? { ...boxOf(target, true), radius: Math.max(10, boxOf(target, true).radius) } : null;
   const page = detailPage(scopeSelector);
   const duration = MOTION_MS.emphasized;
+  const desktop = old.source.classList.contains('desktop-shell');
   const animations: Array<Animation | null> = [];
   if (target && targetBox && isRowSource(targetBox, startBox)) {
     // 小注释：整行收回，和展开正好相反：旧页面边往下挪边收窄，最后只剩顶栏那一条，正好盖在那一行上再淡掉。
@@ -796,6 +945,10 @@ export function exitDetail(renderPage: () => void, scopeSelector?: string): void
       { clipPath: insetFor(lerpBox(startBox, targetBox, 0.55), old.box), opacity: 0.9, offset: 0.55 },
       { clipPath: insetFor(targetBox, old.box), opacity: 0 },
     ], { duration: MOTION_MS.base + 60, easing: MOTION_EASE.standard, fill: 'forwards' }));
+  } else if (desktop) {
+    // 小注释：电脑版没有“返回到哪一行”：旧内容原地淡掉，下面的页面轻轻浮上来，和打开时正好相反。
+    old.layer.style.clipPath = insetFor(startBox, old.box);
+    animations.push(animate(old.layer, [{ opacity: 1 }, { opacity: 0 }], { duration: MOTION_MS.fast + 20, easing: 'linear', fill: 'forwards' }));
   } else {
     old.layer.style.clipPath = insetFor(startBox, old.box);
     animations.push(animate(old.layer, [
@@ -803,7 +956,13 @@ export function exitDetail(renderPage: () => void, scopeSelector?: string): void
       { transform: `translateX(${Math.round(startBox.width * 0.3)}px)`, opacity: 0 },
     ], { duration: MOTION_MS.base, easing: MOTION_EASE.accelerate, fill: 'forwards' }));
   }
-  if (page) {
+  if (page && desktop && !targetBox) {
+    animations.push(animate(page, [
+      { transform: 'translateY(10px)', opacity: 0 },
+      { opacity: 1, offset: 0.7 },
+      { transform: 'none', opacity: 1 },
+    ], { duration: MOTION_MS.base + 40, delay: 40, easing: MOTION_EASE.decelerate }));
+  } else if (page) {
     animations.push(animate(page, [
       { opacity: 0.4, transform: 'scale(0.96)' },
       { opacity: 1, transform: 'none' },
@@ -812,16 +971,42 @@ export function exitDetail(renderPage: () => void, scopeSelector?: string): void
   whenSettled(animations, duration, () => dropLayer(old.layer));
 }
 
-/** 同级切换（底部标签、分段控件）：旧内容往一边推走，新内容从另一边进来。 */
-export function switchAxis(renderPage: () => void, direction: AxisDirection, scopeSelector?: string): void {
+/** 电脑版里随页面出现、消失的侧栏（会话列表）：切到没有列表的页面时它跟着旧内容一起走，切回来时跟着新内容一起进来。 */
+const SIDE_PANE_SELECTOR = '.desktop-list-pane';
+
+function livePane(): HTMLElement | null {
+  return Array.from(document.querySelectorAll<HTMLElement>(SIDE_PANE_SELECTOR))
+    .find(element => !element.closest('.pt-motion-clone') && onScreen(boxOf(element))) ?? null;
+}
+
+function unionBox(a: MotionBox, b: MotionBox): MotionBox {
+  const left = Math.min(a.left, b.left);
+  const top = Math.min(a.top, b.top);
+  return {
+    left,
+    top,
+    width: Math.max(a.left + a.width, b.left + b.width) - left,
+    height: Math.max(a.top + a.height, b.top + b.height) - top,
+    radius: 0,
+  };
+}
+
+/**
+ * 同级切换（底部标签、分段控件、电脑版左侧导航）：旧内容往一边推走，新内容从另一边进来。
+ * 手机上左右推，电脑版的导航是竖排的，就上下推。
+ */
+export function switchAxis(renderPage: () => void, direction: AxisDirection, scopeSelector?: string, axis: 'x' | 'y' = 'x'): void {
   settlePageMotion();
   if (isMotionReduced()) {
     quickFade(renderPage);
     return;
   }
   const oldScope = scopeSelector ? document.querySelector<HTMLElement>(scopeSelector) : null;
+  const oldPane = scopeSelector ? null : livePane();
+  // 小注释：侧栏的位置要在重画前量好，重画后旧的那个已经不在页面上了。
+  const oldPaneBox = oldPane ? boxOf(oldPane) : null;
   const old = cloneShell();
-  const clipBox = oldScope ? boxOf(oldScope) : currentPage() ? boxOf(currentPage() as HTMLElement) : null;
+  let clipBox = oldScope ? boxOf(oldScope) : currentPage() ? boxOf(currentPage() as HTMLElement) : null;
   renderPage();
   const nextScope = scopeSelector ? document.querySelector<HTMLElement>(scopeSelector) : currentPage();
   if (!old) return;
@@ -829,33 +1014,46 @@ export function switchAxis(renderPage: () => void, direction: AxisDirection, sco
     dropLayer(old.layer);
     return;
   }
+  const nextPane = scopeSelector ? null : livePane();
+  // 小注释：侧栏这次要走，就把它算进旧内容里一起推走。
+  if (oldPaneBox && !nextPane) clipBox = unionBox(clipBox, oldPaneBox);
   mountOnTop(old);
   old.layer.style.zIndex = '60';
   // 小注释：同级切换时页面里的东西不跨页飞（两页碰巧都有同一个角色也不算同一个东西），只留底栏胶囊这类页面外的滑动。
   Array.from(morphAnimations.entries()).forEach(([element, animation]) => {
-    if (!nextScope.contains(element)) return;
+    if (!nextScope.contains(element) && !(nextPane && !oldPaneBox && nextPane.contains(element))) return;
     animation.cancel();
     morphAnimations.delete(element);
   });
   // 小注释：旧画面只保留内容区，底栏这类不变的部分用新画面里真的那一份。
   old.layer.style.clipPath = insetFor({ ...clipBox, radius: 0 }, old.box);
-  const shift = Math.round(Math.min(clipBox.width, 520) * 0.22) * direction;
+  const span = axis === 'y' ? Math.min(clipBox.height, 520) * 0.12 : Math.min(clipBox.width, 520) * 0.22;
+  const shift = Math.round(span) * direction;
+  const move = (distance: number) => (axis === 'y' ? `translateY(${distance}px)` : `translateX(${distance}px)`);
   // 小注释：旧内容先快速退场，新内容稍晚一点进来，两页叠在一起的时间尽量短，画面不乱。
   const out = animate(old.layer, [
     { transform: 'none', opacity: 1 },
-    { transform: `translateX(${-shift}px)`, opacity: 0 },
+    { transform: move(-shift), opacity: 0 },
   ], { duration: MOTION_MS.fast + 20, easing: MOTION_EASE.standard, fill: 'forwards' });
-  const into = animate(nextScope, [
-    { transform: `translateX(${shift}px)`, opacity: 0 },
+  const intoFrames: Keyframe[] = [
+    { transform: move(shift), opacity: 0 },
     { opacity: 1, offset: 0.45 },
     { transform: 'none', opacity: 1 },
-  ], { duration: MOTION_MS.base + 20, delay: 70, easing: MOTION_EASE.decelerate });
-  whenSettled([out, into], MOTION_MS.base + 90, () => dropLayer(old.layer));
+  ];
+  const intoTiming: KeyframeAnimationOptions = { duration: MOTION_MS.base + 20, delay: 70, easing: MOTION_EASE.decelerate };
+  const into = animate(nextScope, intoFrames, intoTiming);
+  const paneInto = nextPane && !oldPaneBox ? animate(nextPane, intoFrames, intoTiming) : null;
+  whenSettled([out, into, paneInto], MOTION_MS.base + 90, () => dropLayer(old.layer));
 }
 
 function newOverlayElements(before: Set<Element>): HTMLElement[] {
   return Array.from(document.querySelectorAll<HTMLElement>(OVERLAY_SELECTOR))
-    .filter(element => !before.has(element) && !element.closest('.pt-motion-clone') && onScreen(boxOf(element)));
+    .filter(element => {
+      if (before.has(element) || element.closest('.pt-motion-clone')) return false;
+      // 小注释：旧的入场动画第一帧可能把浮层放在屏幕外，先停掉再量位置。
+      stopCssAnimations(element);
+      return onScreen(boxOf(element));
+    });
 }
 
 /**
@@ -891,6 +1089,27 @@ function isBottomSheet(box: MotionBox): boolean {
 }
 
 /** 浮层打开：从被点的位置长出来；底部菜单和找不到来源时从底部升起。 */
+function stopCssAnimations(element: HTMLElement): void {
+  if (typeof element.getAnimations !== 'function') return;
+  element.getAnimations().forEach(animation => {
+    if (typeof CSSAnimation !== 'undefined' && animation instanceof CSSAnimation && animation.effect && (animation.effect as KeyframeEffect).target === element) {
+      animation.cancel();
+    }
+  });
+}
+
+/** 元素自己的 transform（例如居中用的 translate(-50%, -50%)）；没有就返回空字符串。 */
+function baseTransform(element: HTMLElement): string {
+  const value = window.getComputedStyle(element).transform;
+  return value && value !== 'none' ? value : '';
+}
+
+/** 把动画的位移、缩放叠在元素原来的 transform 后面（先按原样摆好，再在它自己的中心上缩放、平移）。 */
+function onBase(base: string, transform: string): string {
+  if (!base) return transform;
+  return transform === 'none' ? base : `${base} ${transform}`;
+}
+
 export function openOverlay(renderPage: () => void, source: MotionSource | null): void {
   const before = new Set<Element>(Array.from(document.querySelectorAll(OVERLAY_SELECTOR)));
   renderPage();
@@ -899,12 +1118,17 @@ export function openOverlay(renderPage: () => void, source: MotionSource | null)
   if (!overlays.length) return;
   overlays.forEach(overlay => {
     const surface = overlaySurface(overlay);
+    // 小注释：旧样式里浮层自带的入场动画（弹簧、上滑）和这里的动画会打架，由引擎接手时先把它们停掉。
+    stopCssAnimations(overlay);
+    if (surface !== overlay) stopCssAnimations(surface);
     const box = boxOf(surface);
     overlayStack.push({ key: source?.key ?? '', box: source ?? box });
     if (overlayStack.length > 12) overlayStack.shift();
     if (surface !== overlay) {
       fadeScrim(overlay, true, MOTION_MS.fast);
     }
+    // 小注释：有的浮层自己用 transform 居中（电脑版发布动态），动画叠在它上面，不能把居中冲掉。
+    const base = baseTransform(surface);
     if (isFullPage(box) && source && onScreen(source)) {
       const full = { ...box, radius: 0 };
       const from = { ...source, radius: Math.max(source.radius, 12) };
@@ -915,22 +1139,22 @@ export function openOverlay(renderPage: () => void, source: MotionSource | null)
       ], { duration: MOTION_MS.base + 60, easing: MOTION_EASE.decelerate });
     } else if (isBottomSheet(box)) {
       animate(surface, [
-        { transform: `translateY(${Math.round(box.height)}px)` },
-        { transform: 'none' },
+        { transform: onBase(base, `translateY(${Math.round(box.height)}px)`) },
+        { transform: onBase(base, 'none') },
       ], { duration: MOTION_MS.base + 40, easing: MOTION_EASE.decelerate });
     } else if (source && onScreen(source) && box.width > 0 && box.height > 0) {
       const dx = source.left + source.width / 2 - (box.left + box.width / 2);
       const dy = source.top + source.height / 2 - (box.top + box.height / 2);
       const s = Math.max(0.12, Math.min(source.width / box.width, source.height / box.height));
       animate(surface, [
-        { transform: flyTransform(dx, dy, s, 0), opacity: 0 },
-        { transform: flyTransform(dx, dy, s, 0.35), opacity: 1, offset: 0.35 },
-        { transform: 'none', opacity: 1 },
+        { transform: onBase(base, flyTransform(dx, dy, s, 0)), opacity: 0 },
+        { transform: onBase(base, flyTransform(dx, dy, s, 0.35)), opacity: 1, offset: 0.35 },
+        { transform: onBase(base, 'none'), opacity: 1 },
       ], { duration: MOTION_MS.base + 40, easing: MOTION_EASE.decelerate });
     } else {
       animate(surface, [
-        { transform: 'translateY(24px)', opacity: 0 },
-        { transform: 'none', opacity: 1 },
+        { transform: onBase(base, 'translateY(24px)'), opacity: 0 },
+        { transform: onBase(base, 'none'), opacity: 1 },
       ], { duration: MOTION_MS.base, easing: MOTION_EASE.decelerate });
     }
   });
@@ -968,7 +1192,9 @@ export function closeOverlay(renderPage: () => void): void {
     });
     Object.assign(clone.style, {
       position: 'fixed', left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px`, height: `${box.height}px`,
-      margin: '0', pointerEvents: 'none', zIndex: '80',
+      margin: '0', pointerEvents: 'none', zIndex: '80', animation: 'none',
+      // 小注释：量到的已经是屏幕上的实际位置，复制品自己原来的居中位移要去掉，否则会再偏一次。
+      transform: 'none',
     });
     return { overlay, clone, live };
   });
@@ -987,6 +1213,7 @@ export function closeOverlay(renderPage: () => void): void {
     const target = origin?.key ? findByKey(origin.key) : null;
     const surface = overlaySurface(clone);
     const box = boxOf(surface);
+    const base = surface === clone ? '' : baseTransform(surface);
     if (surface !== clone) animations.push(fadeScrim(clone, false, MOTION_MS.exit, 'forwards'));
     if (isFullPage(box) && target) {
       const targetBox = boxOf(target, true);
@@ -999,8 +1226,8 @@ export function closeOverlay(renderPage: () => void): void {
       ], { duration: MOTION_MS.base, easing: MOTION_EASE.standard, fill: 'forwards' }));
     } else if (isBottomSheet(box)) {
       animations.push(animate(surface, [
-        { transform: 'none' },
-        { transform: `translateY(${Math.round(box.height)}px)` },
+        { transform: onBase(base, 'none') },
+        { transform: onBase(base, `translateY(${Math.round(box.height)}px)`) },
       ], { duration: MOTION_MS.exit + 20, easing: MOTION_EASE.accelerate, fill: 'forwards' }));
     } else if (target && box.width > 0 && box.height > 0) {
       const t = boxOf(target);
@@ -1008,13 +1235,13 @@ export function closeOverlay(renderPage: () => void): void {
       const dy = t.top + t.height / 2 - (box.top + box.height / 2);
       const s = Math.max(0.12, Math.min(t.width / box.width, t.height / box.height));
       animations.push(animate(surface, [
-        { transform: 'none', opacity: 1 },
-        { transform: `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px) scale(${s.toFixed(3)})`, opacity: 0 },
+        { transform: onBase(base, 'none'), opacity: 1 },
+        { transform: onBase(base, `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px) scale(${s.toFixed(3)})`), opacity: 0 },
       ], { duration: MOTION_MS.exit + 40, easing: MOTION_EASE.accelerate, fill: 'forwards' }));
     } else {
       animations.push(animate(surface, [
-        { transform: 'none', opacity: 1 },
-        { transform: 'translateY(20px)', opacity: 0 },
+        { transform: onBase(base, 'none'), opacity: 1 },
+        { transform: onBase(base, 'translateY(20px)'), opacity: 0 },
       ], { duration: MOTION_MS.exit, easing: MOTION_EASE.accelerate, fill: 'forwards' }));
     }
     whenSettled(animations, MOTION_MS.exit + 40, () => dropLayer(clone));
