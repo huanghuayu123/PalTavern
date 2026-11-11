@@ -2229,6 +2229,82 @@ function relationshipChangeSummary(before: RelationshipState, after: Relationshi
   return lines.length > 0 ? lines.join('；') : '关系状态已重新保存。';
 }
 
+// 大注释：聊天记录分段渲染。界面每次刷新都会整页重画，聊得越久消息越多，打开聊天和每次刷新都越慢。
+// 这里只渲染最近一段消息，顶部放“查看更早的消息”按钮，按需往前加载；切换到别的会话时窗口自动回到最近一段。
+const MESSAGE_RENDER_WINDOW = 120;
+type MessageWindowKind = 'private' | 'direct' | 'group';
+const messageWindows: Record<MessageWindowKind, { key: string; size: number }> = {
+  private: { key: '', size: MESSAGE_RENDER_WINDOW },
+  direct: { key: '', size: MESSAGE_RENDER_WINDOW },
+  group: { key: '', size: MESSAGE_RENDER_WINDOW },
+};
+
+function messageWindowStart(kind: MessageWindowKind, key: string, total: number): number {
+  const windowState = messageWindows[kind];
+  if (windowState.key !== key) {
+    windowState.key = key;
+    windowState.size = MESSAGE_RENDER_WINDOW;
+  }
+  return Math.max(0, total - windowState.size);
+}
+
+function renderLoadEarlierMessages(kind: MessageWindowKind, hiddenCount: number): string {
+  if (hiddenCount <= 0) return '';
+  return `
+    <div class="message-history-more">
+      <button type="button" data-load-earlier-messages="${kind}">查看更早的消息<span>还有 ${hiddenCount} 条</span></button>
+    </div>
+  `;
+}
+
+function isMessageWindowKind(value: string | undefined): value is MessageWindowKind {
+  return value === 'private' || value === 'direct' || value === 'group';
+}
+
+// 大注释：新消息入场动效。整页重画会重建所有气泡，所以不能给气泡统一挂动画，否则每次刷新都满屏闪。
+// 这里记住上一次渲染时每个会话最新一条消息的时间，只有比它更新、并且上一次渲染时这个会话就在屏幕上的消息才标记为“刚到达”。
+// 刚打开会话、加载更早的消息、后台定时刷新都不会触发动效。
+const messageArrivalNewest = new Map<string, number>();
+let messageArrivalKeysRendered = new Set<string>();
+let messageArrivalKeysPrevious = new Set<string>();
+
+function beginMessageArrivalTracking(): void {
+  messageArrivalKeysPrevious = messageArrivalKeysRendered;
+  messageArrivalKeysRendered = new Set();
+}
+
+function messageArrivalThreshold(key: string, newestCreatedAt: number): number {
+  const previousNewest = messageArrivalNewest.get(key);
+  const wasOnScreen = messageArrivalKeysPrevious.has(key);
+  messageArrivalKeysRendered.add(key);
+  messageArrivalNewest.set(key, Math.max(newestCreatedAt, previousNewest ?? 0));
+  return wasOnScreen && previousNewest !== undefined ? previousNewest : Number.POSITIVE_INFINITY;
+}
+
+// 小注释：发送消息时界面常会在几毫秒内连续刷新两三次。记住每条新消息动画开始的时间，
+// 再次刷新时用负的延迟让动画从中断处接着播，既不会被打断，也不会从头重播。
+const MESSAGE_ARRIVAL_MS = 220;
+const messageArrivalStartedAt = new Map<string, number>();
+
+function messageArrivalMarkup(messageId: string, createdAt: number, threshold: number): { className: string; style: string } {
+  const now = performance.now();
+  if (createdAt > threshold && !messageArrivalStartedAt.has(messageId)) {
+    if (messageArrivalStartedAt.size > 200) messageArrivalStartedAt.clear();
+    messageArrivalStartedAt.set(messageId, now);
+  }
+  const startedAt = messageArrivalStartedAt.get(messageId);
+  if (startedAt === undefined) return { className: '', style: '' };
+  const elapsed = now - startedAt;
+  if (elapsed >= MESSAGE_ARRIVAL_MS) {
+    messageArrivalStartedAt.delete(messageId);
+    return { className: '', style: '' };
+  }
+  return {
+    className: 'is-arriving',
+    style: elapsed >= 1 ? ` style="--message-arrival-delay: -${Math.round(elapsed)}ms"` : '',
+  };
+}
+
 function visibleMessagesForCharacter(character: CharacterProfile): ChatMessage[] {
   return messagesFor(character.id, privateConversationActorId(character))
     .filter(message => !message.recalledAt && !message.impactRevokedAt);
@@ -2827,16 +2903,20 @@ function renderCharacterDirectMessages(character: CharacterProfile): string {
       </div>
     `;
   }
-  return messages.map((message, index) => {
+  const windowStart = messageWindowStart('direct', thread.id, messages.length);
+  const arrivalThreshold = messageArrivalThreshold(`direct:${thread.id}`, latest?.createdAt ?? 0);
+  return renderLoadEarlierMessages('direct', windowStart) + messages.slice(windowStart).map((message, visibleIndex) => {
+    const index = windowStart + visibleIndex;
     const speakerCharacter = state.characters.find(item => item.id === message.speakerCharacterId);
     const previous = messages[index - 1];
     const showTime = !previous || message.createdAt - previous.createdAt >= 5 * 60 * 1000;
     const authoredByCurrentIdentity = message.speakerCharacterId === speaker.id;
     const rowRole = authoredByCurrentIdentity ? 'user' : 'assistant';
     const avatar = speakerCharacter ? renderAvatar(speakerCharacter) : escapeHtml(characterDirectSpeakerName(message).slice(0, 1));
+    const arrival = messageArrivalMarkup(message.id, message.createdAt, arrivalThreshold);
     return `
       ${showTime ? `<div class="message-time">${formatConversationTime(message.createdAt)}</div>` : ''}
-      <div class="message-row ${rowRole} is-character-direct">
+      <div class="message-row ${rowRole} is-character-direct ${arrival.className}"${arrival.style}>
         ${authoredByCurrentIdentity
           ? `<span class="message-avatar user-avatar" aria-hidden="true">${avatar}</span>`
           : `<button class="message-avatar assistant-avatar message-profile-trigger" type="button" data-message-profile-character="${escapeHtml(message.speakerCharacterId)}" aria-label="查看 ${escapeHtml(characterDirectSpeakerName(message))} 的角色资料"${avatarToneAttribute(speakerCharacter)}>${avatar}</button>`}
@@ -2882,7 +2962,13 @@ function renderMessages(character?: CharacterProfile): string {
       timelineEntriesByMessageId.set(entry.source.id, entry);
     }
   }
-  const rendered = messages.map((message, index) => {
+  const windowStart = messageWindowStart('private', `${character.id}:${privateConversationActorId(character)}`, messages.length);
+  const arrivalThreshold = messageArrivalThreshold(
+    `private:${character.id}:${privateConversationActorId(character)}`,
+    messages[messages.length - 1]?.createdAt ?? 0,
+  );
+  const rendered = messages.slice(windowStart).map((message, visibleIndex) => {
+    const index = windowStart + visibleIndex;
     const sticker = message.stickerId ? findStickerById(message.stickerId) : undefined;
     const quoted = message.replyToId ? state.messages.find(item => item.id === message.replyToId) : undefined;
     const previous = messages[index - 1];
@@ -2890,6 +2976,7 @@ function renderMessages(character?: CharacterProfile): string {
     const variantInfo = messageVariantInfo(message);
     const memoryHint = messageTimelineHint(timelineEntriesByMessageId.get(message.id));
     const selfAuthoredCharacter = message.role === 'user' && message.speakerType === 'character';
+    const arrival = messageArrivalMarkup(message.id, message.createdAt, arrivalThreshold);
     if (message.impactRevokedAt) {
       return `
         ${showTime ? `<div class="message-time">${formatConversationTime(message.createdAt)}</div>` : ''}
@@ -2904,7 +2991,7 @@ function renderMessages(character?: CharacterProfile): string {
     }
     return `
     ${showTime ? `<div class="message-time">${formatConversationTime(message.createdAt)}</div>` : ''}
-    <div class="message-row ${message.role === 'assistant' ? 'assistant' : 'user'} ${selfAuthoredCharacter ? 'is-authored-character' : ''} ${messageActionId === message.id ? 'has-actions-open-above' : ''}">
+    <div class="message-row ${message.role === 'assistant' ? 'assistant' : 'user'} ${selfAuthoredCharacter ? 'is-authored-character' : ''} ${messageActionId === message.id ? 'has-actions-open-above' : ''} ${arrival.className}"${arrival.style}>
       ${message.role === 'assistant'
         ? `<button class="message-avatar assistant-avatar message-profile-trigger" type="button" data-message-profile-character="${escapeHtml(character.id)}" aria-label="查看 ${escapeHtml(character.name)} 和 user 的关系"${avatarToneAttribute(character)}>${renderAvatar(character)}</button>`
         : `<span class="message-avatar user-avatar" aria-hidden="true">${privateChatSpeakerAvatar(message)}</span>`}
@@ -2939,7 +3026,8 @@ function renderMessages(character?: CharacterProfile): string {
   `;
   }).join('');
   const openingGenerating = isOpeningMessageGenerating(character, privateConversationActorId(character));
-  return `${introCard}${rendered}${openingGenerating ? `
+  // 小注释：角色背景卡在整段记录的最上方，只有加载到最早的消息时才显示。
+  return `${windowStart === 0 ? introCard : renderLoadEarlierMessages('private', windowStart)}${rendered}${openingGenerating ? `
     <div class="replying-row" aria-live="polite">
       <span class="replying-dots"><i></i><i></i><i></i></span>
       <span>${escapeHtml(character.name)} 正在生成新消息…</span>
@@ -3369,13 +3457,16 @@ function renderGroupMessages(chat?: GroupChatProfile): string {
       ? '你可以先用左上角选择身份发一句，也可以点“主动续聊”让角色先开口。'
       : '你可以先发一句。要让角色自己开口，先在右上角齿轮里开启高消耗主动发言。'}</p></div>${generatingHint}`;
   }
-  return `${messages.map(message => {
+  const windowStart = messageWindowStart('group', chat.id, messages.length);
+  const arrivalThreshold = messageArrivalThreshold(`group:${chat.id}`, messages[messages.length - 1]?.createdAt ?? 0);
+  return `${renderLoadEarlierMessages('group', windowStart)}${messages.slice(windowStart).map(message => {
     const selfAuthoredCharacter = message.speakerType === 'character' && message.source === 'user';
     if (message.recalledAt) {
       return '<div class="group-recalled-message">撤回了一条群聊消息</div>';
     }
+    const arrival = messageArrivalMarkup(message.id, message.createdAt, arrivalThreshold);
     return `
-      <article class="group-message ${message.speakerType === 'user' ? 'is-user' : 'is-character'} ${selfAuthoredCharacter ? 'is-authored-character' : ''} ${groupMessageActionId === message.id ? 'is-actions-open is-actions-open-above' : ''}" data-group-message-id="${escapeHtml(message.id)}" tabindex="0">
+      <article class="group-message ${message.speakerType === 'user' ? 'is-user' : 'is-character'} ${selfAuthoredCharacter ? 'is-authored-character' : ''} ${groupMessageActionId === message.id ? 'is-actions-open is-actions-open-above' : ''} ${arrival.className}"${arrival.style} data-group-message-id="${escapeHtml(message.id)}" tabindex="0">
         <span class="avatar group-message-avatar">${renderGroupMessageAvatar(message)}</span>
         <div class="group-message-body">
           <header>
@@ -7895,6 +7986,7 @@ export function render(): void {
   const wasNearChatBottom = isChatScrollNearBottom();
   const preRenderScroll = captureScrollSnapshot();
   installStorageWarningListener();
+  beginMessageArrivalTracking();
   if (isAuthoringOpen()) {
     appRoot.innerHTML = `${renderAuthoringScreen()}${renderAppDialog()}${renderStorageWarning()}`;
     bindAuthoringUi(render);
@@ -8120,6 +8212,20 @@ function bindUi(): void {
       closeMessageActionMenuInPlace();
     }, { capture: true, once: true });
   }
+  appRoot.querySelectorAll<HTMLButtonElement>('[data-load-earlier-messages]').forEach(button => {
+    button.addEventListener('click', () => {
+      const kind = button.dataset.loadEarlierMessages;
+      if (!isMessageWindowKind(kind)) return;
+      const container = button.closest<HTMLElement>('.messages, .group-messages');
+      const containerSelector = container?.classList.contains('group-messages') ? '.group-messages' : '.messages';
+      // 小注释：以底部为锚点保持位置，加载更早的消息后，用户正在看的那几条不会跳走。
+      const distanceFromBottom = container ? container.scrollHeight - container.scrollTop : 0;
+      messageWindows[kind].size += MESSAGE_RENDER_WINDOW;
+      render();
+      const nextContainer = document.querySelector<HTMLElement>(containerSelector);
+      if (nextContainer && container) nextContainer.scrollTop = Math.max(0, nextContainer.scrollHeight - distanceFromBottom);
+    });
+  });
   // 小注释：气泡高度完全交给 CSS 自然撑开（见 styles.css 末尾）。以前逐条量高度再写回，消息越多越卡，还会裁掉原因、记忆提示等小字。
   bindDraftManager(render);
   document.querySelector<HTMLButtonElement>('#enter-welcome-cover')?.addEventListener('click', () => {

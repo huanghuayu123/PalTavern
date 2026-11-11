@@ -18050,3 +18050,149 @@ html[data-ui-transition]:not([data-ui-transition^="main-"]) .moment-compose-fab 
   padding-top: 8px;
   padding-bottom: 8px;
 }
+
+/* 大注释：对比度修正层。以 PRODUCT.md 的 WCAG AA 为基线（正文 4.5:1）。
+   浅色：主色略微加深，白字按钮/自己的气泡从 3.98:1 提到 4.69:1；次要灰字从 4.38:1 提到 4.79:1。
+   深色：亮青色底上的白字只有 2.46:1，按钮类改成深色字（约 7:1）；自己的气泡改用更深的青色底配白字（约 5.1:1），长文阅读不刺眼。 */
+:root {
+  --accent: #0c8278;
+  --text-soft: #5f6d6b;
+  --on-accent: #ffffff;
+  --user-bubble-bg: var(--accent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --accent: #3bb7a8;
+    --text-soft: #a2afad;
+    --on-accent: #04201c;
+    --user-bubble-bg: #1b7b70;
+  }
+
+  .primary,
+  .file-button:not(.secondary-file),
+  .small-button.primary-small,
+  .character-panel-tabs button.is-active,
+  .authoring-progress button.is-active > span,
+  .authoring-progress button.is-done > span,
+  .unread-badge,
+  .moment-compose-fab,
+  .private-chat-identity-option-check,
+  .empty-mark,
+  .model-onboarding-mark,
+  .time-mode-mark,
+  .reply-mode-mark,
+  .message-row.is-swipe-ready .swipe-quote-indicator,
+  .relationship-network-avatar {
+    color: var(--on-accent);
+  }
+
+  .message.user:not(.sticker-message),
+  .group-message.is-user .group-message-body,
+  .message-row.user .message-avatar {
+    color: #ffffff;
+    background: var(--user-bubble-bg);
+  }
+
+  /* 小注释：手机“角色”页的导入按钮是浅底描边样式，不是主色填充，保留正文颜色。 */
+  .mobile-list-tools > .file-button {
+    color: var(--text);
+  }
+}
+
+/* 小注释：页面顶部的小标签（如“全局动态”）原来用最浅的灰，只有 2.6:1，统一成次要文字色。 */
+.eyebrow {
+  color: var(--text-soft);
+}
+
+/* 小注释：表情包消息只显示图片本身，不再套一层主色气泡底框。 */
+.message.user.sticker-message,
+.message.assistant.sticker-message {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+/* 小注释：“生成片段”这类图标加文字的按钮横排，避免图标和文字上下挤在 38px 高的按钮里把字裁掉。 */
+.world-event-empty-actions .primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 16px;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+/* 小注释：聊天记录顶部的“查看更早的消息”。做成轻量的文字胶囊，不和正文气泡抢视觉。 */
+.message-history-more {
+  display: flex;
+  justify-content: center;
+  padding: 6px 0 2px;
+}
+
+.message-history-more button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 14px;
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 650;
+  background: color-mix(in srgb, var(--surface-raised) 86%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: none;
+}
+
+.message-history-more button span {
+  color: var(--text-soft);
+  font-weight: 500;
+}
+
+@media (pointer: coarse) {
+  .message-history-more button {
+    min-height: 44px;
+  }
+}
+
+/* 大注释：新消息入场动效。只有真正刚到达的消息带 is-arriving，旧气泡重画时不播放。
+   聊天详情页有一条“全部动画关闭”的保护规则，这里用更高优先级只为新消息放行。 */
+@keyframes messageArrive {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.messages .message-row.is-arriving,
+.mobile-chat-detail .message-row.is-arriving,
+.group-messages .group-message.is-arriving {
+  animation: messageArrive 220ms cubic-bezier(0.2, 0.8, 0.2, 1) var(--message-arrival-delay, 0ms) both !important;
+}
+
+.message-row.user.is-arriving,
+.group-message.is-user.is-arriving {
+  transform-origin: 100% 100%;
+}
+
+.message-row.assistant.is-arriving,
+.group-message.is-character.is-arriving {
+  transform-origin: 0 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .messages .message-row.is-arriving,
+  .mobile-chat-detail .message-row.is-arriving,
+  .group-messages .group-message.is-arriving {
+    animation: none !important;
+  }
+}
+
